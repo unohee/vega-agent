@@ -1,0 +1,69 @@
+# Secrets & credentials
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+token.json
+token_*.json
+oauth_*.json
+client_secret*.json
+
+# Personal data
+data/*.db
+data/*.db-shm
+data/*.db-wal
+data/*.sqlite
+data/*.sqlite3
+data/*.json
+!data/mcp.json
+!data/widgets.json
+!data/user_profile.json
+!data/llm_providers.json
+!data/tool_groups.json
+data/*.jsonl
+data/*.csv
+data/*.xls
+data/*.xlsx
+data/uploads/
+data/charts/
+data/tmp_*/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# macOS
+.DS_Store
+*.DS_Store
+
+# Logs
+logs/
+*.log
+
+# Desktop app build artifacts
+desktop/target/
+desktop/dist/
+desktop/gen/
+build/
+build_output/
+
+# Testing artifacts
+testing/
+coverage.json
+pytest_output.log
+.deepeval/
+
+# Editor
+.vscode/
+.idea/
+*.swp

@@ -1,0 +1,44 @@
+services:
+  vega-sandbox:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: vega-sandbox:latest
+    container_name: vega-sandbox
+    restart: unless-stopped
+    command: ["sleep", "infinity"]
+    volumes:
+      # 호스트 홈 읽기 전용
+      - /Users/unohee:/host_home:ro
+      # VEGA data 읽기/쓰기
+      - /Users/unohee/dev/VEGA/data:/vega_data:rw
+      # 영속 작업 공간 — 에이전트 스킬 누적
+      - sandbox_lib:/workspace/lib            # 에이전트가 만든 Python 모듈
+      - sandbox_packages:/workspace/site-packages  # pip install 패키지
+      - sandbox_history:/workspace/history    # 실행 이력 JSONL
+    environment:
+      - PYTHONUNBUFFERED=1
+      - HOST_HOME=/host_home
+      - VEGA_DATA=/vega_data
+      - PYTHONPATH=/workspace/lib:/workspace/site-packages
+      - PIP_TARGET=/workspace/site-packages
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+    network_mode: none
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /sandbox_home
+
+volumes:
+  sandbox_lib:
+    driver: local
+  sandbox_packages:
+    driver: local
+  sandbox_history:
+    driver: local

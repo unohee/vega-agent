@@ -1,0 +1,472 @@
+# Created: 2026-05-26
+# Purpose: Multi-LLM provider router. Reads the active provider from data/llm_providers.json
+#   and returns endpoint, headers, model, and API compatibility mode. Called by streaming.py.
+# Dependencies: stdlib + pipeline/auth/chatgpt.py (for ChatGPT OAuth path)
+
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+from typing import Any
+
+from pipeline.data_paths import llm_providers_path as _llm_providers_path, tool_groups_path as _tool_groups_path, repo_data_dir as _repo_data_dir
+_PROVIDERS_PATH = _llm_providers_path()
+_TOOL_GROUPS_PATH = _tool_groups_path()
+_REPO_PROVIDERS_PATH = _repo_data_dir() / "llm_providers.json"
+
+
+# Tool name prefix → group mapping
+_TOOL_GROUP_RULES = [
+    ("gmail_",                                                "gmail"),
+    ("calendar_",                                             "calendar"),
+    ("drive_",                                                "drive"),
+    ("icloud_",                                               "icloud"),
+    ("imessage_", "contacts_",                                "messages"),
+    ("things_",                                               "things"),
+    ("kis_",                                                  "kis"),
+    ("xlsx_", "docx_", "pptx_",                               "office"),
+    ("memory_", "persona_", "event_", "entity_",              "memory"),
+    ("mcp_",                                                  "mcp_admin"),
+    ("host_", "bash_", "python_", "sandbox_",                 "code"),
+    ("web_",                                                  "web"),
+    ("image_",                                                "image"),
+    ("file_", "skill_", "widget_", "session_", "vega_",       "system"),
+    ("ask_user_question", "exit_plan_mode",                   "system"),
+]
+
+
+def _tool_group_of(name: str) -> str:
+    for *prefixes, group in _TOOL_GROUP_RULES:
+        if any(name.startswith(p) for p in prefixes):
+            return group
+    return "misc"
+
+
+def get_enabled_groups() -> set[str]:
+    """Returns the set of enabled tool groups. If the file is missing, all groups are active (legacy behavior)."""
+    if not _TOOL_GROUPS_PATH.exists():
+        return _ALL_GROUPS
+    try:
+        data = json.loads(_TOOL_GROUPS_PATH.read_text(encoding="utf-8"))
+        enabled = data.get("enabled")
+        if isinstance(enabled, list):
+            return set(enabled)
+        return _ALL_GROUPS
+    except Exception:
+        return _ALL_GROUPS
+
+
+def set_enabled_groups(groups: list[str]) -> None:
+    _TOOL_GROUPS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    _TOOL_GROUPS_PATH.write_text(
+        json.dumps({"enabled": list(groups)}, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+
+def filter_tools(schemas: list[dict]) -> list[dict]:
+    """Returns only the tools that belong to an enabled group."""
+    enabled = get_enabled_groups()
+    return [s for s in schemas if _tool_group_of(s.get("name", "")) in enabled]
+
+
+def tool_group_stats(schemas: list[dict]) -> list[dict]:
+    """For UI: per-group tool count, enabled state, and estimated token usage."""
+    enabled = get_enabled_groups()
+    by_group: dict[str, list[dict]] = {}
+    for s in schemas:
+        by_group.setdefault(_tool_group_of(s.get("name", "")), []).append(s)
+    from pipeline.token_count import count_json_tokens
+    out = []
+    for g, items in by_group.items():
+        out.append({
+            "group": g,
+            "count": len(items),
+            "tokens": count_json_tokens(items),
+            "enabled": g in enabled,
+            "names": [s.get("name") for s in items],
+        })
+    out.sort(key=lambda x: -x["count"])
+    return out
+
+
+_ALL_GROUPS = {
+    "gmail", "calendar", "drive", "icloud", "messages", "things",
+    "kis", "office", "memory", "mcp_admin", "code", "web", "image", "system", "misc",
+}
+
+
+def _expand_env(value: Any) -> Any:
+    if isinstance(value, str):
+        return os.path.expandvars(value)
+    if isinstance(value, dict):
+        return {k: _expand_env(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_expand_env(v) for v in value]
+    return value
+
+
+def _read_config() -> dict:
+    """Reads config fresh from disk on every call (hot-reload).
+    Priority: user data directory → repo data/ → hardcoded defaults."""
+    for path in (_PROVIDERS_PATH, _REPO_PROVIDERS_PATH):
+        if path.exists():
+            try:
+                return json.loads(path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+    return _default_config()
+
+
+def _write_config(data: dict) -> None:
+    data.setdefault("providers", {})
+    _PROVIDERS_PATH.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def _default_config() -> dict:
+    return {
+        "active": "chatgpt",
+        "providers": {
+            "chatgpt": {
+                "label": "ChatGPT (Codex)",
+                "kind": "responses",
+                "auth_type": "chatgpt_oauth",
+                "base_url": "https://chatgpt.com/backend-api/codex/responses",
+                "default_model": "gpt-5.5",
+                "extra_headers": {
+                    "originator": "vega",
+                    "OpenAI-Beta": "responses=experimental",
+                },
+            }
+        },
+    }
+
+
+def get_active_name() -> str:
+    return _read_config().get("active") or "chatgpt"
+
+
+def get_active_provider() -> dict:
+    """Returns the currently active provider dict (with key 'name' injected)."""
+    cfg = _read_config()
+    name = cfg.get("active") or "chatgpt"
+    providers = cfg.get("providers") or {}
+    prov = providers.get(name)
+    if not prov:
+        # fallback to chatgpt
+        prov = providers.get("chatgpt") or _default_config()["providers"]["chatgpt"]
+        name = "chatgpt"
+    out = dict(prov)
+    out["name"] = name
+    return _expand_env(out)
+
+
+def list_providers() -> list[dict]:
+    """For UI — registered provider list with active flag and API key status."""
+    cfg = _read_config()
+    active = cfg.get("active") or "chatgpt"
+    out: list[dict] = []
+    for name, prov in (cfg.get("providers") or {}).items():
+        auth_type = prov.get("auth_type", "none")
+        key_env = prov.get("api_key_env", "")
+        has_key = True if auth_type == "none" else (
+            bool(os.getenv(key_env)) if auth_type == "bearer" else None  # OAuth: checked separately
+        )
+        out.append({
+            "name": name,
+            "label": prov.get("label", name),
+            "kind": prov.get("kind", "chat_completions"),
+            "auth_type": auth_type,
+            "base_url": prov.get("base_url", ""),
+            "default_model": prov.get("default_model", ""),
+            "api_key_env": key_env,
+            "has_key": has_key,
+            "active": name == active,
+        })
+    return out
+
+
+def set_active(name: str) -> None:
+    cfg = _read_config()
+    if name not in (cfg.get("providers") or {}):
+        raise ValueError(f"unknown provider: {name}")
+    cfg["active"] = name
+    _write_config(cfg)
+
+
+def upsert_provider(name: str, entry: dict) -> None:
+    cfg = _read_config()
+    cfg.setdefault("providers", {})[name] = entry
+    _write_config(cfg)
+
+
+def remove_provider(name: str) -> None:
+    cfg = _read_config()
+    providers = cfg.get("providers") or {}
+    if name not in providers:
+        raise KeyError(name)
+    del providers[name]
+    # if the active provider is deleted, fall back to chatgpt
+    if cfg.get("active") == name:
+        cfg["active"] = "chatgpt" if "chatgpt" in providers else (next(iter(providers), "chatgpt"))
+    _write_config(cfg)
+
+
+def update_model(name: str, model: str) -> None:
+    cfg = _read_config()
+    providers = cfg.get("providers") or {}
+    if name not in providers:
+        raise KeyError(name)
+    providers[name]["default_model"] = model
+    _write_config(cfg)
+
+
+# ── Request building ─────────────────────────────────────────────────────────
+
+def build_request(input_items: list, system: str, tool_schemas: list[dict], research_mode: bool = False):
+    """Builds a urllib.request.Request for the currently active provider.
+    Replaces _build_request in streaming.py. Returns a (Request, kind) tuple.
+    kind is 'responses' | 'chat_completions' — used to branch SSE parsing.
+
+    tool_schemas is automatically filtered to the active tool groups.
+    When research_mode=True, max_tokens/max_completion_tokens is set higher."""
+    import urllib.request
+    tool_schemas = filter_tools(tool_schemas)
+    prov = get_active_provider()
+    kind = prov.get("kind", "chat_completions")
+    model = prov.get("default_model") or ""
+    auth_type = prov.get("auth_type", "none")
+    base_url = prov.get("base_url", "")
+    extra_headers = dict(prov.get("extra_headers") or {})
+
+    # Auth headers + endpoint
+    headers: dict[str, str] = {
+        "Content-Type": "application/json",
+        "Accept": "text/event-stream",
+    }
+    headers.update(extra_headers)
+
+    if auth_type == "chatgpt_oauth":
+        from pipeline.auth.chatgpt import _load_profile, ensure_valid_token
+        profile = _load_profile()
+        if not profile:
+            raise RuntimeError("ChatGPT OAuth 프로파일 없음")
+        token = ensure_valid_token()
+        headers["Authorization"] = f"Bearer {token}"
+        headers["chatgpt-account-id"] = profile.get("account_id", "")
+    elif auth_type == "bearer":
+        key_env = prov.get("api_key_env", "")
+        key = os.getenv(key_env, "") if key_env else ""
+        if not key:
+            raise RuntimeError(
+                f"{prov['name']}: 환경변수 {key_env}가 비어있음. .env에 API 키를 설정해."
+            )
+        headers["Authorization"] = f"Bearer {key}"
+    # auth_type == "none" → no additional headers (local provider)
+
+    # Endpoint URL + payload
+    # Research mode: allow a generous response token limit.
+    # Note: ChatGPT Codex Responses API rejects max_output_tokens (HTTP 400).
+    # Omit the field entirely outside research_mode; add it only for non-ChatGPT providers in research_mode.
+    _res_max = 16000 if research_mode else 8000
+    _is_chatgpt = "chatgpt.com" in base_url or auth_type == "chatgpt_oauth"
+
+    if kind == "responses":
+        url = base_url  # already points to .../responses
+        payload = {
+            "model": model,
+            "instructions": system,
+            "input": input_items,
+            "store": False,
+            "stream": True,
+            "tools": tool_schemas,
+        }
+        # Only set token limit when not ChatGPT Codex and in research mode
+        if research_mode and not _is_chatgpt:
+            payload["max_output_tokens"] = _res_max
+    else:  # chat_completions
+        url = base_url.rstrip("/") + "/chat/completions"
+        messages = _responses_to_messages(system, input_items)
+        cc_tools = _to_chat_completions_tools(tool_schemas)
+
+        # Prompt caching:
+        # - Anthropic models: must explicitly set cache_control:{type:'ephemeral'} at end of system + tools
+        # - OpenAI/DeepSeek/Gemini/Grok: OpenRouter caches automatically (markers not needed; ignored if sent)
+        # Sending markers to all models is the simplest and safest approach.
+        # OpenRouter docs: https://openrouter.ai/docs/features/prompt-caching
+        _apply_cache_markers(messages, cc_tools)
+
+        payload = {
+            "model": model,
+            "messages": messages,
+            "stream": True,
+            "usage": {"include": True},  # OpenRouter: include usage in stream
+            "stream_options": {"include_usage": True},  # OpenAI-compat (mlx-server, etc.): usage in last chunk
+        }
+        # Only set max_tokens in research_mode — otherwise use provider default
+        if research_mode:
+            payload["max_tokens"] = _res_max
+        if cc_tools:
+            payload["tools"] = cc_tools
+            payload["tool_choice"] = "auto"
+
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode(),
+        headers=headers,
+        method="POST",
+    )
+    return req, kind
+
+
+def _responses_to_messages(system: str, input_items: list[dict]) -> list[dict]:
+    """Converts Responses API input (varied roles/types) → ChatCompletions messages.
+    MVP: maps text + function_call_output only. Images converted to OpenAI vision format."""
+    msgs: list[dict] = []
+    if system:
+        msgs.append({"role": "system", "content": system})
+    for item in input_items:
+        itype = item.get("type")
+        if itype == "function_call_output":
+            msgs.append({
+                "role": "tool",
+                "tool_call_id": item.get("call_id", ""),
+                "content": item.get("output", ""),
+            })
+            continue
+        if itype == "function_call":
+            # Assistant-side tool call record
+            msgs.append({
+                "role": "assistant",
+                "tool_calls": [{
+                    "id": item.get("call_id", ""),
+                    "type": "function",
+                    "function": {
+                        "name": item.get("name", ""),
+                        "arguments": item.get("arguments", "{}"),
+                    },
+                }],
+            })
+            continue
+        # message type
+        role = item.get("role", "user")
+        content = item.get("content")
+        if isinstance(content, list):
+            # multimodal — Responses {type:input_text|input_image} → ChatCompletions {type:text|image_url}
+            new_content = []
+            for c in content:
+                ct = c.get("type")
+                if ct in ("input_text", "text"):
+                    new_content.append({"type": "text", "text": c.get("text", "")})
+                elif ct in ("input_image", "image"):
+                    url = c.get("image_url") or c.get("url") or c.get("image")
+                    if isinstance(url, dict):
+                        url = url.get("url", "")
+                    new_content.append({"type": "image_url", "image_url": {"url": url}})
+            msgs.append({"role": role, "content": new_content})
+        else:
+            msgs.append({"role": role, "content": content or ""})
+    return msgs
+
+
+def _apply_cache_markers(messages: list[dict], tools: list[dict]) -> None:
+    """Adds OpenRouter prompt caching markers in-place.
+
+    Inserts `cache_control: {"type": "ephemeral"}` (for Anthropic models) at:
+    1. The last element of the system message content (or the system message itself)
+    2. The last tool in the tools array
+
+    OpenAI/DeepSeek/Gemini/Grok: OpenRouter caches automatically, markers are ignored.
+    Anthropic models require explicit markers to create a 5-minute ephemeral cache.
+    """
+    # 1. system message
+    for msg in messages:
+        if msg.get("role") == "system":
+            content = msg.get("content")
+            if isinstance(content, str):
+                # Convert string → cacheable multipart format
+                msg["content"] = [{
+                    "type": "text",
+                    "text": content,
+                    "cache_control": {"type": "ephemeral"},
+                }]
+            elif isinstance(content, list) and content:
+                # Already multipart: attach marker to the last text block
+                for block in reversed(content):
+                    if isinstance(block, dict) and block.get("type") == "text":
+                        block["cache_control"] = {"type": "ephemeral"}
+                        break
+            break  # system message is normally only one
+
+    # 2. Last tool entry
+    if tools:
+        last = tools[-1]
+        if isinstance(last, dict):
+            last["cache_control"] = {"type": "ephemeral"}
+
+
+def _to_chat_completions_tools(schemas: list[dict]) -> list[dict]:
+    """Converts OpenAI Responses tool schema → ChatCompletions tool schema."""
+    out = []
+    for s in schemas:
+        if s.get("type") != "function":
+            continue
+        # Responses: {type, name, description, parameters}
+        # CC:        {type:'function', function:{name, description, parameters}}
+        out.append({
+            "type": "function",
+            "function": {
+                "name": s.get("name", ""),
+                "description": s.get("description", ""),
+                "parameters": s.get("parameters") or {"type": "object", "properties": {}},
+            },
+        })
+    return out
+
+
+# ── Connection test ──────────────────────────────────────────────────────────
+
+def test_provider(name: str) -> dict:
+    """Tests provider connectivity with a lightweight call. Tries GET /models or base_url."""
+    import urllib.request, urllib.error
+    cfg = _read_config()
+    prov = (cfg.get("providers") or {}).get(name)
+    if not prov:
+        return {"ok": False, "error": f"등록되지 않음: {name}"}
+    prov = _expand_env(prov)
+    auth_type = prov.get("auth_type", "none")
+    base_url = prov.get("base_url", "")
+    kind = prov.get("kind", "chat_completions")
+
+    # Responses (ChatGPT): handled separately — only verify OAuth token issuance
+    if kind == "responses":
+        try:
+            from pipeline.auth.chatgpt import _load_profile, ensure_valid_token
+            if not _load_profile():
+                return {"ok": False, "error": "ChatGPT OAuth 프로파일 없음"}
+            tok = ensure_valid_token()
+            return {"ok": bool(tok), "info": "OAuth 토큰 유효"}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    # ChatCompletions-compatible → GET /models
+    url = base_url.rstrip("/") + "/models"
+    headers = {"Accept": "application/json"}
+    if auth_type == "bearer":
+        key = os.getenv(prov.get("api_key_env", ""), "")
+        if not key:
+            return {"ok": False, "error": f"환경변수 {prov.get('api_key_env')} 없음"}
+        headers["Authorization"] = f"Bearer {key}"
+
+    try:
+        req = urllib.request.Request(url, headers=headers, method="GET")
+        with urllib.request.urlopen(req, timeout=8) as r:
+            data = json.loads(r.read().decode())
+        models = data.get("data") or data.get("models") or []
+        n = len(models) if isinstance(models, list) else 0
+        return {"ok": True, "model_count": n, "models": [m.get("id") for m in models[:6] if isinstance(m, dict)]}
+    except urllib.error.URLError as e:
+        return {"ok": False, "error": f"연결 실패: {e}"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:200]}

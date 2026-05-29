@@ -1,0 +1,259 @@
+# Created: 2026-05-27
+# Purpose: File system + shell execution endpoints
+# Previously in: web/server.py
+
+from __future__ import annotations
+
+import asyncio
+from pathlib import Path
+
+from fastapi import APIRouter, Request
+from fastapi.responses import FileResponse, JSONResponse
+
+router = APIRouter()
+
+
+from pipeline.path_guard import guard_path as _guard_path
+
+
+# ── Directory listing ─────────────────────────────────────────────────────────
+
+@router.get("/api/fs/list")
+async def fs_list(path: str):
+    """One-level directory listing (browser fallback — Tauri uses list_dir command).
+    Hidden files excluded; directories sorted first."""
+    try:
+        p = _guard_path(path)
+    except PermissionError as e:
+        return JSONResponse({"error": str(e)}, status_code=403)
+    if not p.is_dir():
+        return JSONResponse({"error": f"폴더가 아님: {path}"}, status_code=400)
+    try:
+        items = [
+            {"name": e.name, "is_dir": e.is_dir()}
+            for e in p.iterdir() if not e.name.startswith(".")
+        ]
+        items.sort(key=lambda x: (not x["is_dir"], x["name"].lower()))
+        return JSONResponse({"entries": items})
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+# ── Shell execution ───────────────────────────────────────────────────────────
+
+@router.post("/api/shell/exec")
+async def shell_exec(request: Request):
+    """Host shell command triggered by the ! prefix in chat.
+    Runs directly on the host, bypassing any sandbox. Uses sid path as cwd if provided.
+    body: {command: str, sid?: str, timeout?: int}
+
+    Allowlist/hard-block logic is handled centrally in pipeline.tools_code.host_exec.
+    On allowlist miss returns 202 + needs_approval; frontend re-calls with ask="off" after user confirms.
+    """
+    from pipeline.tools_code import host_exec as _host_exec
+    body = await request.json()
+    cmd = (body.get("command") or "").strip()
+    if not cmd:
+        return JSONResponse({"error": "command 필수"}, status_code=400)
+    timeout = min(int(body.get("timeout") or 30), 120)
+    ask = body.get("ask", "on-miss")
+    if ask not in ("on-miss", "off", "always"):
+        ask = "on-miss"
+
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(None, _host_exec, cmd, ask, timeout)
+
+    if result.get("__needs_approval__"):
+        return JSONResponse(
+            {"needs_approval": True, "command": result["command"], "reason": result.get("reason", "")},
+            status_code=202,
+        )
+    if result.get("error"):
+        return JSONResponse({"ok": False, "returncode": -1, "stdout": "", "stderr": result["error"]})
+    return JSONResponse({
+        "ok": result.get("returncode", -1) == 0,
+        "returncode": result.get("returncode", -1),
+        "stdout": result.get("stdout", ""),
+        "stderr": result.get("stderr", ""),
+    })
+
+
+# ── File preview ─────────────────────────────────────────────────────────────
+
+_TEXT_EXTS = {
+    ".md", ".markdown", ".txt", ".rtf", ".log", ".rst",
+    ".py", ".js", ".jsx", ".ts", ".tsx", ".rs", ".go", ".java", ".kt", ".swift",
+    ".c", ".h", ".cpp", ".hpp", ".cs", ".php", ".rb", ".sh", ".bash", ".zsh",
+    ".sql", ".lua", ".vue", ".svelte",
+    ".json", ".yaml", ".yml", ".toml", ".ini", ".conf", ".env", ".xml", ".plist",
+    ".csv", ".tsv",
+    ".html", ".css", ".scss", ".sass", ".less",
+    ".dockerfile", ".gitignore", ".cxtignore",
+}
+_OFFICE_MD_EXTS = {".xlsx", ".xls", ".xlsm", ".xlsb", ".docx", ".pdf"}
+_PREVIEW_MAX_BYTES = 1_000_000
+
+
+@router.get("/api/fs/read")
+async def fs_read(path: str):
+    """Read a file for preview in the file explorer.
+    Text — 1 MB cap, utf-8 decoded.
+    xlsx/csv → markdown table.  docx → HTML (mammoth, inline images).
+    PDF → text extraction (use /api/fs/download for iframe viewer).
+    Images → use /api/fs/read_image.
+    """
+    try:
+        p = _guard_path(path)
+    except PermissionError as e:
+        return JSONResponse({"error": str(e)}, status_code=403)
+    if not p.exists():
+        return JSONResponse({"error": f"경로 없음: {path}"}, status_code=404)
+    if not p.is_file():
+        return JSONResponse({"error": "파일이 아님"}, status_code=400)
+    ext = p.suffix.lower()
+    size = p.stat().st_size
+
+    if ext in _OFFICE_MD_EXTS:
+        try:
+            if ext == ".docx":
+                from pipeline.tools_google import _docx_to_html
+                html = await asyncio.get_event_loop().run_in_executor(
+                    None, _docx_to_html, str(p)
+                )
+                return JSONResponse({
+                    "path": str(p), "ext": ext, "size": size,
+                    "truncated": False, "kind": "html", "html": html,
+                })
+            elif ext in {".xlsx", ".xls", ".xlsm", ".xlsb"}:
+                from pipeline.tools_google import file_read
+                result = await asyncio.get_event_loop().run_in_executor(
+                    None, file_read, str(p)
+                )
+                if isinstance(result, dict) and "error" in result:
+                    return JSONResponse({"error": result["error"]}, status_code=500)
+                md = result if isinstance(result, str) else str(result)
+            elif ext == ".pdf":
+                from pipeline.tools_google import _pdf_bytes_to_text
+                pdf_bytes = p.read_bytes()
+                md = await asyncio.get_event_loop().run_in_executor(
+                    None, _pdf_bytes_to_text, pdf_bytes, p.name
+                )
+            else:
+                md = ""
+            return JSONResponse({
+                "path": str(p), "ext": ext, "size": size,
+                "truncated": False, "kind": "markdown", "text": md,
+            })
+        except Exception as e:
+            return JSONResponse({"error": f"{ext} 변환 실패: {e}"}, status_code=500)
+
+    if ext in {".csv", ".tsv"}:
+        try:
+            from pipeline.tools_google import file_read
+            result = await asyncio.get_event_loop().run_in_executor(None, file_read, str(p))
+            md = result if isinstance(result, str) else str(result)
+            return JSONResponse({
+                "path": str(p), "ext": ext, "size": size,
+                "truncated": False, "kind": "markdown", "text": md,
+            })
+        except Exception as e:
+            return JSONResponse({"error": str(e)}, status_code=500)
+
+    is_text = ext in _TEXT_EXTS or not ext
+    if not is_text:
+        return JSONResponse({
+            "error": f"미지원 형식: {ext}", "kind": "binary", "size": size,
+        }, status_code=415)
+
+    try:
+        with open(p, "rb") as f:
+            raw = f.read(_PREVIEW_MAX_BYTES + 1)
+        truncated = len(raw) > _PREVIEW_MAX_BYTES
+        raw = raw[:_PREVIEW_MAX_BYTES]
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            try:
+                text = raw.decode("utf-8", errors="replace")
+            except Exception:
+                return JSONResponse({"error": "텍스트 디코딩 실패", "kind": "binary", "size": size}, status_code=415)
+        return JSONResponse({
+            "path": str(p), "ext": ext, "size": size,
+            "truncated": truncated, "kind": "text", "text": text,
+        })
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@router.get("/api/fs/download")
+async def fs_download(path: str):
+    """Return the raw file as-is (for preview viewers such as PDF iframe). Rejects files over 50 MB."""
+    try:
+        p = _guard_path(path)
+    except PermissionError as e:
+        return JSONResponse({"error": str(e)}, status_code=403)
+    if not p.exists() or not p.is_file():
+        return JSONResponse({"error": "파일 없음"}, status_code=404)
+    if p.stat().st_size > 50 * 1024 * 1024:
+        return JSONResponse({"error": "50MB 초과"}, status_code=413)
+    ext = p.suffix.lower()
+    media_type = {
+        ".pdf": "application/pdf",
+        ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+        ".gif": "image/gif", ".svg": "image/svg+xml", ".webp": "image/webp",
+    }.get(ext, "application/octet-stream")
+    return FileResponse(str(p), media_type=media_type, filename=p.name)
+
+
+@router.post("/api/fs/reveal")
+async def fs_reveal(request: Request):
+    """Reveal a file or folder in macOS Finder (open -R)."""
+    import subprocess
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    raw = (body.get("path") or "").strip()
+    if not raw:
+        return JSONResponse({"error": "path 필수"}, status_code=400)
+    try:
+        p = _guard_path(raw)
+    except PermissionError as e:
+        return JSONResponse({"error": str(e)}, status_code=403)
+    if not p.exists():
+        return JSONResponse({"error": f"경로 없음: {raw}"}, status_code=404)
+    try:
+        subprocess.run(["open", "-R", str(p)], check=False, timeout=3)
+        return JSONResponse({"ok": True})
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+_IMG_MEDIA = {
+    ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+    ".gif": "image/gif", ".webp": "image/webp", ".bmp": "image/bmp",
+}
+_MAX_IMG_BYTES = 20 * 1024 * 1024
+
+
+@router.get("/api/fs/read_image")
+async def fs_read_image(path: str):
+    """Return a local image as base64 — used when attaching a Tauri-dropped image to a GPT vision request."""
+    import base64 as _b64
+    try:
+        p = _guard_path(path)
+    except PermissionError as e:
+        return JSONResponse({"error": str(e)}, status_code=403)
+    if not p.is_file():
+        return JSONResponse({"error": f"파일 없음: {path}"}, status_code=400)
+    media = _IMG_MEDIA.get(p.suffix.lower())
+    if not media:
+        return JSONResponse({"error": f"지원 안 하는 이미지 형식: {p.suffix}"}, status_code=400)
+    try:
+        raw = p.read_bytes()
+        if len(raw) > _MAX_IMG_BYTES:
+            return JSONResponse({"error": "이미지가 너무 큼 (20MB 초과)"}, status_code=400)
+        b64 = _b64.b64encode(raw).decode()
+        return JSONResponse({"data": b64, "media_type": media, "name": p.name})
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)

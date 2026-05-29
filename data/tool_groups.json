@@ -1,0 +1,17 @@
+{
+  "enabled": [
+    "calendar",
+    "code",
+    "drive",
+    "gmail",
+    "icloud",
+    "mcp_admin",
+    "memory",
+    "messages",
+    "misc",
+    "office",
+    "system",
+    "web",
+    "image"
+  ]
+}

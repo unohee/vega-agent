@@ -1,0 +1,1049 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VEGA</title>
+<style>
+:root {
+  --bg:      #0d1117;
+  --surface: #161b22;
+  --surface2:#1c2128;
+  --border:  #30363d;
+  --text:    #c9d1d9;
+  --muted:   #8b949e;
+  --accent:  #58a6ff;
+  --green:   #3fb950;
+  --yellow:  #d29922;
+  --red:     #f85149;
+  --purple:  #bc8cff;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  height: 100%; background: var(--bg); color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 15px; line-height: 1.6;
+}
+
+/* ── 레이아웃 ── */
+.page {
+  min-height: 100vh;
+  display: flex; flex-direction: column;
+  padding: 0 0 40px;
+}
+
+/* ── 헤더 ── */
+header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 20px 32px 16px;
+  border-bottom: 1px solid var(--border);
+  -webkit-app-region: drag;  /* 창 드래그 영역 (브라우저에선 무시) */
+}
+/* Tauri: 신호등 버튼 공간 확보 */
+body.tauri header { padding-top: 28px; padding-left: 92px; }
+/* 인터랙티브 요소는 드래그 제외 */
+header button, header button *, header a, header a *,
+header input, header select { -webkit-app-region: no-drag; }
+.header-left { display: flex; align-items: baseline; gap: 16px; }
+.logo { font-size: 22px; font-weight: 700; letter-spacing: -.5px; color: var(--text); }
+.logo span { color: var(--accent); }
+.date-line { font-size: 14px; color: var(--muted); }
+.header-right { display: flex; gap: 10px; }
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 14px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--surface); color: var(--text); font-size: 13px;
+  cursor: pointer; text-decoration: none; transition: border-color .15s, background .15s;
+}
+.btn:hover { border-color: var(--accent); background: var(--surface2); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #000; font-weight: 600; }
+.btn.primary:hover { opacity: .88; }
+
+/* ── 그리드 ── */
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 20px;
+  padding: 28px 32px 0;
+}
+.grid-wide {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 20px;
+  padding: 20px 32px 0;
+}
+@media (max-width: 900px) { .grid, .grid-wide { grid-template-columns: 1fr; } }
+
+/* ── 카드 ── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.card-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.card-title {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; font-weight: 600; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .06em;
+}
+.card-count {
+  font-size: 12px; color: var(--muted);
+  background: var(--surface2); border-radius: 10px;
+  padding: 1px 8px;
+}
+.card-body { padding: 6px 0; }
+
+/* ── 로딩 ── */
+.skeleton {
+  padding: 14px 18px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.sk-line {
+  height: 13px; border-radius: 4px;
+  background: linear-gradient(90deg, var(--surface2) 25%, var(--border) 50%, var(--surface2) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite;
+}
+@keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+
+/* ── 날짜 구분선 ── */
+.day-header {
+  padding: 8px 18px 4px;
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--muted); background: var(--surface2);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 6px;
+}
+.day-header .day-badge {
+  font-size: 10px; padding: 1px 6px; border-radius: 8px;
+  background: var(--accent); color: #000; font-weight: 700;
+}
+
+/* ── 일정 아이템 ── */
+.event-item {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 9px 18px;
+  border-bottom: 1px solid rgba(48,54,61,.5);
+  transition: background .12s;
+}
+.event-item:last-child { border-bottom: none; }
+.event-item:hover { background: var(--surface2); }
+.event-time {
+  min-width: 44px; text-align: right;
+  font-size: 12px; color: var(--accent); font-variant-numeric: tabular-nums;
+  padding-top: 2px; font-weight: 500;
+}
+.event-body { flex: 1; min-width: 0; }
+.event-title { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.event-meta { font-size: 12px; color: var(--muted); margin-top: 1px; }
+.event-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--accent); margin-top: 6px; flex-shrink: 0;
+}
+.event-dot.lesson  { background: #79c0ff; }
+.event-dot.allday  { background: var(--muted); }
+
+/* ── TODO 아이템 ── */
+.todo-item {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 9px 18px;
+  border-bottom: 1px solid rgba(48,54,61,.5);
+  cursor: pointer; transition: background .12s;
+}
+.todo-item:last-child { border-bottom: none; }
+.todo-item:hover { background: var(--surface2); }
+.todo-check {
+  width: 16px; height: 16px; border-radius: 50%;
+  border: 1.5px solid var(--border);
+  flex-shrink: 0; margin-top: 3px;
+  transition: border-color .15s;
+  display: flex; align-items: center; justify-content: center;
+}
+.todo-item:hover .todo-check { border-color: var(--green); }
+.todo-check.done { background: var(--green); border-color: var(--green); }
+.todo-check.done::after { content: '✓'; font-size: 10px; color: #000; }
+.todo-body { flex: 1; min-width: 0; }
+.todo-title { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.todo-title.done { text-decoration: line-through; color: var(--muted); }
+.todo-proj { font-size: 12px; color: var(--muted); margin-top: 1px; }
+.todo-deadline { font-size: 11px; color: var(--red); margin-top: 1px; }
+
+/* ── Linear 아이템 ── */
+.issue-item {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 9px 18px;
+  border-bottom: 1px solid rgba(48,54,61,.5);
+  transition: background .12s;
+}
+.issue-item:last-child { border-bottom: none; }
+.issue-item:hover { background: var(--surface2); }
+.issue-id { font-size: 11px; color: var(--muted); font-family: monospace; min-width: 56px; padding-top: 2px; }
+.issue-body { flex: 1; min-width: 0; }
+.issue-title { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.issue-meta { font-size: 11px; color: var(--muted); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.issue-labels { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 3px; }
+.label-chip {
+  font-size: 10px; padding: 1px 6px; border-radius: 10px;
+  background: var(--surface2); border: 1px solid var(--border); color: var(--muted);
+}
+.priority-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; margin-top: 6px; }
+.p1 { background: var(--red); }
+.p2 { background: var(--yellow); }
+.p3 { background: var(--accent); }
+.p4 { background: var(--muted); }
+.p0 { background: var(--border); }
+
+/* ── 빈 상태 ── */
+.empty { padding: 24px 18px; text-align: center; color: var(--muted); font-size: 13px; }
+
+/* ── 메모리 아이템 ── */
+.memory-item {
+  padding: 9px 18px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+}
+.memory-item:last-child { border-bottom: none; }
+.memory-date { font-size: 11px; color: var(--muted); margin-bottom: 2px; }
+
+/* ── 브리핑 / 프로젝트 ── */
+.brief-item {
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--border);
+}
+.brief-item:last-child { border-bottom: none; }
+.brief-head { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.brief-body {
+  font-size: 12.5px; line-height: 1.6; color: var(--text);
+  white-space: pre-wrap; max-height: 220px; overflow-y: auto;
+  padding-bottom: 4px;  /* 스크롤 끝이 카드 프레임에 붙지 않게 */
+}
+.proj-item {
+  padding: 9px 18px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.proj-item:last-child { border-bottom: none; }
+.proj-name { font-weight: 600; color: var(--text); }
+.proj-status {
+  font-size: 11px; color: var(--muted); margin-left: 6px;
+}
+.proj-line { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+/* ── 메일 아이템 ── */
+.mail-item {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 10px 18px;
+  border-bottom: 1px solid rgba(48,54,61,.5);
+  transition: background .12s;
+}
+.mail-item:last-child { border-bottom: none; }
+.mail-item:hover { background: var(--surface2); }
+.mail-priority {
+  font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 6px;
+  flex-shrink: 0; margin-top: 2px; text-transform: uppercase; letter-spacing: .04em;
+}
+.mail-priority.high { background: rgba(248,81,73,.15); color: var(--red); border: 1px solid rgba(248,81,73,.3); }
+.mail-priority.medium { background: rgba(210,153,34,.15); color: var(--yellow); border: 1px solid rgba(210,153,34,.3); }
+.mail-body { flex: 1; min-width: 0; }
+.mail-subject { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mail-from { font-size: 11px; color: var(--muted); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mail-reason { font-size: 11px; color: var(--accent); margin-top: 2px; }
+
+/* ── 제안 아이템 ── */
+.suggest-item {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 10px 18px;
+  border-bottom: 1px solid rgba(48,54,61,.5);
+  transition: background .12s;
+}
+.suggest-item:last-child { border-bottom: none; }
+.suggest-item:hover { background: var(--surface2); }
+.suggest-body { flex: 1; min-width: 0; }
+.suggest-title { font-size: 14px; }
+.suggest-reason { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.suggest-project { font-size: 11px; color: var(--purple); margin-top: 1px; }
+.suggest-actions { display: flex; gap: 6px; flex-shrink: 0; margin-top: 2px; }
+.suggest-btn {
+  font-size: 11px; padding: 3px 9px; border-radius: 6px; border: 1px solid var(--border);
+  background: var(--surface2); color: var(--muted); cursor: pointer; transition: all .12s;
+  white-space: nowrap;
+}
+.suggest-btn.accept { border-color: var(--green); color: var(--green); }
+.suggest-btn.accept:hover { background: rgba(63,185,80,.15); }
+.suggest-btn.defer:hover { border-color: var(--muted); color: var(--text); }
+.suggest-btn:disabled { opacity: .4; cursor: default; }
+.suggest-loading { padding: 20px 18px; text-align: center; color: var(--muted); font-size: 13px; }
+
+/* ── 커스텀 위젯 ── */
+.widget-stat { padding: 14px 18px 18px; }
+.widget-stat .w-value { font-size: 32px; font-weight: 700; color: var(--text); line-height: 1.1; }
+.widget-stat .w-label { font-size: 13px; color: var(--muted); margin-top: 4px; }
+.widget-text { padding: 12px 18px 16px; font-size: 13px; line-height: 1.6; color: var(--text); white-space: pre-wrap; max-height: 240px; overflow-y: auto; }
+.widget-list .w-item { padding: 8px 18px; border-bottom: 1px solid var(--border); font-size: 13px; }
+.widget-list .w-item:last-child { border-bottom: none; }
+.widget-list .w-item-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.widget-err { padding: 14px 18px; font-size: 12px; color: var(--muted); }
+
+/* action 위젯 — 폼 + 실행 버튼 + 결과 */
+.widget-action { padding: 12px 16px 14px; display: flex; flex-direction: column; gap: 8px; }
+.widget-action .wa-form { display: flex; flex-direction: column; gap: 6px; }
+.widget-action .wa-row { display: flex; flex-direction: column; gap: 2px; }
+.widget-action label { font-size: 11px; color: var(--muted); }
+.widget-action input,
+.widget-action textarea {
+  width: 100%; box-sizing: border-box;
+  background: rgba(0,0,0,.2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 5px;
+  padding: 6px 9px; font: inherit; font-size: 12px;
+  outline: none;
+}
+.widget-action textarea { resize: vertical; min-height: 60px; max-height: 200px; font-family: inherit; }
+.widget-action input:focus, .widget-action textarea:focus { border-color: rgba(88,166,255,.6); }
+.widget-action .wa-actions { display: flex; gap: 6px; justify-content: flex-end; align-items: center; margin-top: 2px; }
+.widget-action .wa-status { font-size: 11px; color: var(--muted); flex: 1; }
+.widget-action .wa-run {
+  padding: 5px 14px; font-size: 12px; font-weight: 600;
+  background: rgba(56,139,253,.18); color: #79c0ff;
+  border: 1px solid rgba(56,139,253,.35); border-radius: 5px;
+  cursor: pointer;
+}
+.widget-action .wa-run:hover { background: rgba(56,139,253,.28); }
+.widget-action .wa-run:disabled { opacity: .5; cursor: wait; }
+.widget-action .wa-result {
+  margin-top: 4px;
+  font-size: 12px; line-height: 1.6;
+  background: rgba(0,0,0,.22);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 8px 10px;
+  max-height: 320px; overflow-y: auto;
+  white-space: pre-wrap; word-break: break-word;
+  display: none;
+}
+.widget-action .wa-result.show { display: block; }
+.widget-action .wa-result.empty { color: var(--muted); font-style: italic; }
+.widget-action .wa-tool {
+  display: inline-block;
+  font-size: 10px; padding: 1px 6px;
+  border-radius: 8px; background: rgba(210,168,255,.15); color: #d2a8ff;
+  margin-right: 4px;
+}
+
+.card.span-2 { grid-column: span 2; }
+.card.span-3 { grid-column: span 3; }
+.grid-lower { margin-top: 0; }
+@media (max-width: 900px) { .card.span-2, .card.span-3 { grid-column: span 1; } }
+
+/* ── 새로고침 버튼 ── */
+.refresh-btn {
+  background: none; border: none; cursor: pointer;
+  color: var(--muted); font-size: 13px; padding: 2px 6px;
+  border-radius: 4px; transition: color .12s;
+}
+.refresh-btn:hover { color: var(--text); }
+.spin { animation: spin .6s linear infinite; display: inline-block; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── 시계 ── */
+.clock { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <div class="header-left">
+      <div class="logo">VE<span>GA</span></div>
+      <div class="date-line" id="date-line">—</div>
+    </div>
+    <div class="header-right">
+      <span class="clock" id="clock">—</span>
+      <button class="btn" id="refresh-btn" onclick="load()">
+        <span id="refresh-icon">↻</span> 새로고침
+      </button>
+      <a class="btn primary" href="/chat">💬 대화하기</a>
+    </div>
+  </header>
+
+  <div class="grid">
+    <!-- 이번주 일정 -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">
+          <span>📅</span> 이번주 일정
+        </div>
+        <span class="card-count" id="event-count">—</span>
+      </div>
+      <div class="card-body" id="events-body">
+        <div class="skeleton">
+          <div class="sk-line" style="width:80%"></div>
+          <div class="sk-line" style="width:65%"></div>
+          <div class="sk-line" style="width:72%"></div>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- Linear In Progress -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">
+          <span>⚡</span> 진행 중
+        </div>
+        <span class="card-count" id="issue-count">—</span>
+      </div>
+      <div class="card-body" id="issues-body">
+        <div class="skeleton">
+          <div class="sk-line" style="width:70%"></div>
+          <div class="sk-line" style="width:85%"></div>
+          <div class="sk-line" style="width:55%"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid-wide">
+    <!-- 중요 메일 -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">
+          <span>📬</span> 중요 메일
+        </div>
+        <span class="card-count" id="mail-count">—</span>
+      </div>
+      <div class="card-body" id="mails-body">
+        <div class="skeleton">
+          <div class="sk-line" style="width:85%"></div>
+          <div class="sk-line" style="width:70%"></div>
+          <div class="sk-line" style="width:60%"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- VEGA 제안 할 일 -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">
+          <span>🤖</span> VEGA 제안
+        </div>
+        <span class="card-count" id="suggest-count">—</span>
+      </div>
+      <div class="card-body" id="suggests-body">
+        <div class="suggest-loading">gemma 분석 중…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 메모리 + 요약 + 프로젝트 (그리드 정렬, 위 카드들과 동일 폭·여백) -->
+  <div class="grid grid-lower">
+    <!-- 최근 대화 메모리 (넓게) -->
+    <div class="card span-2">
+      <div class="card-header">
+        <div class="card-title"><span>🧠</span> 최근 대화 메모리</div>
+        <span class="card-count" id="memory-count">—</span>
+      </div>
+      <div class="card-body" id="memory-body">
+        <div class="skeleton">
+          <div class="sk-line" style="width:90%"></div>
+          <div class="sk-line" style="width:80%"></div>
+          <div class="sk-line" style="width:75%"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 오늘 요약 (Daily Brief) -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title"><span>📋</span> 오늘 요약</div>
+        <span class="card-count" id="briefs-count">—</span>
+      </div>
+      <div class="card-body" id="briefs-body">
+        <div class="empty">아직 생성된 브리핑이 없습니다</div>
+      </div>
+    </div>
+
+    <!-- 프로젝트 상태 -->
+    <div class="card span-3">
+      <div class="card-header">
+        <div class="card-title"><span>🗂️</span> 프로젝트 상태</div>
+        <span class="card-count" id="projects-count">—</span>
+      </div>
+      <div class="card-body" id="projects-body">
+        <div class="empty">프로젝트 상태 없음</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- VEGA 커스텀 위젯 (data/widgets.json) — 비어있으면 숨김 -->
+  <div class="grid" id="widget-grid" style="display:none"></div>
+</div>
+
+<script>
+// ── Tauri 데스크탑: 신호등 공간 + 헤더 드래그로 창 이동 ──
+(function () {
+  function detectTauri() {
+    const t = !!(window.__TAURI__ || window.__TAURI_INTERNALS__ || window.isTauri);
+    if (t) document.body.classList.add('tauri');
+    return t;
+  }
+  detectTauri();
+  setTimeout(detectTauri, 50);
+  window.addEventListener('DOMContentLoaded', () => {
+    detectTauri();
+    const hdr = document.querySelector('header');
+    if (!hdr) return;
+    hdr.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      if (e.target.closest('button, a, input, textarea, select')) return;
+      const t = window.__TAURI__;
+      const inv = t?.core?.invoke || t?.invoke;
+      if (inv) {
+        inv('plugin:window|start_dragging').catch(() => {
+          if (t?.window?.getCurrentWindow) {
+            try { t.window.getCurrentWindow().startDragging(); } catch {}
+          }
+        });
+      }
+    });
+  });
+})();
+
+// ── 시계 ──
+function tickClock() {
+  const now = new Date();
+  document.getElementById('clock').textContent =
+    now.toLocaleTimeString('ko-KR', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+}
+setInterval(tickClock, 1000);
+tickClock();
+
+// ── 우선순위 색상 ──
+const PRIORITY_CLASS = {0:'p0',1:'p1',2:'p2',3:'p3',4:'p4'};
+
+// ── 캘린더 렌더링 (이번주) ──
+function renderEvents(events) {
+  const el = document.getElementById('events-body');
+  document.getElementById('event-count').textContent = events.length + '개';
+  if (!events.length) {
+    el.innerHTML = '<div class="empty">이번주 일정 없음</div>';
+    return;
+  }
+
+  // 날짜별 그룹핑
+  const groups = {};
+  for (const e of events) {
+    const key = e.date || '';
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(e);
+  }
+
+  const html = [];
+  for (const date of Object.keys(groups).sort()) {
+    const first = groups[date][0];
+    const isToday = first.is_today;
+    const [, mm, dd] = date.split('-');
+    const label = `${mm}/${dd} (${first.day})`;
+    html.push(`<div class="day-header">
+      ${esc(label)}
+      ${isToday ? '<span class="day-badge">오늘</span>' : ''}
+    </div>`);
+    for (const e of groups[date]) {
+      const isLesson = e.title.includes('레슨') || e.title.includes('수업');
+      const isAllDay = e.start === '종일';
+      const dotClass = isAllDay ? 'allday' : isLesson ? 'lesson' : '';
+      const timeLabel = isAllDay ? '종일' : (e.end ? `${e.start}–${e.end}` : e.start);
+      const meta = [e.calendar, e.location].filter(Boolean).join(' · ');
+      html.push(`
+        <div class="event-item">
+          <div class="event-time">${esc(timeLabel)}</div>
+          <div class="event-dot ${dotClass}"></div>
+          <div class="event-body">
+            <div class="event-title">${esc(e.title)}</div>
+            ${meta ? `<div class="event-meta">${esc(meta)}</div>` : ''}
+          </div>
+        </div>`);
+    }
+  }
+  el.innerHTML = html.join('');
+}
+
+// ── Things 렌더링 ──
+function renderTodos(todos) {
+  const el = document.getElementById('todos-body');
+  const incomplete = todos.filter(t => t.status !== 'completed');
+  document.getElementById('todo-count').textContent = incomplete.length + '개';
+  if (!todos.length) {
+    el.innerHTML = '<div class="empty">오늘 할 일 없음</div>';
+    return;
+  }
+  el.innerHTML = todos.map(t => {
+    const done = t.status === 'completed';
+    return `
+      <div class="todo-item" onclick="completeTodo('${t.uuid}', this)" data-uuid="${t.uuid}">
+        <div class="todo-check ${done ? 'done' : ''}"></div>
+        <div class="todo-body">
+          <div class="todo-title ${done ? 'done' : ''}">${esc(t.title)}</div>
+          ${t.project ? `<div class="todo-proj">${esc(t.project)}</div>` : ''}
+          ${t.deadline ? `<div class="todo-deadline">⏰ ${t.deadline}</div>` : ''}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// ── Linear 렌더링 ──
+function renderIssues(issues) {
+  const el = document.getElementById('issues-body');
+  document.getElementById('issue-count').textContent = issues.length + '개';
+  if (!issues.length) {
+    el.innerHTML = '<div class="empty">진행 중인 이슈 없음</div>';
+    return;
+  }
+  el.innerHTML = issues.map(i => {
+    const labels = (i.labels || []).map(l => `<span class="label-chip">${esc(l)}</span>`).join('');
+    const meta = i.project || i.team || '';
+    return `
+      <div class="issue-item">
+        <div class="priority-dot ${PRIORITY_CLASS[i.priority] || 'p0'}"></div>
+        <div class="issue-id">${esc(i.identifier)}</div>
+        <div class="issue-body">
+          <div class="issue-title">${esc(i.title)}</div>
+          ${meta ? `<div class="issue-meta">${esc(meta)}</div>` : ''}
+          ${labels ? `<div class="issue-labels">${labels}</div>` : ''}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// ── Things 완료 처리 ──
+async function completeTodo(uuid, row) {
+  if (!uuid || row.dataset.completing) return;
+  row.dataset.completing = '1';
+  const check = row.querySelector('.todo-check');
+  const title = row.querySelector('.todo-title');
+  check.classList.add('done');
+  title.classList.add('done');
+  try {
+    await fetch('/api/todo/complete', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({uuid}),
+    });
+  } catch(e) { console.warn('todo complete failed', e); }
+}
+
+// ── 중요 메일 렌더링 ──
+function renderMails(emails) {
+  const el = document.getElementById('mails-body');
+  const cnt = document.getElementById('mail-count');
+  cnt.textContent = emails.length + '개';
+  if (!emails.length) {
+    el.innerHTML = '<div class="empty">중요 메일 없음</div>';
+    return;
+  }
+  el.innerHTML = emails.map(m => {
+    const from = m.sender.replace(/<.*?>/, '').trim();
+    return `
+      <div class="mail-item">
+        <span class="mail-priority ${m.priority}">${m.priority === 'high' ? '긴급' : '중요'}</span>
+        <div class="mail-body">
+          <div class="mail-subject">${esc(m.subject)}</div>
+          <div class="mail-from">${esc(from)}</div>
+          ${m.reason ? `<div class="mail-reason">${esc(m.reason)}</div>` : ''}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// ── VEGA 제안 렌더링 ──
+function renderSuggestions(suggestions) {
+  const el = document.getElementById('suggests-body');
+  const cnt = document.getElementById('suggest-count');
+  cnt.textContent = suggestions.length + '개';
+  if (!suggestions.length) {
+    el.innerHTML = '<div class="empty">ChatGPT director 응답 없음 — 잠시 후 새로고침</div>';
+    return;
+  }
+  el.innerHTML = suggestions.map((s, i) => `
+    <div class="suggest-item" id="suggest-${i}">
+      <div class="suggest-body">
+        <div class="suggest-title">${esc(s.title)}</div>
+        ${s.reason ? `<div class="suggest-reason">${esc(s.reason)}</div>` : ''}
+        ${s.project ? `<div class="suggest-project">${esc(s.project)}</div>` : ''}
+      </div>
+      <div class="suggest-actions">
+        <button class="suggest-btn accept" onclick="acceptSuggest(${i}, '${esc(s.title)}', '${esc(s.project || '')}', this)">✓ 수락</button>
+        <button class="suggest-btn defer" onclick="deferSuggest(${i}, '${esc(s.title)}', '${esc(s.project || '')}', this)">→ 내일</button>
+      </div>
+    </div>`).join('');
+}
+
+async function acceptSuggest(idx, title, project, btn) {
+  btn.disabled = true; btn.closest('.suggest-actions').querySelector('.defer').disabled = true;
+  try {
+    await fetch('/api/todos/suggest/accept', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({title, project}),
+    });
+    const row = document.getElementById(`suggest-${idx}`);
+    row.style.opacity = '.4';
+    btn.textContent = '✓ 추가됨';
+  } catch(e) { btn.disabled = false; }
+}
+
+async function deferSuggest(idx, title, project, btn) {
+  btn.disabled = true; btn.closest('.suggest-actions').querySelector('.accept').disabled = true;
+  try {
+    await fetch('/api/todos/suggest/defer', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({title, project}),
+    });
+    const row = document.getElementById(`suggest-${idx}`);
+    row.style.opacity = '.4';
+    btn.textContent = '→ 내일로';
+  } catch(e) { btn.disabled = false; }
+}
+
+// ── 대시보드 로드 ──
+async function load() {
+  const icon = document.getElementById('refresh-icon');
+  icon.className = 'spin';
+  try {
+    const r = await fetch('/api/dashboard');
+    const d = await r.json();
+    document.getElementById('date-line').textContent = d.date;
+    renderEvents(d.events || []);
+    renderIssues(d.issues || []);
+  } catch(e) {
+    console.error(e);
+  } finally {
+    icon.className = '';
+  }
+}
+
+// ── 메모리 렌더링 ──
+function renderMemories(memories) {
+  const el = document.getElementById('memory-body');
+  document.getElementById('memory-count').textContent = memories.length || '0';
+  if (!memories.length) {
+    el.innerHTML = '<div class="empty">아직 기록된 대화 메모리가 없습니다</div>';
+    return;
+  }
+  el.innerHTML = memories.map(m => {
+    const dt = new Date(m.updated_at || m.ingested_at);
+    const dateStr = `${dt.getMonth()+1}월 ${dt.getDate()}일`;
+    // narrative에 날짜가 없으면 앞에 붙여줌
+    const narrative = m.narrative || m.title || '';
+    const text = narrative.startsWith(dateStr) ? narrative : `${dateStr} ${narrative}`;
+    return `<div class="memory-item">${esc(text)}</div>`;
+  }).join('');
+}
+
+// ── 브리핑 렌더링 ──
+function renderBriefs(briefs) {
+  const el = document.getElementById('briefs-body');
+  document.getElementById('briefs-count').textContent = briefs.length || '0';
+  if (!briefs.length) {
+    el.innerHTML = '<div class="empty">아직 생성된 브리핑이 없습니다</div>';
+    return;
+  }
+  el.innerHTML = briefs.map(b => {
+    const kindLabel = b.kind === 'morning' ? '🌅 아침 브리핑' : '🌆 저녁 리뷰';
+    const lms = b.lms_used ? '' : ' · gemma 미사용';
+    const sent = b.sent ? '' : ' · 미발송';
+    return `<div class="brief-item">
+      <div class="brief-head">${kindLabel} — ${esc(b.date)}${lms}${sent}</div>
+      <div class="brief-body">${esc(b.body_md || '')}</div>
+    </div>`;
+  }).join('');
+}
+
+// ── 프로젝트 상태 렌더링 ──
+function renderProjects(projects) {
+  const el = document.getElementById('projects-body');
+  const meaningful = projects.filter(p =>
+    p.positioning || (p.metrics && Object.keys(p.metrics).length) ||
+    (p.next_actions && p.next_actions.length));
+  document.getElementById('projects-count').textContent = projects.length || '0';
+  if (!meaningful.length) {
+    el.innerHTML = '<div class="empty">프로젝트 상태 미입력 — 채팅에서 VEGA에게 갱신 요청</div>';
+    return;
+  }
+  el.innerHTML = meaningful.map(p => {
+    let lines = '';
+    if (p.positioning) lines += `<div class="proj-line">${esc(p.positioning)}</div>`;
+    if (p.metrics && Object.keys(p.metrics).length) {
+      const m = Object.entries(p.metrics).slice(0, 2).map(([k, v]) => {
+        const val = (v && typeof v === 'object') ? v.value : v;
+        const asOf = (v && typeof v === 'object' && v.as_of) ? ` (${v.as_of})` : '';
+        return `${k}=${val}${asOf}`;
+      }).join(', ');
+      lines += `<div class="proj-line">📊 ${esc(m)}</div>`;
+    }
+    if (p.next_actions && p.next_actions.length) {
+      lines += `<div class="proj-line">→ ${esc(p.next_actions[0])}</div>`;
+    }
+    return `<div class="proj-item">
+      <span class="proj-name">${esc(p.name)}</span><span class="proj-status">${esc(p.status || '')}</span>
+      ${lines}
+    </div>`;
+  }).join('');
+}
+
+// 메일·제안·메모리는 별도 로드 (느린 API — 블로킹 없이)
+async function loadAsync() {
+  // 최근 대화 메모리
+  try {
+    const r = await fetch('/api/memory/recent');
+    const d = await r.json();
+    renderMemories(d.memories || []);
+  } catch(e) {
+    document.getElementById('memory-body').innerHTML = '<div class="empty">메모리 로드 실패</div>';
+  }
+  // 중요 메일
+  try {
+    const r = await fetch('/api/emails/priority');
+    const d = await r.json();
+    renderMails(d.emails || []);
+  } catch(e) {
+    document.getElementById('mails-body').innerHTML = '<div class="empty">메일 로드 실패</div>';
+  }
+  // VEGA 제안 (LMS 기동 시에만 유의미)
+  try {
+    const r = await fetch('/api/todos/suggest');
+    const d = await r.json();
+    renderSuggestions(d.suggestions || []);
+  } catch(e) {
+    document.getElementById('suggests-body').innerHTML = '<div class="empty">제안 로드 실패</div>';
+  }
+  // 오늘 요약 (Daily Brief)
+  try {
+    const r = await fetch('/api/briefs/recent');
+    const d = await r.json();
+    renderBriefs(d.briefs || []);
+  } catch(e) {
+    document.getElementById('briefs-body').innerHTML = '<div class="empty">브리핑 로드 실패</div>';
+  }
+  // 프로젝트 상태
+  try {
+    const r = await fetch('/api/projects/state');
+    const d = await r.json();
+    renderProjects(d.projects || []);
+  } catch(e) {
+    document.getElementById('projects-body').innerHTML = '<div class="empty">프로젝트 상태 로드 실패</div>';
+  }
+  // 커스텀 위젯
+  loadWidgets();
+}
+
+// ── 커스텀 위젯 렌더링 엔진 ──
+async function loadWidgets() {
+  const grid = document.getElementById('widget-grid');
+  let widgets = [];
+  try {
+    const r = await fetch('/api/widgets');
+    widgets = (await r.json()).widgets || [];
+  } catch { return; }
+  if (!widgets.length) { grid.style.display = 'none'; return; }
+  grid.style.display = '';
+  grid.innerHTML = '';
+  for (const w of widgets) {
+    const card = document.createElement('div');
+    card.className = 'card' + (w.span === 2 ? ' span-2' : w.span === 3 ? ' span-3' : '');
+    card.innerHTML = `<div class="card-header"><div class="card-title">`
+      + `<span>${esc(w.icon || '🧩')}</span> ${esc(w.title || '위젯')}</div></div>`
+      + `<div class="card-body"><div class="widget-err">불러오는 중…</div></div>`;
+    grid.appendChild(card);
+    renderWidget(card.querySelector('.card-body'), w);
+  }
+}
+
+async function renderWidget(body, w) {
+  let data = {};
+  if (w.source) {
+    try {
+      const r = await fetch(`/api/widgets/data/${encodeURIComponent(w.source)}`);
+      data = await r.json();
+      if (data.error) { body.innerHTML = `<div class="widget-err">${esc(data.error)}</div>`; return; }
+    } catch (e) {
+      body.innerHTML = `<div class="widget-err">데이터 로드 실패</div>`; return;
+    }
+  }
+  if (w.type === 'stat') {
+    body.innerHTML = `<div class="widget-stat"><div class="w-value">${esc(data.value ?? w.value ?? '—')}</div>`
+      + `<div class="w-label">${esc(data.label ?? w.label ?? '')}</div></div>`;
+  } else if (w.type === 'list') {
+    const items = data.items || w.items || [];
+    body.innerHTML = items.length
+      ? '<div class="widget-list">' + items.map(it =>
+          `<div class="w-item">${esc(it.title || '')}`
+          + (it.sub ? `<div class="w-item-sub">${esc(it.sub)}</div>` : '') + `</div>`).join('') + '</div>'
+      : '<div class="widget-err">항목 없음</div>';
+  } else if (w.type === 'text') {
+    body.innerHTML = `<div class="widget-text">${esc(data.text ?? w.text ?? '')}</div>`;
+  } else if (w.type === 'action') {
+    renderActionWidget(body, w);
+  } else {
+    body.innerHTML = `<div class="widget-err">알 수 없는 위젯 타입: ${esc(w.type)}</div>`;
+  }
+}
+
+function renderActionWidget(body, w) {
+  const inputs = Array.isArray(w.inputs) ? w.inputs : [];
+  const rowsHtml = inputs.map(inp => {
+    const id = `wa_${w.id}_${inp.name}`;
+    const tag = inp.type === 'textarea'
+      ? `<textarea id="${id}" name="${esc(inp.name)}" placeholder="${esc(inp.placeholder || '')}"${inp.required === false ? '' : ' required'}></textarea>`
+      : `<input id="${id}" name="${esc(inp.name)}" type="${esc(inp.type === 'number' ? 'number' : (inp.type === 'url' ? 'url' : 'text'))}" placeholder="${esc(inp.placeholder || '')}"${inp.required === false ? '' : ' required'}>`;
+    return `<div class="wa-row">
+      <label for="${id}">${esc(inp.label || inp.name)}</label>
+      ${tag}
+    </div>`;
+  }).join('');
+  body.innerHTML = `
+    <div class="widget-action">
+      <div class="wa-form">${rowsHtml}</div>
+      <div class="wa-actions">
+        <span class="wa-status"></span>
+        <button class="wa-run" type="button">▶ 실행</button>
+      </div>
+      <div class="wa-result"></div>
+    </div>`;
+  const btn = body.querySelector('.wa-run');
+  btn.addEventListener('click', () => runActionWidget(body, w));
+  // Enter 키도 단일 input일 때 트리거
+  if (inputs.length === 1 && inputs[0].type !== 'textarea') {
+    const single = body.querySelector('input');
+    if (single) single.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); runActionWidget(body, w); }
+    });
+  }
+}
+
+async function runActionWidget(body, w) {
+  const btn = body.querySelector('.wa-run');
+  const status = body.querySelector('.wa-status');
+  const result = body.querySelector('.wa-result');
+
+  // 입력 수집 + required 검증
+  const values = {};
+  for (const inp of (w.inputs || [])) {
+    const el = body.querySelector(`[name="${inp.name}"]`);
+    if (!el) continue;
+    const v = (el.value || '').trim();
+    if ((inp.required !== false) && !v) {
+      status.textContent = `✗ ${inp.label || inp.name} 필요`;
+      status.style.color = 'var(--error, #f85149)';
+      el.focus();
+      return;
+    }
+    values[inp.name] = v;
+  }
+
+  btn.disabled = true;
+  btn.textContent = '⏳ 실행 중';
+  status.textContent = '';
+  status.style.color = '';
+  result.classList.remove('empty');
+  result.classList.add('show');
+  result.textContent = '';
+
+  let received = '';
+  let toolLog = [];
+
+  try {
+    const resp = await fetch('/api/widgets/run', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({widget_id: w.id, inputs: values}),
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({error: 'HTTP ' + resp.status}));
+      result.textContent = '✗ ' + (err.error || ('HTTP ' + resp.status));
+      result.classList.add('empty');
+      return;
+    }
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let rawBuf = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      rawBuf += decoder.decode(value, { stream: true });
+      let idx;
+      while ((idx = rawBuf.indexOf('\n\n')) >= 0) {
+        const chunk = rawBuf.slice(0, idx);
+        rawBuf = rawBuf.slice(idx + 2);
+        if (!chunk.trim()) continue;
+        let event = 'message', dataStr = '';
+        for (const line of chunk.split('\n')) {
+          if (line.startsWith('event: ')) event = line.slice(7).trim();
+          else if (line.startsWith('data: ')) dataStr = line.slice(6);
+        }
+        let payload;
+        try { payload = JSON.parse(dataStr); } catch { continue; }
+        if (event === 'token') {
+          received += payload.token || '';
+          result.textContent = received;
+          result.scrollTop = result.scrollHeight;
+        } else if (event === 'tool_start') {
+          toolLog.push(payload.name || '');
+          status.textContent = `🔧 ${toolLog.length}개 도구 호출 중…`;
+        } else if (event === 'thinking') {
+          status.textContent = '🤔 생각 중…';
+        } else if (event === 'done') {
+          status.textContent = '✓ 완료';
+          status.style.color = '#7ee787';
+          if (!received) {
+            result.textContent = '(응답 비어있음)';
+            result.classList.add('empty');
+          }
+        } else if (event === 'error') {
+          status.textContent = '✗ 실패';
+          status.style.color = 'var(--error, #f85149)';
+          result.textContent = '✗ ' + (payload.message || '실행 실패');
+          result.classList.add('empty');
+        }
+      }
+    }
+  } catch (e) {
+    status.textContent = '✗ 네트워크 오류';
+    status.style.color = 'var(--error, #f85149)';
+    result.textContent = '✗ ' + (e.message || e);
+    result.classList.add('empty');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '▶ 실행';
+  }
+}
+
+function esc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/'/g,'&#39;');
+}
+
+function refreshAll() { load(); loadAsync(); }
+refreshAll();
+
+// 주기 갱신 — 일정/할일/이슈는 2분, 무거운 메일/제안/브리핑은 5분
+setInterval(load, 2 * 60 * 1000);
+setInterval(loadAsync, 5 * 60 * 1000);
+
+// 창을 다시 보거나(트레이에서 열기·탭 전환·포커스) 할 때 즉시 최신화.
+// 단 너무 잦은 트리거 방지를 위해 마지막 갱신 후 20초 지났을 때만.
+let _lastRefresh = Date.now();
+function refreshIfStale() {
+  if (document.visibilityState !== 'visible') return;
+  if (Date.now() - _lastRefresh < 20 * 1000) return;
+  _lastRefresh = Date.now();
+  refreshAll();
+}
+document.addEventListener('visibilitychange', refreshIfStale);
+window.addEventListener('focus', refreshIfStale);
+</script>
+</body>
+</html>
