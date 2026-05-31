@@ -37,8 +37,6 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 *.egg-info/
-dist/
-build/
 .venv/
 venv/
 
@@ -52,10 +50,19 @@ logs/
 
 # Desktop app build artifacts
 desktop/target/
-desktop/dist/
 desktop/gen/
 build/
 build_output/
+# desktop/dist 는 Tauri frontendDist 소스(index/settings html) — 커밋 대상이라 ignore 안 함
+
+# PyInstaller 백엔드 빌드 산출물 (소스 spec/launcher 만 커밋)
+bin/.venv/
+bin/dist/
+bin/build_pyinstaller/
+bin/vega-backend
+bin/vega-backend-*
+!bin/vega-backend.spec
+!bin/vega_backend_launcher.py
 
 # Testing artifacts
 testing/
@@ -67,3 +74,7 @@ pytest_output.log
 .vscode/
 .idea/
 *.swp
+
+# 로컬 전용 Claude 설정
+.claude/settings.local.json
+.claude/scheduled_tasks.lock

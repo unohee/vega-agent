@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <title>VEGA</title>
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body {
+        background: #0d1117; color: #8b949e;
+        font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+        display: flex; flex-direction: column;
+        align-items: center; justify-content: center;
+        height: 100vh;
+      }
+      .logo { font-size: 28px; font-weight: 700; color: #e6edf3; letter-spacing: -1px; margin-bottom: 16px; }
+      .dot-row { display: flex; gap: 6px; }
+      .dot {
+        width: 7px; height: 7px; border-radius: 50%;
+        background: #58a6ff; opacity: 0.3;
+        animation: pulse 1.2s ease-in-out infinite;
+      }
+      .dot:nth-child(2) { animation-delay: 0.2s; }
+      .dot:nth-child(3) { animation-delay: 0.4s; }
+      @keyframes pulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
+      .hint { margin-top: 20px; font-size: 12px; color: #484f58; }
+    </style>
+  </head>
+  <body>
+    <div class="logo">VEGA</div>
+    <div class="dot-row">
+      <div class="dot"></div>
+      <div class="dot"></div>
+      <div class="dot"></div>
+    </div>
+    <div class="hint">서버 연결 중…</div>
+  </body>
+</html>

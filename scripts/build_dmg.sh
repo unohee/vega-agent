@@ -52,6 +52,13 @@ echo "  ✓ vega-backend ($(du -sh bin/vega-backend | cut -f1))"
 # ── 1. Tauri 앱 빌드 ──────────────────────────────────────────────────────────
 echo "[1/5] cargo tauri build..."
 cd "$REPO_ROOT/desktop"
+# 코드서명: Developer ID 인증서가 있으면 서명, 없으면 무서명(로컬/배포 테스트용)
+if security find-identity -v -p codesigning 2>/dev/null | grep -q "$SIGN_APP"; then
+    export APPLE_SIGNING_IDENTITY="$SIGN_APP"
+    echo "  서명 인증서 발견 → 서명 빌드"
+else
+    echo "  (Developer ID 인증서 없음 → 무서명 빌드)"
+fi
 cargo tauri build --target aarch64-apple-darwin 2>&1 | grep -E "Compiling|Finished|error|Bundling"
 TAURI_APP="$REPO_ROOT/desktop/target/aarch64-apple-darwin/release/bundle/macos/${APP_NAME}.app"
 if [ ! -d "$TAURI_APP" ]; then

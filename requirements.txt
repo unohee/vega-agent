@@ -12,6 +12,12 @@ python-multipart==0.0.22
 anthropic==0.89.0
 openai==2.30.0
 
+# MCP 클라이언트 (외부 도구 서버 통합 — pipeline/mcp_client.py)
+fastmcp==3.2.0
+mcp==1.26.0
+# typer: mcp[cli] 선택 의존 — PyInstaller 가 mcp 서브모듈 수집 시 필요
+typer>=0.12
+
 # HTTP 클라이언트
 httpx==0.28.1
 httpx-sse==0.4.3

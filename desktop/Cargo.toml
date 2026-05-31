@@ -1,0 +1,39 @@
+[package]
+name = "vega-desktop"
+version = "0.1.2"
+description = "VEGA 데스크탑 셸 — 클라이언트 또는 데몬 포함 올인원 빌드"
+authors = ["unohee"]
+edition = "2021"
+rust-version = "1.77"
+default-run = "vega-desktop"
+
+# --features client  → 백엔드 없이 외부 서버 URL에 붙는 얇은 클라이언트
+# --features daemon  → sidecar 백엔드 포함 올인원 (기본)
+[features]
+default = ["daemon"]
+client = []
+daemon = []
+
+[lib]
+name = "vega_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+dirs-next = "2"
+libc = "0.2"
+
+[target."cfg(not(any(target_os = \"android\", target_os = \"ios\")))".dependencies]
+tauri-plugin-global-shortcut = "2"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true

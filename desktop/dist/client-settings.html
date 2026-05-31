@@ -1,0 +1,260 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>VEGA Settings</title>
+<style>
+  :root {
+    --bg: #0d1117; --surface: #161b22; --surface2: #21262d;
+    --border: #30363d; --text: #e6edf3; --muted: #8b949e;
+    --accent: #58a6ff; --ok: #3fb950; --error: #f85149;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    font-size: 13px; -webkit-user-select: none; user-select: none;
+  }
+  .titlebar {
+    height: 38px; -webkit-app-region: drag;
+    display: flex; align-items: center; justify-content: center;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px; font-weight: 600; color: var(--muted);
+  }
+  .wrap { padding: 22px 26px; }
+  .section { margin-bottom: 18px; }
+  .section h2 {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .6px;
+    color: var(--muted); margin: 0 0 10px; font-weight: 600;
+  }
+  .field-label { margin-bottom: 5px; font-size: 13px; }
+  .field-hint { color: var(--muted); font-size: 11px; margin-top: 3px; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .row.spaced { justify-content: space-between; margin-top: 8px; }
+  input[type=text] {
+    flex: 1; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 6px; color: var(--text); padding: 8px 11px;
+    font-size: 13px; font-family: monospace;
+    -webkit-user-select: text; user-select: text;
+  }
+  input[type=text]:focus { outline: none; border-color: var(--accent); }
+  select {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 6px; color: var(--text); padding: 7px 10px;
+    font-size: 13px; cursor: pointer; -webkit-appearance: none;
+  }
+  select:focus { outline: none; border-color: var(--accent); }
+  .conn-status { font-size: 12px; color: var(--muted); flex: 1; margin-top: 8px; display: block; }
+  .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+  .info-box { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 9px 11px; }
+  .info-box .lbl { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 3px; }
+  .info-box .val { font-size: 12px; font-family: monospace; }
+  .kbd { background: var(--surface2); border: 1px solid var(--border); border-radius: 5px; padding: 3px 8px; font-family: monospace; font-size: 12px; }
+  .sep { height: 1px; background: var(--border); margin: 18px 0; }
+  .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; padding-top: 14px; border-top: 1px solid var(--border); }
+  button.btn { background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 7px 18px; font-size: 13px; cursor: pointer; }
+  button.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.btn:hover { filter: brightness(1.12); }
+  button.btn:active { filter: brightness(.92); }
+  button.btn:disabled { opacity: .45; cursor: default; filter: none; }
+  .msg { font-size: 11px; margin-right: auto; align-self: center; }
+  .msg.ok { color: var(--ok); }
+  .msg.err { color: var(--error); }
+</style>
+</head>
+<body>
+  <div class="titlebar" id="t-title">VEGA Settings</div>
+  <div class="wrap">
+
+    <div class="section">
+      <h2 id="t-sec-server">Server</h2>
+      <div class="field-label" id="t-url-label">Server URL</div>
+      <div class="row">
+        <input type="text" id="server-url" placeholder="https://vega.example.com" />
+        <button class="btn" id="test-btn" data-i="test">Test</button>
+      </div>
+      <div class="field-hint" id="t-url-hint">Saved URL is loaded on next open.</div>
+      <span class="conn-status" id="conn-status"></span>
+      <div class="info-grid" id="server-info" style="display:none">
+        <div class="info-box"><div class="lbl" id="t-ver">Version</div><div class="val" id="info-version">—</div></div>
+        <div class="info-box"><div class="lbl" id="t-auth">Auth</div><div class="val" id="info-auth">—</div></div>
+      </div>
+    </div>
+
+    <div class="sep"></div>
+
+    <div class="section">
+      <h2 id="t-sec-app">App</h2>
+      <div class="row spaced">
+        <span id="t-shortcut">Global shortcut — toggle window</span>
+        <span class="kbd">⌘ ⇧ V</span>
+      </div>
+      <div class="row spaced" style="margin-top:8px">
+        <span style="color:var(--muted);font-size:12px" id="t-close-hint">Red close button hides instead of quitting</span>
+      </div>
+    </div>
+
+    <div class="sep"></div>
+
+    <div class="section">
+      <h2 id="t-sec-lang">Language</h2>
+      <div class="row">
+        <select id="lang-select">
+          <option value="en">English</option>
+          <option value="ko">한국어</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="actions">
+      <span class="msg ok" id="save-msg"></span>
+      <span class="msg err" id="err-msg"></span>
+      <button class="btn" id="cancel-btn" data-i="close">Close</button>
+      <button class="btn primary" id="save-btn" data-i="save">Save &amp; Go</button>
+    </div>
+  </div>
+
+<script>
+const I18N = {
+  en: {
+    title:      'VEGA Settings',
+    secServer:  'Server',
+    urlLabel:   'Server URL',
+    urlHint:    'Saved URL is loaded immediately.',
+    test:       'Test',
+    ver:        'Version',
+    auth:       'Auth',
+    secApp:     'App',
+    shortcut:   'Global shortcut — toggle window',
+    closeHint:  'Red close button hides instead of quitting',
+    secLang:    'Language',
+    close:      'Close',
+    save:       'Save & Go',
+    checking:   'Checking…',
+    noUrl:      'Enter a URL first.',
+    connOk:     (auth, min) => auth === 'ok' ? `Connected · Auth OK (${min ?? '?'} min)` : `Connected · OAuth: ${auth}`,
+    connErr:    (msg) => `Connection failed: ${msg}`,
+    saved:      '✓ Saved — navigating…',
+    saveErr:    (msg) => `Save failed: ${msg}`,
+  },
+  ko: {
+    title:      'VEGA 설정',
+    secServer:  '서버 연결',
+    urlLabel:   '서버 URL',
+    urlHint:    '저장하면 바로 해당 서버로 이동합니다.',
+    test:       '연결 테스트',
+    ver:        '버전',
+    auth:       '인증',
+    secApp:     '앱 동작',
+    shortcut:   '전역 단축키 — 창 토글',
+    closeHint:  '빨간 버튼(닫기) → 창 숨김, 종료 아님',
+    secLang:    '언어',
+    close:      '닫기',
+    save:       '저장 & 이동',
+    checking:   '확인 중…',
+    noUrl:      'URL을 입력하세요.',
+    connOk:     (auth, min) => auth === 'ok' ? `연결됨 · 인증 OK (${min ?? '?'}분)` : `연결됨 · OAuth: ${auth}`,
+    connErr:    (msg) => `연결 실패: ${msg}`,
+    saved:      '✓ 저장됨 — 서버로 이동합니다…',
+    saveErr:    (msg) => `저장 실패: ${msg}`,
+  },
+};
+
+const { invoke } = window.__TAURI__?.core ?? window.__TAURI__ ?? {};
+async function tauriCall(cmd, args) {
+  if (invoke) return invoke(cmd, args);
+  if (cmd === 'get_lang') return 'en';
+  if (cmd === 'get_server_url') return 'http://localhost:8100';
+  console.log('[mock]', cmd, args);
+}
+
+let T = I18N.en;
+
+function applyLang(lang) {
+  T = I18N[lang] || I18N.en;
+  document.getElementById('t-title').textContent      = T.title;
+  document.getElementById('t-sec-server').textContent = T.secServer;
+  document.getElementById('t-url-label').textContent  = T.urlLabel;
+  document.getElementById('t-url-hint').textContent   = T.urlHint;
+  document.getElementById('test-btn').textContent     = T.test;
+  document.getElementById('t-ver').textContent        = T.ver;
+  document.getElementById('t-auth').textContent       = T.auth;
+  document.getElementById('t-sec-app').textContent    = T.secApp;
+  document.getElementById('t-shortcut').textContent   = T.shortcut;
+  document.getElementById('t-close-hint').textContent = T.closeHint;
+  document.getElementById('t-sec-lang').textContent   = T.secLang;
+  document.getElementById('cancel-btn').textContent   = T.close;
+  document.getElementById('save-btn').innerHTML       = T.save;
+  document.getElementById('lang-select').value        = lang;
+  document.documentElement.lang = lang;
+}
+
+// 초기 로드
+(async () => {
+  const [lang, url] = await Promise.all([
+    tauriCall('get_lang').catch(() => 'en'),
+    tauriCall('get_server_url').catch(() => 'http://localhost:8100'),
+  ]);
+  applyLang(lang);
+  document.getElementById('server-url').value = url;
+})();
+
+// 언어 즉시 전환 (트레이도 Rust 측에서 재빌드됨)
+document.getElementById('lang-select').addEventListener('change', async (e) => {
+  const lang = e.target.value;
+  applyLang(lang);
+  await tauriCall('set_lang', { lang }).catch(() => {});
+});
+
+// 연결 테스트
+document.getElementById('test-btn').addEventListener('click', async () => {
+  const base = document.getElementById('server-url').value.trim().replace(/\/$/, '');
+  const status = document.getElementById('conn-status');
+  const info = document.getElementById('server-info');
+  if (!base) { status.textContent = T.noUrl; status.style.color = 'var(--error)'; return; }
+  status.textContent = T.checking; status.style.color = 'var(--muted)';
+  document.getElementById('test-btn').disabled = true;
+  try {
+    const r = await fetch(base + '/api/health', { signal: AbortSignal.timeout(6000) });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const d = await r.json();
+    status.textContent = T.connOk(d.auth, d.auth_remaining_min);
+    status.style.color = 'var(--ok)';
+    document.getElementById('info-version').textContent = d.version ?? '—';
+    document.getElementById('info-auth').textContent = d.auth ?? '—';
+    info.style.display = 'grid';
+  } catch (e) {
+    status.textContent = T.connErr(e.message || '');
+    status.style.color = 'var(--error)';
+    info.style.display = 'none';
+  } finally {
+    document.getElementById('test-btn').disabled = false;
+  }
+});
+
+// 저장
+document.getElementById('save-btn').addEventListener('click', async () => {
+  const url = document.getElementById('server-url').value.trim().replace(/\/$/, '');
+  const saveMsg = document.getElementById('save-msg');
+  const errMsg  = document.getElementById('err-msg');
+  if (!url) { errMsg.textContent = T.noUrl; return; }
+  document.getElementById('save-btn').disabled = true;
+  saveMsg.textContent = ''; errMsg.textContent = '';
+  try {
+    await tauriCall('set_server_url', { url });
+    saveMsg.textContent = T.saved;
+    setTimeout(closeWin, 1200);
+  } catch (e) {
+    errMsg.textContent = T.saveErr(e?.message ?? e);
+  } finally {
+    document.getElementById('save-btn').disabled = false;
+  }
+});
+
+function closeWin() {
+  try { window.__TAURI__?.window?.getCurrentWindow?.().close(); } catch { window.close(); }
+}
+document.getElementById('cancel-btn').addEventListener('click', closeWin);
+</script>
+</body>
+</html>

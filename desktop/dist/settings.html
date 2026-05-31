@@ -1,0 +1,281 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>VEGA Settings</title>
+<style>
+  :root {
+    --bg: #0d1117; --surface: #161b22; --surface2: #21262d;
+    --border: #30363d; --text: #e6edf3; --muted: #8b949e;
+    --accent: #58a6ff; --ok: #3fb950; --error: #f85149;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    font-size: 13px; -webkit-user-select: none; user-select: none;
+  }
+  .titlebar {
+    height: 38px; -webkit-app-region: drag;
+    display: flex; align-items: center; justify-content: center;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px; font-weight: 600; color: var(--muted);
+  }
+  .wrap { padding: 20px 24px; }
+  .section { margin-bottom: 22px; }
+  .section h2 {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .6px;
+    color: var(--muted); margin: 0 0 10px; font-weight: 600;
+  }
+  .row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 0; border-bottom: 1px solid var(--border);
+  }
+  .row:last-child { border-bottom: none; }
+  .row label { color: var(--text); }
+  .row .hint { color: var(--muted); font-size: 11px; margin-top: 2px; }
+  .field { display: flex; flex-direction: column; flex: 1; }
+  input[type=text] {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 6px; color: var(--text); padding: 7px 10px;
+    font-size: 13px; font-family: monospace; width: 220px;
+    -webkit-user-select: text; user-select: text;
+  }
+  input[type=text]:focus { outline: none; border-color: var(--accent); }
+  select {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 6px; color: var(--text); padding: 7px 10px;
+    font-size: 13px; cursor: pointer; -webkit-appearance: none;
+  }
+  select:focus { outline: none; border-color: var(--accent); }
+  .kbd {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 5px; padding: 3px 8px; font-family: monospace;
+    font-size: 12px; color: var(--text);
+  }
+  .toggle {
+    position: relative; width: 38px; height: 22px;
+    background: var(--surface2); border-radius: 11px; cursor: pointer;
+    transition: background .15s; border: 1px solid var(--border);
+  }
+  .toggle.on { background: var(--accent); border-color: var(--accent); }
+  .toggle::after {
+    content: ''; position: absolute; top: 2px; left: 2px;
+    width: 16px; height: 16px; background: #fff; border-radius: 50%;
+    transition: transform .15s;
+  }
+  .toggle.on::after { transform: translateX(16px); }
+  .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
+  button.btn {
+    background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text); border-radius: 6px; padding: 7px 16px;
+    font-size: 13px; cursor: pointer;
+  }
+  button.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.btn:hover { filter: brightness(1.1); }
+  .status { font-size: 11px; color: var(--ok); margin-right: auto; align-self: center; }
+</style>
+</head>
+<body>
+  <div class="titlebar" id="t-title">Settings</div>
+  <div class="wrap">
+
+    <div class="section">
+      <h2 id="t-sec-conn">Connection</h2>
+      <div class="row">
+        <div class="field">
+          <label id="t-url-lbl">Server URL</label>
+          <div class="hint" id="t-url-hint">Local VEGA FastAPI server</div>
+        </div>
+        <input type="text" id="server-url" placeholder="http://localhost:8100" />
+      </div>
+      <div class="row">
+        <div class="field">
+          <label id="t-conn-lbl">Status</label>
+          <div class="hint" id="conn-hint">—</div>
+        </div>
+        <button class="btn" id="test-conn" data-i="test">Test</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2 id="t-sec-app">App</h2>
+      <div class="row">
+        <div class="field">
+          <label id="t-shortcut-lbl">Global shortcut</label>
+          <div class="hint" id="t-shortcut-hint">Toggle VEGA window from anywhere</div>
+        </div>
+        <span class="kbd">⌘ ⇧ V</span>
+      </div>
+      <div class="row">
+        <div class="field">
+          <label id="t-hide-lbl">Close = Hide</label>
+          <div class="hint" id="t-hide-hint">Red button hides to tray instead of quitting</div>
+        </div>
+        <div class="toggle on" id="close-to-tray"></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2 id="t-sec-lang">Language</h2>
+      <div class="row">
+        <div class="field">
+          <label id="t-lang-lbl">Display language</label>
+          <div class="hint" id="t-lang-hint">Applies to tray menu immediately</div>
+        </div>
+        <select id="lang-select">
+          <option value="en">English</option>
+          <option value="ko">한국어</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="actions">
+      <span class="status" id="save-status"></span>
+      <button class="btn" id="cancel" data-i="close">Close</button>
+      <button class="btn primary" id="save" data-i="save">Save</button>
+    </div>
+  </div>
+
+<script>
+const I18N = {
+  en: {
+    title:        'Settings',
+    secConn:      'Connection',
+    urlLbl:       'Server URL',
+    urlHint:      'Local VEGA FastAPI server',
+    connLbl:      'Status',
+    test:         'Test',
+    secApp:       'App',
+    shortcutLbl:  'Global shortcut',
+    shortcutHint: 'Toggle VEGA window from anywhere',
+    hideLbl:      'Close = Hide',
+    hideHint:     'Red button hides to tray instead of quitting',
+    secLang:      'Language',
+    langLbl:      'Display language',
+    langHint:     'Applies to tray menu immediately',
+    close:        'Close',
+    save:         'Save',
+    checking:     'Checking…',
+    notChecked:   '—',
+    connOk:       (auth, min) => auth === 'ok' ? `Connected · Auth OK (${min ?? '?'} min)` : `Connected · OAuth: ${auth}`,
+    connErr:      (msg) => `Failed: ${msg}`,
+    saved:        '✓ Saved',
+  },
+  ko: {
+    title:        '환경설정',
+    secConn:      '서버 연결',
+    urlLbl:       '서버 주소',
+    urlHint:      'VEGA FastAPI 서버 URL',
+    connLbl:      '연결 상태',
+    test:         '연결 테스트',
+    secApp:       '동작',
+    shortcutLbl:  '전역 단축키',
+    shortcutHint: '어디서나 VEGA 창 토글',
+    hideLbl:      '창 닫기 = 숨김',
+    hideHint:     '빨간 버튼 눌러도 종료 대신 트레이로 숨김',
+    secLang:      '언어',
+    langLbl:      '표시 언어',
+    langHint:     '트레이 메뉴에 즉시 적용됩니다',
+    close:        '닫기',
+    save:         '저장',
+    checking:     '확인 중…',
+    notChecked:   '확인 안 됨',
+    connOk:       (auth, min) => auth === 'ok' ? `연결됨 · 인증 OK (${min ?? '?'}분)` : `연결됨 · OAuth: ${auth}`,
+    connErr:      (msg) => `연결 실패: ${msg}`,
+    saved:        '✓ 저장됨',
+  },
+};
+
+const { invoke } = window.__TAURI__?.core ?? window.__TAURI__ ?? {};
+async function tauriCall(cmd, args) {
+  if (invoke) return invoke(cmd, args);
+  if (cmd === 'get_lang') return 'en';
+  console.log('[mock]', cmd, args);
+}
+
+let T = I18N.en;
+
+function applyLang(lang) {
+  T = I18N[lang] || I18N.en;
+  document.getElementById('t-title').textContent        = T.title;
+  document.getElementById('t-sec-conn').textContent     = T.secConn;
+  document.getElementById('t-url-lbl').textContent      = T.urlLbl;
+  document.getElementById('t-url-hint').textContent     = T.urlHint;
+  document.getElementById('t-conn-lbl').textContent     = T.connLbl;
+  document.getElementById('test-conn').textContent      = T.test;
+  document.getElementById('t-sec-app').textContent      = T.secApp;
+  document.getElementById('t-shortcut-lbl').textContent = T.shortcutLbl;
+  document.getElementById('t-shortcut-hint').textContent= T.shortcutHint;
+  document.getElementById('t-hide-lbl').textContent     = T.hideLbl;
+  document.getElementById('t-hide-hint').textContent    = T.hideHint;
+  document.getElementById('t-sec-lang').textContent     = T.secLang;
+  document.getElementById('t-lang-lbl').textContent     = T.langLbl;
+  document.getElementById('t-lang-hint').textContent    = T.langHint;
+  document.getElementById('cancel').textContent         = T.close;
+  document.getElementById('save').textContent           = T.save;
+  document.getElementById('conn-hint').textContent      = T.notChecked;
+  document.getElementById('lang-select').value          = lang;
+  document.documentElement.lang = lang;
+}
+
+// 초기 로드
+const DEFAULTS = { serverUrl: 'http://localhost:8100', closeToTray: true };
+function loadLocal() {
+  try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem('vega.settings') || '{}') }; }
+  catch { return { ...DEFAULTS }; }
+}
+function saveLocal(s) { localStorage.setItem('vega.settings', JSON.stringify(s)); }
+
+(async () => {
+  const lang = await tauriCall('get_lang').catch(() => 'en');
+  applyLang(lang);
+  const state = loadLocal();
+  document.getElementById('server-url').value = state.serverUrl;
+  document.getElementById('close-to-tray').classList.toggle('on', state.closeToTray);
+})();
+
+// 언어 즉시 전환
+document.getElementById('lang-select').addEventListener('change', async (e) => {
+  const lang = e.target.value;
+  applyLang(lang);
+  await tauriCall('set_lang', { lang }).catch(() => {});
+});
+
+// 연결 테스트
+document.getElementById('close-to-tray').addEventListener('click', (e) => e.currentTarget.classList.toggle('on'));
+
+document.getElementById('test-conn').addEventListener('click', async () => {
+  const hint = document.getElementById('conn-hint');
+  const base = document.getElementById('server-url').value.trim().replace(/\/$/, '');
+  hint.textContent = T.checking; hint.style.color = 'var(--muted)';
+  try {
+    const r = await fetch(base + '/api/health', { signal: AbortSignal.timeout(5000) });
+    const d = await r.json();
+    hint.textContent = T.connOk(d.auth, d.auth_remaining_min);
+    hint.style.color = 'var(--ok)';
+  } catch (e) {
+    hint.textContent = T.connErr(e.message || '');
+    hint.style.color = 'var(--error)';
+  }
+});
+
+// 저장
+document.getElementById('save').addEventListener('click', () => {
+  const state = {
+    serverUrl:    document.getElementById('server-url').value.trim().replace(/\/$/, ''),
+    closeToTray:  document.getElementById('close-to-tray').classList.contains('on'),
+  };
+  saveLocal(state);
+  const status = document.getElementById('save-status');
+  status.textContent = T.saved;
+  setTimeout(() => { status.textContent = ''; }, 2000);
+});
+
+function closeWin() {
+  try { window.__TAURI__?.window?.getCurrentWindow?.().close(); } catch { window.close(); }
+}
+document.getElementById('cancel').addEventListener('click', closeWin);
+</script>
+</body>
+</html>
