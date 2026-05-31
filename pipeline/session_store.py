@@ -28,6 +28,9 @@ def _conn() -> sqlite3.Connection:
 def _ensure_schema() -> None:
     """Create tables + migrate missing columns (idempotent). Safe for new user DBs."""
     with _conn() as conn:
+        # NOTE: 컬럼명은 CRUD 함수(create_session/append_message/load_history 등)가
+        # 실제로 INSERT/SELECT 하는 것과 일치해야 한다. conversations 는 uuid 를 PK 로,
+        # messages 는 conv_uuid/sender/text/char_len/updated_at 를 쓴다.
         conn.execute("""
             CREATE TABLE IF NOT EXISTS conversations (
                 uuid        TEXT PRIMARY KEY,
@@ -42,14 +45,21 @@ def _ensure_schema() -> None:
         """)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS messages (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                session_uuid TEXT NOT NULL REFERENCES conversations(uuid) ON DELETE CASCADE,
-                role        TEXT NOT NULL,
-                content     TEXT NOT NULL,
+                uuid        TEXT PRIMARY KEY,
+                source      TEXT NOT NULL DEFAULT 'vega',
+                conv_uuid   TEXT NOT NULL,
+                sender      TEXT NOT NULL,
+                text        TEXT NOT NULL,
+                char_len    INTEGER NOT NULL DEFAULT 0,
                 created_at  TEXT NOT NULL,
+                updated_at  TEXT NOT NULL,
                 usage_meta  TEXT
             )
         """)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_messages_conv "
+            "ON messages(source, conv_uuid, created_at)"
+        )
         # Migrate existing DB — add columns if missing
         cols = {r[1] for r in conn.execute("PRAGMA table_info(conversations)").fetchall()}
         if "working_dir" not in cols:

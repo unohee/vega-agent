@@ -6,7 +6,12 @@
     "lmstudio": "로컬. 인증 불필요. 사용자가 mlx-server/LM Studio를 1234에 띄워둠",
     "ollama": "로컬. http://localhost:11434/v1"
   },
-  "active": "chatgpt",
+  "active": "openrouter",
+  "_tiers_comment": "2단 라우터: local=도메인 지식 질의/갱신(결정론적, SLM 충분), cloud=즉각 업무지원(생성·추론·검색). local 다운 시 cloud 자동 폴백.",
+  "tiers": {
+    "local": "lmstudio",
+    "cloud": "openrouter"
+  },
   "providers": {
     "chatgpt": {
       "label": "ChatGPT (Codex)",
@@ -32,11 +37,12 @@
       }
     },
     "lmstudio": {
-      "label": "LM Studio (local)",
+      "label": "LM Studio (local SLM)",
       "kind": "chat_completions",
       "auth_type": "none",
       "base_url": "http://localhost:1234/v1",
-      "default_model": "gemma-4-26b-a4b-it-mlx"
+      "default_model": "gemma-4-e4b-it-mlx",
+      "_note": "도메인 질의/갱신용 local tier. 벤치 2026-05-31: TTFT 0.20s / 42.8 tps (gpt-5-nano 3.4s·빈응답 대비 압도). 26b-a4b는 정확하나 15.6GB·느림 — e4b로 충분."
     }
   }
 }

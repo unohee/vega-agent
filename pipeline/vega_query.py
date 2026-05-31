@@ -17,6 +17,60 @@ def _conn() -> sqlite3.Connection:
     return conn
 
 
+def _ensure_schema() -> None:
+    """Create persona/events/entities tables (idempotent). Safe for new user DBs.
+
+    개인 VEGA 는 ingest 스크립트로 이 테이블들을 채우지만, vega-core(빈 새 DB)는
+    채널 봇만 띄워도 동작해야 한다. 테이블이 없으면 get_persona 등이 깨지므로
+    모듈 로드 시 비어있는 스키마를 보장한다 (persona 가 비면 빈 문자열 반환).
+    """
+    with _conn() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS persona_sections (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                section_key TEXT NOT NULL,
+                content     TEXT NOT NULL,
+                scope       TEXT NOT NULL DEFAULT 'global',
+                version     INTEGER NOT NULL DEFAULT 1,
+                is_active   INTEGER NOT NULL DEFAULT 1,
+                notes       TEXT,
+                updated_at  TEXT
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS events (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_date  TEXT NOT NULL,
+                title       TEXT NOT NULL,
+                body        TEXT NOT NULL DEFAULT '',
+                tags        TEXT,
+                created_at  TEXT
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS entities (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                name         TEXT NOT NULL,
+                kind         TEXT,
+                canonical_id TEXT,
+                aliases_json TEXT,
+                notes        TEXT,
+                first_seen   TEXT,
+                last_seen    TEXT
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS event_entities (
+                event_id   INTEGER NOT NULL,
+                entity_id  INTEGER NOT NULL,
+                match_text TEXT
+            )
+        """)
+
+
+_ensure_schema()
+
+
 # ── Event queries ─────────────────────────────────────────────────────────────
 
 def events_by_date(start: str, end: str | None = None) -> list[dict]:

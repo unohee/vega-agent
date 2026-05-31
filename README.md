@@ -146,6 +146,52 @@ Each user gets their own `VEGA_DATA_DIR`. See `scripts/init_user_db.py`.
 
 ---
 
+## Channel bots (Telegram / Slack)
+
+Drive VEGA from familiar messengers so the in-house AI experience matches a normal
+chat app. Both bots share one agent core (`pipeline/channels/core.py` →
+`run_agent_turn`) and stream the answer progressively (edit-in-place).
+
+```bash
+# Telegram — token from @BotFather
+export TELEGRAM_BOT_TOKEN=...
+python -m pipeline.channels.telegram_bot
+
+# Slack — Socket Mode (xoxb bot token + xapp app-level token)
+export SLACK_BOT_TOKEN=xoxb-... SLACK_APP_TOKEN=xapp-...
+python -m pipeline.channels.slack_bot
+```
+
+- DM is always handled; group/channel messages only when the bot is @-mentioned.
+- Each conversation (Telegram `chat_id`, Slack `thread_ts`) maps to its own VEGA
+  session — history persists across turns (`data/channel_sessions.json`).
+- Remote channels run in **CE mode** (restricted tool allowlist — no local file/exec).
+
+## KYTE tool integration (kyte-portal)
+
+KYTE business tools (Airtable / Gmail / Superthread / Calendar / Drive) are exposed
+to VEGA as an **stdio MCP server** — no VEGA code changes required.
+
+> ⚠️ **Deployment note:** VEGA reads `mcp.json` from the **user data dir**
+> (`~/Library/Application Support/VEGA/mcp.json` on macOS, `$VEGA_DATA_DIR/mcp.json`
+> if set) — **not** from the repo `data/mcp.json`. Place the kyte entry there.
+
+```json
+{"mcpServers": {"kyte": {
+    "command": "/path/to/python",
+    "args": ["-m", "kyte_cli.mcp_server"],
+    "env": {"PYTHONPATH": "/path/to/kyte-portal"}}}}
+```
+
+The server (`kyte_cli/mcp_server.py` in kyte-portal) wraps `integration_tools`
+(10 read-only lookup tools) and returns `{data, source, note}` envelopes. VEGA
+auto-registers them at startup via `init_mcp_tools()` and calls them as
+`kyte__find_work`, `kyte__komca_lines`, etc. Default model:
+`deepseek/deepseek-v4-flash` (OpenRouter, env var `OPENROUTER_API`).
+Verified end-to-end: query → `kyte__find_work` → Airtable → Korean answer.
+
+---
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

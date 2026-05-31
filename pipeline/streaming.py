@@ -265,13 +265,14 @@ def _load_agent_md() -> str:
     return "\n\n".join(p for p in parts if p)
 
 
-def _build_request(input_items: list, system: str, ce_mode: bool = False, research_mode: bool = False):
-    """Build a request matching the currently active LLM provider.
+def _build_request(input_items: list, system: str, ce_mode: bool = False, research_mode: bool = False, tier: str | None = None):
+    """Build a request matching the active LLM provider (or the given tier).
     Returns: (Request, kind). kind is 'responses' | 'chat_completions' — used to branch SSE parsing.
-    ce_mode=True passes only the allowlist excluding local system tools."""
+    ce_mode=True passes only the allowlist excluding local system tools.
+    tier ("local"|"cloud"): 2단 라우터 provider 선택. None 이면 active."""
     from pipeline.llm_gateway import build_request
     schemas = get_schemas_for_mode(TOOL_SCHEMAS, ce_mode=ce_mode)
-    return build_request(input_items, system, schemas, research_mode=research_mode)
+    return build_request(input_items, system, schemas, research_mode=research_mode, tier=tier)
 
 
 def _iter_sse_lines(resp):
@@ -471,6 +472,7 @@ async def stream_gpt(
     plan_mode: bool = False,
     ce_mode: bool = False,
     research_mode: bool = False,
+    tier: str | None = None,
 ) -> str:
     """
     GPT tool-use loop — streams SSE tokens to on_token in real time.
@@ -522,7 +524,7 @@ async def stream_gpt(
     t_first_token: float | None = None
 
     for _ in range(max_rounds):
-        req, kind = _build_request(input_items, system, ce_mode=ce_mode, research_mode=research_mode)
+        req, kind = _build_request(input_items, system, ce_mode=ce_mode, research_mode=research_mode, tier=tier)
 
         token_q: asyncio.Queue = asyncio.Queue()
         tool_q: asyncio.Queue = asyncio.Queue()

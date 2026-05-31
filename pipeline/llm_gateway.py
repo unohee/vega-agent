@@ -162,6 +162,63 @@ def get_active_provider() -> dict:
     return _expand_env(out)
 
 
+# ── 2단 tier 라우팅 ────────────────────────────────────────────────────────────
+# tier="local"  → 도메인 지식 질의/갱신 (결정론적 조회, SLM 으로 충분, 비용 0)
+# tier="cloud"  → 즉각 업무지원 (문서 생성·웹 검색·추론, 로컬 SLM 은 품질/TTFT 한계)
+# local provider 가 응답 없으면 cloud 로 자동 폴백 (로컬은 항상 다운 가능 전제).
+
+def _provider_by_name(name: str) -> dict | None:
+    cfg = _read_config()
+    prov = (cfg.get("providers") or {}).get(name)
+    if not prov:
+        return None
+    out = dict(prov)
+    out["name"] = name
+    return _expand_env(out)
+
+
+def _is_provider_alive(prov: dict, timeout: float = 2.0) -> bool:
+    """로컬 provider 생존 확인 (GET /models). 클라우드(bearer/oauth)는 항상 살아있다고 간주."""
+    if prov.get("auth_type") != "none":
+        return True  # 클라우드는 키만 있으면 가용으로 본다 (네트워크 체크 생략)
+    base = prov.get("base_url", "")
+    if not base:
+        return False
+    import urllib.request
+    try:
+        req = urllib.request.Request(base.rstrip("/") + "/models", method="GET")
+        with urllib.request.urlopen(req, timeout=timeout):
+            return True
+    except Exception:
+        return False
+
+
+def get_provider_for_tier(tier: str = "cloud") -> dict:
+    """tier("local"|"cloud")에 매핑된 provider 를 반환. local 다운 시 cloud 폴백.
+
+    tiers 매핑은 llm_providers.json 의 "tiers" 에서 읽는다. 없으면 active 단일 폴백.
+    """
+    cfg = _read_config()
+    tiers = cfg.get("tiers") or {}
+    name = tiers.get(tier)
+    if not name:
+        return get_active_provider()  # tier 미설정 → 기존 단일 동작
+
+    prov = _provider_by_name(name)
+    if not prov:
+        return get_active_provider()
+
+    # local tier 인데 SLM 이 죽어있으면 cloud 로 승급
+    if tier == "local" and not _is_provider_alive(prov):
+        cloud_name = tiers.get("cloud")
+        cloud = _provider_by_name(cloud_name) if cloud_name else None
+        if cloud:
+            cloud = dict(cloud)
+            cloud["_fell_back_from"] = "local"
+            return cloud
+    return prov
+
+
 def list_providers() -> list[dict]:
     """For UI — registered provider list with active flag and API key status."""
     cfg = _read_config()
@@ -224,16 +281,18 @@ def update_model(name: str, model: str) -> None:
 
 # ── Request building ─────────────────────────────────────────────────────────
 
-def build_request(input_items: list, system: str, tool_schemas: list[dict], research_mode: bool = False):
-    """Builds a urllib.request.Request for the currently active provider.
+def build_request(input_items: list, system: str, tool_schemas: list[dict], research_mode: bool = False, tier: str | None = None):
+    """Builds a urllib.request.Request for the active provider (or the given tier).
     Replaces _build_request in streaming.py. Returns a (Request, kind) tuple.
     kind is 'responses' | 'chat_completions' — used to branch SSE parsing.
 
     tool_schemas is automatically filtered to the active tool groups.
-    When research_mode=True, max_tokens/max_completion_tokens is set higher."""
+    When research_mode=True, max_tokens/max_completion_tokens is set higher.
+    tier ("local"|"cloud"): 지정 시 2단 라우터로 provider 선택(local 다운→cloud 폴백).
+    None 이면 기존처럼 active provider 사용."""
     import urllib.request
     tool_schemas = filter_tools(tool_schemas)
-    prov = get_active_provider()
+    prov = get_provider_for_tier(tier) if tier else get_active_provider()
     kind = prov.get("kind", "chat_completions")
     model = prov.get("default_model") or ""
     auth_type = prov.get("auth_type", "none")

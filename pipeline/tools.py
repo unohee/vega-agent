@@ -68,10 +68,18 @@ def get_schemas_for_mode(
     base: list[dict],
     ce_mode: bool = False,
 ) -> list[dict]:
-    """Filter by allowlist if CE mode, otherwise return base as-is."""
+    """Filter by allowlist if CE mode, otherwise return base as-is.
+
+    CE 모드(원격 채널)에서도 KYTE 업무 도구(kyte__* — MCP 게이트웨이로 노출된
+    조회 전용 도구)는 허용한다. 채널 봇(텔레그램/슬랙)의 핵심 목적이 회사 데이터
+    조회이고, kyte__ 도구는 모두 read-only envelope 라 로컬 파일/exec 위험이 없다."""
     if not ce_mode:
         return base
-    return [s for s in base if s.get("name") in _CE_ALLOWED_TOOLS]
+    return [
+        s for s in base
+        if s.get("name") in _CE_ALLOWED_TOOLS
+        or str(s.get("name", "")).startswith("kyte__")
+    ]
 
 
 # Tools blocked in plan mode. Read/search/lookup/memory_read are excluded.
@@ -118,7 +126,11 @@ from pipeline.tools_google import (
 )
 from pipeline.tools_web import web_search, web_fetch
 from pipeline.discord_bridge import discord_notify
-from pipeline.tools_office import OFFICE_TOOL_SCHEMAS, OFFICE_TOOL_FUNCTIONS
+# NOTE: vega-core 공개판은 office/browser/things/kis/imessage 개인 도구 모듈을 싣지 않는다.
+# OFFICE_TOOL_SCHEMAS / OFFICE_TOOL_FUNCTIONS 는 빈 값으로 스텁한다.
+# (개인 VEGA 에서 이식하려면 pipeline/tools_office.py 를 추가하고 이 두 줄을 import 로 교체)
+OFFICE_TOOL_SCHEMAS: list[dict] = []
+OFFICE_TOOL_FUNCTIONS: dict[str, Any] = {}
 
 # ── Tool schemas (GPT tool-use format) ───────────────────────────────────────
 
@@ -986,6 +998,23 @@ TOOL_SCHEMAS.extend(SESSION_TOOL_SCHEMAS)
 TOOL_SCHEMAS.extend(CODE_TOOL_SCHEMAS)
 TOOL_SCHEMAS.extend(OFFICE_TOOL_SCHEMAS)
 
+# vega-core: 네이티브 linear_* 도구는 pipeline.linear_client(개인 VEGA 전용, 여기 없음)에
+# 의존한다. 모듈이 없으면 호출 시 무조건 실패하고 self_improve 가 폭주하므로,
+# 모듈을 import 할 수 없으면 linear_* 스키마를 LLM 에 노출하지 않는다.
+# (Linear 가 필요하면 LINEAR_API_KEY 를 설정 → MCP linear__* 서버로 자동 등록되어 동작.)
+try:
+    import importlib as _importlib
+    _importlib.import_module("pipeline.linear_client")
+    _LINEAR_NATIVE_OK = True
+except Exception:
+    _LINEAR_NATIVE_OK = False
+
+if not _LINEAR_NATIVE_OK:
+    TOOL_SCHEMAS[:] = [
+        s for s in TOOL_SCHEMAS
+        if not str(s.get("name", "")).startswith("linear_")
+    ]
+
 # UX/conversation flow control tools — results are intercepted by the server SSE handler and converted to UI widgets/mode toggles
 TOOL_SCHEMAS.extend([
     {
@@ -1721,7 +1750,8 @@ def patch_account_enum() -> None:
 def dispatch_tool(name: str, arguments: dict) -> str:
     """Invoke a tool → return JSON string. MCP tools use a separate async path (dispatch_tool_async)."""
     # CE mode defensive block — already filtered at LLM schema level, but double-protected here.
-    if _CE_MODE_VAR.get() and name not in _CE_ALLOWED_TOOLS:
+    # kyte__* (KYTE 업무 조회 도구, MCP 게이트웨이)는 CE 에서도 허용 — read-only envelope 라 안전.
+    if _CE_MODE_VAR.get() and name not in _CE_ALLOWED_TOOLS and not name.startswith("kyte__"):
         return json.dumps({
             "error": f"CE 모드에서 '{name}' 도구는 허용되지 않습니다. 로컬 클라이언트를 사용해주세요.",
             "ce_mode_blocked": True,
