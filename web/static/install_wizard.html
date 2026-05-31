@@ -10,45 +10,45 @@
   * { box-sizing: border-box; }
   html, body { margin:0; height:100%; background:var(--bg); color:var(--fg);
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
-  .app { max-width:640px; margin:0 auto; min-height:100%; display:flex; flex-direction:column;
-    padding:32px 24px; }
+  .app { max-width:640px; margin:0 auto; min-height:100%; display:flex; flex-direction:column; padding:32px 24px; }
   .brand { font-size:22px; font-weight:700; letter-spacing:.5px; }
   .brand span { color:var(--accent); }
   .steps { display:flex; gap:8px; margin:20px 0 24px; }
   .dot { flex:1; height:4px; border-radius:2px; background:var(--border); transition:.3s; }
   .dot.active { background:var(--accent); }
   .dot.done { background:var(--ok); }
-  .card { background:var(--panel); border:1px solid var(--border); border-radius:12px;
-    padding:24px; flex:1; display:flex; flex-direction:column; }
+  .card { background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:24px; flex:1; display:flex; flex-direction:column; }
   h2 { margin:0 0 6px; font-size:18px; }
   .sub { color:var(--muted); font-size:13px; margin-bottom:18px; line-height:1.5; }
   label { display:block; font-size:13px; color:var(--muted); margin:12px 0 6px; }
-  input { width:100%; padding:10px 12px; background:#0d1117; border:1px solid var(--border);
-    border-radius:8px; color:var(--fg); font-size:14px; }
+  input { width:100%; padding:10px 12px; background:#0d1117; border:1px solid var(--border); border-radius:8px; color:var(--fg); font-size:14px; }
   input:focus { outline:none; border-color:var(--accent); }
-  .btn { padding:10px 18px; border:none; border-radius:8px; background:var(--accent2);
-    color:#fff; font-size:14px; font-weight:600; cursor:pointer; transition:.15s; }
+  .btn { padding:10px 18px; border:none; border-radius:8px; background:var(--accent2); color:#fff; font-size:14px; font-weight:600; cursor:pointer; transition:.15s; }
   .btn:hover { background:var(--accent); }
   .btn:disabled { opacity:.5; cursor:not-allowed; }
   .btn.ghost { background:transparent; border:1px solid var(--border); color:var(--muted); }
   .row { display:flex; gap:10px; align-items:center; margin-top:18px; }
   .row .grow { flex:1; }
   .msg { font-size:13px; margin-top:10px; min-height:18px; }
-  .msg.err { color:var(--err); }
-  .msg.ok { color:var(--ok); }
+  .msg.err { color:var(--err); } .msg.ok { color:var(--ok); }
   .hint { font-size:12px; color:var(--muted); margin-top:8px; line-height:1.5; }
   .hint a { color:var(--accent); }
+  /* provider list */
+  .plist { display:flex; flex-direction:column; gap:10px; }
+  .pcard { display:flex; flex-direction:column; gap:2px; padding:14px 16px; border:1px solid var(--border); border-radius:10px; cursor:pointer; transition:.15s; background:#0d1117; }
+  .pcard:hover { border-color:var(--accent); }
+  .pcard.sel { border-color:var(--accent); background:#11203a; }
+  .pcard .pname { font-size:15px; font-weight:600; }
+  .pcard .pdesc { font-size:12px; color:var(--muted); }
+  .pcard .ptag { font-size:11px; color:var(--accent); margin-top:2px; }
   /* chat */
-  .chat { flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:10px; padding:4px;
-    margin-bottom:12px; }
-  .bubble { max-width:85%; padding:10px 14px; border-radius:14px; font-size:14px; line-height:1.5;
-    white-space:pre-wrap; }
+  .chat { flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:10px; padding:4px; margin-bottom:12px; }
+  .bubble { max-width:85%; padding:10px 14px; border-radius:14px; font-size:14px; line-height:1.5; white-space:pre-wrap; }
   .bubble.bot { background:#21262d; align-self:flex-start; border-bottom-left-radius:4px; }
   .bubble.me { background:var(--accent2); color:#fff; align-self:flex-end; border-bottom-right-radius:4px; }
   .typing { color:var(--muted); font-size:13px; align-self:flex-start; }
   .hidden { display:none !important; }
-  .spinner { display:inline-block; width:14px; height:14px; border:2px solid rgba(255,255,255,.3);
-    border-top-color:#fff; border-radius:50%; animation:spin .7s linear infinite; vertical-align:-2px; }
+  .spinner { display:inline-block; width:14px; height:14px; border:2px solid rgba(255,255,255,.3); border-top-color:#fff; border-radius:50%; animation:spin .7s linear infinite; vertical-align:-2px; }
   @keyframes spin { to { transform:rotate(360deg); } }
 </style>
 </head>
@@ -61,18 +61,36 @@
     <div class="dot" id="dot2"></div>
   </div>
 
-  <!-- STEP 0: OpenRouter 키 -->
+  <!-- STEP 0: 프로바이더 선택 + 인증 -->
   <div class="card" id="step0">
-    <h2>OpenRouter 연결</h2>
-    <div class="sub">VEGA는 OpenRouter를 통해 LLM에 연결됩니다. API 키를 입력하면
-      연결된 LLM이 나머지 설정을 직접 안내합니다.</div>
-    <label>OpenRouter API Key</label>
-    <input id="orKey" type="password" placeholder="sk-or-v1-..." autocomplete="off">
-    <div class="hint">키가 없으면 <a href="https://openrouter.ai/keys" target="_blank">openrouter.ai/keys</a>에서 발급하세요.</div>
-    <div class="msg" id="orMsg"></div>
-    <div class="row">
-      <div class="grow"></div>
-      <button class="btn" id="orNext">키 검증 후 계속</button>
+    <h2>LLM 프로바이더 연결</h2>
+    <div class="sub">VEGA가 사용할 추론 백엔드를 고르세요. 연결되면 그 LLM이 나머지 설정을 직접 안내합니다.</div>
+    <div class="plist" id="plist"></div>
+
+    <!-- 선택 후 인증 영역 -->
+    <div id="authArea" class="hidden">
+      <div id="authKey" class="hidden">
+        <label id="keyLabel">API Key</label>
+        <input id="apiKey" type="password" autocomplete="off">
+        <div class="hint" id="keyHint"></div>
+        <label>모델 (선택 — 비우면 기본값)</label>
+        <input id="modelOverride" placeholder="" autocomplete="off">
+      </div>
+      <div id="authLocal" class="hidden">
+        <label>서버 URL</label>
+        <input id="localUrl" placeholder="http://localhost:1234/v1" autocomplete="off">
+        <label>모델 이름 (선택)</label>
+        <input id="localModel" placeholder="" autocomplete="off">
+      </div>
+      <div id="authPkce" class="hidden">
+        <div class="hint">브라우저가 열리면 로그인하세요. 키 입력은 필요 없습니다.</div>
+      </div>
+      <div class="msg" id="pMsg"></div>
+      <div class="row">
+        <button class="btn ghost" id="pBack">← 다른 프로바이더</button>
+        <div class="grow"></div>
+        <button class="btn" id="pNext">연결</button>
+      </div>
     </div>
   </div>
 
@@ -87,17 +105,15 @@
     </div>
   </div>
 
-  <!-- STEP 2: Google Cloud 인증 -->
+  <!-- STEP 2: Google 연동 -->
   <div class="card hidden" id="step2">
     <h2>Google 연동 (선택)</h2>
-    <div class="sub">Gmail·Calendar·Drive 도구를 쓰려면 Google Cloud OAuth를 연결하세요.
-      건너뛰어도 나중에 설정할 수 있습니다.</div>
+    <div class="sub">Gmail·Calendar·Drive 도구를 쓰려면 Google Cloud OAuth를 연결하세요. 건너뛰어도 나중에 설정할 수 있습니다.</div>
     <label>Google Client ID</label>
     <input id="gId" placeholder="...apps.googleusercontent.com" autocomplete="off">
     <label>Google Client Secret</label>
     <input id="gSecret" type="password" placeholder="GOCSPX-..." autocomplete="off">
-    <div class="hint">Google Cloud Console → API 및 서비스 → 사용자 인증 정보에서
-      "데스크톱 앱" OAuth 클라이언트를 만드세요.</div>
+    <div class="hint">Google Cloud Console → 사용자 인증 정보 → "데스크톱 앱" OAuth 클라이언트.</div>
     <div class="msg" id="gMsg"></div>
     <div class="row">
       <button class="btn ghost" id="gSkip">건너뛰기</button>
@@ -109,118 +125,119 @@
 
 <script>
 const $ = id => document.getElementById(id);
-function setStep(n) {
-  [0,1,2].forEach(i => {
-    $('step'+i).classList.toggle('hidden', i !== n);
-    const dot = $('dot'+i);
-    dot.classList.toggle('active', i === n);
-    dot.classList.toggle('done', i < n);
-  });
-}
-async function api(path, body) {
-  const r = await fetch(path, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify(body || {}),
-  });
-  return r.json();
-}
-function gotoChat() { location.href = '/chat'; }
+function setStep(n){ [0,1,2].forEach(i=>{ $('step'+i).classList.toggle('hidden', i!==n);
+  const d=$('dot'+i); d.classList.toggle('active', i===n); d.classList.toggle('done', i<n); }); }
+async function api(path, body){ const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})}); return r.json(); }
+function gotoChat(){ location.href='/chat'; }
 
-// ── STEP 0: OpenRouter ───────────────────────────────────────────────
-$('orNext').onclick = async () => {
-  const key = $('orKey').value.trim();
-  const msg = $('orMsg');
-  if (!key) { msg.className = 'msg err'; msg.textContent = '키를 입력하세요.'; return; }
-  $('orNext').disabled = true;
-  msg.className = 'msg'; msg.innerHTML = '<span class="spinner"></span> 검증 중…';
-  const res = await api('/api/onboarding/openrouter', {api_key: key});
-  $('orNext').disabled = false;
-  if (!res.ok) { msg.className = 'msg err'; msg.textContent = res.error || '검증 실패'; return; }
-  msg.className = 'msg ok'; msg.textContent = '연결됨!';
-  setStep(1);
-  startChat();
+let PROVIDERS = [];
+let selected = null;
+
+// ── STEP 0: 프로바이더 목록 렌더 ─────────────────────────────────────
+function renderProviders(){
+  const list = $('plist'); list.innerHTML='';
+  for(const p of PROVIDERS){
+    const el=document.createElement('div'); el.className='pcard'; el.dataset.id=p.id;
+    const tag = p.auth==='pkce' ? '브라우저 로그인' : p.auth==='local' ? 'URL 입력' : 'API 키';
+    el.innerHTML = `<div class="pname">${p.label}</div><div class="pdesc">${p.desc||''}</div><div class="ptag">${tag}</div>`;
+    el.onclick = ()=> selectProvider(p.id);
+    list.appendChild(el);
+  }
+}
+function selectProvider(id){
+  selected = PROVIDERS.find(p=>p.id===id);
+  document.querySelectorAll('.pcard').forEach(c=>c.classList.toggle('sel', c.dataset.id===id));
+  $('authArea').classList.remove('hidden');
+  $('authKey').classList.toggle('hidden', selected.auth!=='key');
+  $('authLocal').classList.toggle('hidden', selected.auth!=='local');
+  $('authPkce').classList.toggle('hidden', selected.auth!=='pkce');
+  $('pMsg').textContent='';
+  if(selected.auth==='key'){
+    $('keyLabel').textContent = selected.label+' API Key';
+    $('apiKey').value=''; $('apiKey').placeholder = selected.key_hint||'';
+    $('keyHint').innerHTML = keyHintHtml(selected.id);
+    $('modelOverride').placeholder = selected.default_model||'';
+  } else if(selected.auth==='local'){
+    $('localUrl').value = selected.default_url||'';
+    $('localModel').value='';
+  }
+  $('pNext').textContent = selected.auth==='pkce' ? '브라우저로 로그인' : '연결';
+  $('authArea').scrollIntoView({behavior:'smooth', block:'nearest'});
+}
+function keyHintHtml(id){
+  const links = { anthropic:['console.anthropic.com','https://console.anthropic.com/settings/keys'],
+    openai:['platform.openai.com','https://platform.openai.com/api-keys'],
+    openrouter:['openrouter.ai/keys','https://openrouter.ai/keys'] };
+  const l = links[id]; return l ? `키 발급: <a href="${l[1]}" target="_blank">${l[0]}</a>` : '';
+}
+$('pBack').onclick = ()=>{ $('authArea').classList.add('hidden'); selected=null;
+  document.querySelectorAll('.pcard').forEach(c=>c.classList.remove('sel')); };
+
+$('pNext').onclick = async ()=>{
+  if(!selected) return;
+  const msg=$('pMsg'); $('pNext').disabled=true;
+  msg.className='msg'; msg.innerHTML='<span class="spinner"></span> 연결 중…';
+  let res;
+  try{
+    if(selected.auth==='pkce'){
+      res = await api('/api/onboarding/pkce', {provider:selected.id});
+    } else if(selected.auth==='local'){
+      res = await api('/api/onboarding/provider', {provider:selected.id, base_url:$('localUrl').value, model:$('localModel').value});
+    } else {
+      res = await api('/api/onboarding/provider', {provider:selected.id, api_key:$('apiKey').value, model:$('modelOverride').value});
+    }
+  }catch(e){ res={ok:false, error:String(e)}; }
+  $('pNext').disabled=false;
+  if(!res.ok){ msg.className='msg err'; msg.textContent=res.error||'연결 실패'; return; }
+  msg.className='msg ok';
+  msg.textContent = (selected.auth==='local' && res.reachable===false) ? '등록됨 (서버 아직 미응답 — 나중에 켜도 됩니다)' : '연결됨!';
+  setStep(1); startChat();
 };
 
 // ── STEP 1: LLM 대화 ─────────────────────────────────────────────────
-let history = [];
-function addBubble(text, who) {
-  const b = document.createElement('div');
-  b.className = 'bubble ' + who;
-  b.textContent = text;
-  $('chat').appendChild(b);
-  $('chat').scrollTop = $('chat').scrollHeight;
-  return b;
-}
-function showTyping() {
-  const t = document.createElement('div');
-  t.className = 'typing'; t.id = 'typing';
-  t.innerHTML = '<span class="spinner"></span> 입력 중…';
-  $('chat').appendChild(t);
-  $('chat').scrollTop = $('chat').scrollHeight;
-}
-function hideTyping() { const t = $('typing'); if (t) t.remove(); }
-
-async function turn() {
-  showTyping();
-  $('chatSend').disabled = true;
-  const res = await api('/api/onboarding/chat', {messages: history});
-  hideTyping();
-  $('chatSend').disabled = false;
-  if (!res.ok) { addBubble(res.error || 'LLM 오류', 'bot'); return; }
-  if (res.reply) { addBubble(res.reply, 'bot'); history.push({role:'assistant', content: res.reply}); }
-  // directive 처리
-  for (const d of (res.directives || [])) {
-    if (d.action === 'google_auth') { setStep(2); return; }
-    if (d.action === 'finish') {
-      await api('/api/onboarding/finish', {});
-      addBubble('설정 완료! VEGA로 이동합니다…', 'bot');
-      setTimeout(gotoChat, 1200);
-      return;
-    }
+let history=[];
+function addBubble(t,who){ const b=document.createElement('div'); b.className='bubble '+who; b.textContent=t; $('chat').appendChild(b); $('chat').scrollTop=$('chat').scrollHeight; return b; }
+function showTyping(){ const t=document.createElement('div'); t.className='typing'; t.id='typing'; t.innerHTML='<span class="spinner"></span> 입력 중…'; $('chat').appendChild(t); $('chat').scrollTop=$('chat').scrollHeight; }
+function hideTyping(){ const t=$('typing'); if(t) t.remove(); }
+async function turn(){
+  showTyping(); $('chatSend').disabled=true;
+  const res = await api('/api/onboarding/chat', {messages:history});
+  hideTyping(); $('chatSend').disabled=false;
+  if(!res.ok){ addBubble(res.error||'LLM 오류','bot'); return; }
+  if(res.reply){ addBubble(res.reply,'bot'); history.push({role:'assistant',content:res.reply}); }
+  for(const d of (res.directives||[])){
+    if(d.action==='google_auth'){ setStep(2); return; }
+    if(d.action==='finish'){ await api('/api/onboarding/finish',{}); addBubble('설정 완료! VEGA로 이동합니다…','bot'); setTimeout(gotoChat,1200); return; }
   }
 }
-function startChat() { history = []; turn(); }
-
-$('chatSend').onclick = async () => {
-  const v = $('chatInput').value.trim();
-  if (!v) return;
-  addBubble(v, 'me');
-  history.push({role:'user', content: v});
-  $('chatInput').value = '';
-  await turn();
-};
-$('chatInput').addEventListener('keydown', e => { if (e.key === 'Enter') $('chatSend').click(); });
+function startChat(){ history=[]; turn(); }
+$('chatSend').onclick = async ()=>{ const v=$('chatInput').value.trim(); if(!v) return; addBubble(v,'me'); history.push({role:'user',content:v}); $('chatInput').value=''; await turn(); };
+$('chatInput').addEventListener('keydown', e=>{ if(e.key==='Enter') $('chatSend').click(); });
 
 // ── STEP 2: Google ───────────────────────────────────────────────────
-$('gSkip').onclick = async () => {
-  await api('/api/onboarding/finish', {});
-  gotoChat();
-};
-$('gAuth').onclick = async () => {
-  const id = $('gId').value.trim(), sec = $('gSecret').value.trim();
-  const msg = $('gMsg');
-  if (!id || !sec) { msg.className='msg err'; msg.textContent='Client ID/Secret을 입력하세요.'; return; }
-  $('gAuth').disabled = true;
-  msg.className='msg'; msg.innerHTML='<span class="spinner"></span> 클라이언트 저장 중…';
-  const c = await api('/api/onboarding/google/creds', {client_id:id, client_secret:sec});
-  if (!c.ok) { $('gAuth').disabled=false; msg.className='msg err'; msg.textContent=c.error; return; }
+$('gSkip').onclick = async ()=>{ await api('/api/onboarding/finish',{}); gotoChat(); };
+$('gAuth').onclick = async ()=>{
+  const id=$('gId').value.trim(), sec=$('gSecret').value.trim(), msg=$('gMsg');
+  if(!id||!sec){ msg.className='msg err'; msg.textContent='Client ID/Secret을 입력하세요.'; return; }
+  $('gAuth').disabled=true; msg.className='msg'; msg.innerHTML='<span class="spinner"></span> 저장 중…';
+  const c=await api('/api/onboarding/google/creds',{client_id:id,client_secret:sec});
+  if(!c.ok){ $('gAuth').disabled=false; msg.className='msg err'; msg.textContent=c.error; return; }
   msg.innerHTML='<span class="spinner"></span> 브라우저에서 동의해 주세요…';
-  const a = await api('/api/onboarding/google/auth', {});
-  $('gAuth').disabled = false;
-  if (!a.ok) { msg.className='msg err'; msg.textContent=a.error || '인증 실패'; return; }
+  const a=await api('/api/onboarding/google/auth',{});
+  $('gAuth').disabled=false;
+  if(!a.ok){ msg.className='msg err'; msg.textContent=a.error||'인증 실패'; return; }
   msg.className='msg ok'; msg.textContent='Google 연동 완료!';
-  await api('/api/onboarding/finish', {});
-  setTimeout(gotoChat, 1000);
+  await api('/api/onboarding/finish',{}); setTimeout(gotoChat,1000);
 };
 
-// 이미 온보딩된 경우 바로 채팅으로
-(async () => {
-  try {
-    const r = await fetch('/api/onboarding'); const s = await r.json();
-    if (s.onboarded) { gotoChat(); return; }
-    if (s.has_openrouter_key) { setStep(1); startChat(); }
-  } catch (e) {}
+// ── 초기화 ───────────────────────────────────────────────────────────
+(async ()=>{
+  try{
+    const r=await fetch('/api/onboarding'); const s=await r.json();
+    if(s.onboarded){ gotoChat(); return; }
+    PROVIDERS = s.providers||[];
+    renderProviders();
+  }catch(e){ $('plist').innerHTML='<div class="msg err">프로바이더 목록 로드 실패</div>'; }
 })();
 </script>
 </body>

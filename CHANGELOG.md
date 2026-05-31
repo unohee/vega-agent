@@ -7,6 +7,10 @@
 ## [Unreleased]
 
 ### Added
+- **멀티 프로바이더 설치 마법사 + Anthropic 네이티브 어댑터** — 설치 마법사가 OpenRouter 전용에서 프로바이더 목록(Anthropic·OpenAI·OpenRouter API 키 / ChatGPT PKCE 로그인 / 로컬·온프레미스 URL) → 선택 → 해당 인증 흐름으로 확장. 키는 라이브 검증(`/models` 200) 후 Keychain 저장 + `llm_providers.json`에 `upsert_provider`로 등록 후 활성화. 추론 백엔드도 동일하게 멀티 프로바이더 지원:
+  - **Anthropic 네이티브 어댑터** (`llm_gateway` `kind=anthropic`) — OpenAI 호환이 아닌 `/v1/messages`를 직접 호출. `x-api-key`+`anthropic-version` 헤더, system을 cache_control 블록으로, Responses↔Anthropic 메시지/tool 스키마(`input_schema`) 변환, `max_tokens` 필수. `streaming._stream_sse`에 Anthropic SSE 파싱(`message_start`/`content_block_delta` text_delta·input_json_delta/`message_delta` usage/`message_stop`) 추가. `auth_type`: `anthropic_key`(콘솔 키) / `claude_oauth`(보류 — client_id 비공개, import 가드).
+  - **OpenAI 직접 API** 프로바이더(`api.openai.com`, bearer) 추가.
+  - 로컬·온프레미스는 OpenAI 호환 URL만 입력해 등록(서버 미응답이어도 등록 허용).
 - **데스크톱 앱(Tauri v2) + 배포용 DMG** (`desktop/`) — 메인 VEGA 레포의 Tauri 셸을 vega-core로 이식. daemon 모드(기본)는 첫 실행 시 `com.unohee.vega-backend` LaunchAgent를 등록해 PyInstaller 백엔드를 상시 실행하고, 트레이 아이콘·전역 단축키(⌘⇧V)·창 토글을 제공. `scripts/build_dmg.sh`가 PyInstaller 백엔드(`bin/vega-backend.spec`) → `cargo tauri build` → DMG 패키징을 수행. Developer ID 인증서가 없으면 자동으로 무서명 빌드.
 - **코드 샌드박스 자동 확보** (`pipeline/sandbox.ensure_sandbox_ready` + 서버 lifespan 워밍업) — 서버 기동 시 백그라운드로 Docker `vega-sandbox` 컨테이너를 확보(이미 있으면 재사용, 이미지 없을 때만 빌드)해 첫 `bash_exec`/`python_exec` 지연을 없앤다. Docker 미설치/미기동이면 조용히 skip(에이전트는 계속 동작, 코드 실행만 보류). `docker_available()` 추가. compose 경로는 `${VEGA_HOST_HOME}`/`${VEGA_DATA_DIR}` 환경변수로 파라미터화(메인 레포 하드코딩 제거)하고 `_compose_env()`가 주입 — 배포본·다른 사용자 환경에서도 동작. 영속 볼륨(`sandbox_lib`/`packages`/`history`)은 보존되어 에이전트가 만든 모듈·pip 패키지가 재시작에도 유지. DMG 번들에 `sandbox/{Dockerfile,docker-compose.yml}` 포함.
 - **설치 마법사 — 연결된 LLM이 진행** (`web/static/install_wizard.html` + `web/routers/onboarding.py`) — 데몬 첫 실행 시 `/entry`가 온보딩 여부를 보고 `/install`로 보낸다. 마법사는 (1) OpenRouter 키 입력+라이브 검증→Keychain 저장, (2) **연결된 LLM이 대화형으로** 이름·역할·소속을 수집(LLM 응답의 ```vega``` directive를 파싱해 user_profile에 즉시 반영), (3) Google Cloud OAuth(Client ID/Secret 저장→브라우저 동의→refresh token 발급) 단계로 구성. 완료 시 `onboarded=true` 마킹 후 `/chat`으로 전환.
