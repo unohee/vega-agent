@@ -314,6 +314,32 @@ def build_request(input_items: list, system: str, tool_schemas: list[dict], rese
         token = ensure_valid_token()
         headers["Authorization"] = f"Bearer {token}"
         headers["chatgpt-account-id"] = profile.get("account_id", "")
+    elif auth_type == "claude_oauth":
+        # Claude Code OAuth (Anthropic PKCE) — client_id/엔드포인트 비공개라 미구현(보류).
+        # 값 확정 시 auth/claude.py 추가 + 아래 import 가드 해제.
+        try:
+            from pipeline.auth.claude import ensure_valid_token as _claude_token
+        except ImportError:
+            raise RuntimeError(
+                "Claude Code OAuth 는 아직 미지원입니다. Anthropic API 키(anthropic_key) "
+                "프로바이더를 쓰거나 설치 마법사에서 다른 프로바이더를 선택하세요."
+            )
+        token = _claude_token()
+        headers["Authorization"] = f"Bearer {token}"
+        headers.setdefault("anthropic-version", "2023-06-01")
+    elif auth_type == "anthropic_key":
+        # Anthropic 직접 API (x-api-key). 콘솔 발급 키.
+        key_env = prov.get("api_key_env", "") or "ANTHROPIC_API_KEY"
+        key = os.getenv(key_env, "")
+        if not key:
+            from pipeline import keychain
+            key = keychain.get_secret(key_env) or ""
+        if not key:
+            raise RuntimeError(
+                f"{prov['name']}: {key_env} 키가 없음. 설치 마법사나 .env에서 설정해."
+            )
+        headers["x-api-key"] = key
+        headers.setdefault("anthropic-version", "2023-06-01")
     elif auth_type == "bearer":
         key_env = prov.get("api_key_env", "")
         key = os.getenv(key_env, "") if key_env else ""
@@ -344,6 +370,26 @@ def build_request(input_items: list, system: str, tool_schemas: list[dict], rese
         # Only set token limit when not ChatGPT Codex and in research mode
         if research_mode and not _is_chatgpt:
             payload["max_output_tokens"] = _res_max
+    elif kind == "anthropic":
+        # Anthropic Messages API (/v1/messages)
+        url = base_url.rstrip("/") + "/messages"
+        messages = _responses_to_anthropic_messages(input_items)
+        an_tools = _to_anthropic_tools(tool_schemas)
+        # system: 캐시 마커 적용 위해 블록 배열로. tools 가 있으면 마지막 tool 에도 마커.
+        system_blocks = [{"type": "text", "text": system or ""}]
+        if system_blocks[0]["text"]:
+            system_blocks[0]["cache_control"] = {"type": "ephemeral"}
+        if an_tools:
+            an_tools[-1]["cache_control"] = {"type": "ephemeral"}
+        payload = {
+            "model": model,
+            "system": system_blocks,
+            "messages": messages,
+            "max_tokens": 16000 if research_mode else 8000,
+            "stream": True,
+        }
+        if an_tools:
+            payload["tools"] = an_tools
     else:  # chat_completions
         url = base_url.rstrip("/") + "/chat/completions"
         messages = _responses_to_messages(system, input_items)
@@ -427,6 +473,86 @@ def _responses_to_messages(system: str, input_items: list[dict]) -> list[dict]:
         else:
             msgs.append({"role": role, "content": content or ""})
     return msgs
+
+
+def _responses_to_anthropic_messages(input_items: list[dict]) -> list[dict]:
+    """Responses API input → Anthropic Messages 포맷.
+
+    - message(text/image) → {role, content:[{type:text|image}]}
+    - function_call        → assistant {content:[{type:tool_use, id, name, input}]}
+    - function_call_output → user {content:[{type:tool_result, tool_use_id, content}]}
+    Anthropic 은 연속 동일 role 을 허용하므로 그대로 매핑한다."""
+    msgs: list[dict] = []
+    for item in input_items:
+        itype = item.get("type")
+        if itype == "function_call":
+            try:
+                inp = json.loads(item.get("arguments") or "{}")
+            except Exception:
+                inp = {}
+            msgs.append({"role": "assistant", "content": [{
+                "type": "tool_use",
+                "id": item.get("call_id", ""),
+                "name": item.get("name", ""),
+                "input": inp,
+            }]})
+            continue
+        if itype == "function_call_output":
+            msgs.append({"role": "user", "content": [{
+                "type": "tool_result",
+                "tool_use_id": item.get("call_id", ""),
+                "content": item.get("output", ""),
+            }]})
+            continue
+        # message
+        role = item.get("role", "user")
+        if role not in ("user", "assistant"):
+            role = "user"
+        content = item.get("content")
+        if isinstance(content, list):
+            blocks = []
+            for c in content:
+                ct = c.get("type")
+                if ct in ("input_text", "text"):
+                    blocks.append({"type": "text", "text": c.get("text", "")})
+                elif ct in ("input_image", "image"):
+                    url = c.get("image_url") or c.get("url") or c.get("image")
+                    if isinstance(url, dict):
+                        url = url.get("url", "")
+                    # data URI → base64 source; http URL → url source
+                    if isinstance(url, str) and url.startswith("data:"):
+                        try:
+                            meta, b64 = url.split(",", 1)
+                            media = meta.split(";")[0].split(":", 1)[1]
+                            blocks.append({"type": "image", "source": {
+                                "type": "base64", "media_type": media, "data": b64}})
+                        except Exception:
+                            pass
+                    elif isinstance(url, str) and url:
+                        blocks.append({"type": "image", "source": {"type": "url", "url": url}})
+            msgs.append({"role": role, "content": blocks})
+        else:
+            msgs.append({"role": role, "content": content or ""})
+    # Anthropic 은 첫 메시지가 user 여야 함 — assistant 로 시작하면 빈 user 삽입
+    if msgs and msgs[0]["role"] == "assistant":
+        msgs.insert(0, {"role": "user", "content": "."})
+    return msgs
+
+
+def _to_anthropic_tools(schemas: list[dict]) -> list[dict]:
+    """OpenAI Responses tool schema → Anthropic tool schema.
+    Responses: {type, name, description, parameters}
+    Anthropic: {name, description, input_schema}"""
+    out = []
+    for s in schemas:
+        if s.get("type") != "function":
+            continue
+        out.append({
+            "name": s.get("name", ""),
+            "description": s.get("description", ""),
+            "input_schema": s.get("parameters") or {"type": "object", "properties": {}},
+        })
+    return out
 
 
 def _apply_cache_markers(messages: list[dict], tools: list[dict]) -> None:

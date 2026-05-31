@@ -303,12 +303,14 @@ def _stream_sse(
     kind:
       'responses'         — OpenAI Responses API SSE (ChatGPT Codex)
       'chat_completions'  — OpenAI ChatCompletions SSE (OpenRouter / LM Studio / Ollama)
+      'anthropic'         — Anthropic Messages API SSE (api.anthropic.com /v1/messages)
     """
     import http.client, ssl
 
     tool_calls: dict[str, dict] = {}
     arg_buffers: dict[str, str] = {}
     cc_tool_calls: dict[int, dict] = {}  # accumulates ChatCompletions tool_calls by index
+    anthropic_blocks: dict[int, dict] = {}  # Anthropic content blocks by index (text / tool_use)
     conn = None
 
     # Single try-finally covers connect + consume — guarantees sentinel(None) even on connect/fallback failure.
@@ -354,6 +356,64 @@ def _stream_sse(
             try:
                 ev = json.loads(chunk)
             except Exception:
+                continue
+
+            if kind == "anthropic":
+                # Anthropic Messages API SSE: message_start / content_block_start /
+                # content_block_delta (text_delta | input_json_delta) / content_block_stop /
+                # message_delta (usage, stop_reason) / message_stop
+                et = ev.get("type", "")
+                if et == "message_start":
+                    usage = (ev.get("message") or {}).get("usage") or {}
+                    if stats_out is not None:
+                        stats_out["input_tokens"] = stats_out.get("input_tokens", 0) + usage.get("input_tokens", 0)
+                        stats_out["cached_tokens"] = stats_out.get("cached_tokens", 0) + usage.get("cache_read_input_tokens", 0)
+                        stats_out["cache_write_tokens"] = stats_out.get("cache_write_tokens", 0) + usage.get("cache_creation_input_tokens", 0)
+                        model_id = (ev.get("message") or {}).get("model")
+                        if model_id:
+                            stats_out["model"] = model_id
+                elif et == "content_block_start":
+                    idx = ev.get("index", 0)
+                    block = ev.get("content_block") or {}
+                    if block.get("type") == "tool_use":
+                        anthropic_blocks[idx] = {
+                            "id": block.get("id", ""),
+                            "call_id": block.get("id", ""),
+                            "name": block.get("name", ""),
+                            "arguments": "",
+                        }
+                    else:
+                        anthropic_blocks[idx] = {"type": "text"}
+                elif et == "content_block_delta":
+                    idx = ev.get("index", 0)
+                    delta = ev.get("delta") or {}
+                    dt = delta.get("type")
+                    if dt == "text_delta":
+                        text = delta.get("text", "")
+                        if text:
+                            token_q.put_nowait(text)
+                    elif dt == "input_json_delta":
+                        blk = anthropic_blocks.get(idx)
+                        if blk is not None and "arguments" in blk:
+                            blk["arguments"] += delta.get("partial_json", "")
+                elif et == "content_block_stop":
+                    idx = ev.get("index", 0)
+                    blk = anthropic_blocks.get(idx)
+                    if blk and blk.get("name"):
+                        tool_q.put_nowait({
+                            "id": blk["id"], "call_id": blk["call_id"],
+                            "name": blk["name"], "arguments": blk["arguments"],
+                        })
+                elif et == "message_delta":
+                    usage = ev.get("usage") or {}
+                    if stats_out is not None and usage:
+                        stats_out["output_tokens"] = stats_out.get("output_tokens", 0) + usage.get("output_tokens", 0)
+                elif et == "message_stop":
+                    break
+                elif et == "error":
+                    err = ev.get("error") or {}
+                    logger.error("Anthropic SSE error: %s", err.get("message", err))
+                    break
                 continue
 
             if kind == "chat_completions":
