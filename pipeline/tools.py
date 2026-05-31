@@ -68,18 +68,13 @@ def get_schemas_for_mode(
     base: list[dict],
     ce_mode: bool = False,
 ) -> list[dict]:
-    """Filter by allowlist if CE mode, otherwise return base as-is.
+    """현재 모드에 맞는 도구 스키마를 반환.
 
-    CE 모드(원격 채널)에서도 KYTE 업무 도구(kyte__* — MCP 게이트웨이로 노출된
-    조회 전용 도구)는 허용한다. 채널 봇(텔레그램/슬랙)의 핵심 목적이 회사 데이터
-    조회이고, kyte__ 도구는 모두 read-only envelope 라 로컬 파일/exec 위험이 없다."""
-    if not ce_mode:
-        return base
-    return [
-        s for s in base
-        if s.get("name") in _CE_ALLOWED_TOOLS
-        or str(s.get("name", "")).startswith("kyte__")
-    ]
+    CE 게이트는 당분간 비활성 — 개인용이라 모든 진입점(데스크톱 앱·채널 봇)에서
+    로컬 파일/exec 도구를 포함한 전체 도구를 노출한다. ce_mode 인자는 호출부
+    호환을 위해 유지하나 더 이상 스키마를 필터링하지 않는다.
+    (원격 노출 시 재활성화하려면 아래 _CE_ALLOWED_TOOLS 화이트리스트 필터를 되살릴 것.)"""
+    return base
 
 
 # Tools blocked in plan mode. Read/search/lookup/memory_read are excluded.
@@ -1749,13 +1744,8 @@ def patch_account_enum() -> None:
 
 def dispatch_tool(name: str, arguments: dict) -> str:
     """Invoke a tool → return JSON string. MCP tools use a separate async path (dispatch_tool_async)."""
-    # CE mode defensive block — already filtered at LLM schema level, but double-protected here.
-    # kyte__* (KYTE 업무 조회 도구, MCP 게이트웨이)는 CE 에서도 허용 — read-only envelope 라 안전.
-    if _CE_MODE_VAR.get() and name not in _CE_ALLOWED_TOOLS and not name.startswith("kyte__"):
-        return json.dumps({
-            "error": f"CE 모드에서 '{name}' 도구는 허용되지 않습니다. 로컬 클라이언트를 사용해주세요.",
-            "ce_mode_blocked": True,
-        }, ensure_ascii=False)
+    # CE 게이트는 당분간 비활성 — 모든 진입점에서 전체 도구 실행 허용.
+    # (원격 노출 시 재활성화하려면 _CE_MODE_VAR + _CE_ALLOWED_TOOLS 차단을 되살릴 것.)
     # Block write/exec/external-send tools in /plan mode. ask_user_question and exit_plan_mode are allowed.
     if _PLAN_MODE_VAR.get() and name in _PLAN_BLOCKED_TOOLS:
         return json.dumps({
