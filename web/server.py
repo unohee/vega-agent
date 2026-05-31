@@ -153,6 +153,21 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(_warmup_local_llm())
 
+    # Docker 코드 샌드박스 자동 확보 (백그라운드) — 기동 시 컨테이너를 띄워두어
+    # 첫 bash_exec/python_exec 호출 시 빌드/기동 지연을 없앤다. Docker 없으면 조용히 skip.
+    async def _warmup_sandbox():
+        try:
+            from pipeline.sandbox import ensure_sandbox_ready
+            result = await asyncio.get_event_loop().run_in_executor(None, ensure_sandbox_ready)
+            if result.get("ready"):
+                print(f"[Sandbox] ready ({result.get('reason')})")
+            else:
+                print(f"[Sandbox] skipped ({result.get('reason')}) — 코드 실행 도구는 Docker 기동 후 사용 가능")
+        except Exception as e:
+            print(f"[Sandbox] warmup warning: {e}")
+
+    asyncio.create_task(_warmup_sandbox())
+
     # Pre-create heartbeat / ops layer tables (prevents DDL write lock during runtime)
     try:
         from pipeline.heartbeat import (
@@ -673,6 +688,19 @@ def _custom_commands_help() -> str:
 @app.get("/")
 async def root():
     return HTMLResponse((STATIC_DIR / "dashboard.html").read_text(encoding="utf-8"))
+
+
+@app.get("/entry")
+async def entry():
+    """데스크톱 셸 진입점 — 온보딩 완료면 /chat, 아니면 설치 마법사(/install)로 보낸다."""
+    from fastapi.responses import RedirectResponse
+    from pipeline.user_profile import is_onboarded
+    return RedirectResponse(url=("/chat" if is_onboarded() else "/install"), status_code=302)
+
+
+@app.get("/install")
+async def install_page():
+    return HTMLResponse((STATIC_DIR / "install_wizard.html").read_text(encoding="utf-8"))
 
 
 @app.get("/chat")
