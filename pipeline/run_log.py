@@ -16,7 +16,7 @@ def _db() -> Path:
         from pipeline.data_paths import db_path
         return db_path()
     except Exception:
-        return Path.home() / "Library/Application Support/VEGA/vega.db"
+        return Path.home() / "Library/Application Support/VEGA/agent.db"
 
 
 def _ensure_table() -> None:

@@ -37,7 +37,9 @@ def repo_data_dir() -> Path:
 
 
 def db_path() -> Path:
-    return data_dir() / "vega.db"
+    # NOTE: vega-core 는 자체 agent.db 를 쓴다. 메인(개인) VEGA 의 vega.db 와
+    # 데이터 디렉터리를 공유하더라도 파일을 분리해 스키마 충돌을 피한다.
+    return data_dir() / "agent.db"
 
 
 def contacts_db_path() -> Path:
