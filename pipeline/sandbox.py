@@ -19,7 +19,13 @@ KST = ZoneInfo("Asia/Seoul")
 CONTAINER = "vega-sandbox"
 IMAGE = "vega-sandbox:latest"
 COMPOSE_DIR = Path(__file__).parent.parent / "sandbox"
-VEGA_DATA = Path(__file__).parent.parent / "data"
+
+# VEGA user data dir (컨테이너에 /vega_data 로 rw 마운트). data_paths 단일 출처 사용.
+try:
+    from pipeline.data_paths import data_dir as _data_dir
+    VEGA_DATA = _data_dir()
+except Exception:
+    VEGA_DATA = Path(__file__).parent.parent / "data"
 TIMEOUT_DEFAULT = 30
 
 # Per-request working directory — set via set_sandbox_project_dir.
@@ -63,6 +69,18 @@ def _rewrite_host_paths(text: str) -> str:
 
 # ── Container state ───────────────────────────────────────────────────────────
 
+def docker_available() -> bool:
+    """Docker 데몬이 응답하는지 확인. 미설치/미기동이면 False (조용히 skip 용)."""
+    try:
+        r = subprocess.run(
+            ["docker", "info", "--format", "{{.ServerVersion}}"],
+            capture_output=True, text=True, timeout=5,
+        )
+        return r.returncode == 0
+    except Exception:
+        return False
+
+
 def _container_running() -> bool:
     result = subprocess.run(
         ["docker", "inspect", "-f", "{{.State.Running}}", CONTAINER],
@@ -71,21 +89,47 @@ def _container_running() -> bool:
     return result.returncode == 0 and result.stdout.strip() == "true"
 
 
+def _compose_env() -> dict:
+    """compose 가 참조하는 경로 환경변수를 주입 — 배포본/사용자 환경 독립."""
+    import os
+    env = os.environ.copy()
+    env.setdefault("VEGA_HOST_HOME", _HOST_HOME)
+    env.setdefault("VEGA_DATA_DIR", str(VEGA_DATA))
+    return env
+
+
 def ensure_running() -> None:
-    """Start the container if it is missing or stopped. Does not rebuild the image (preserves persistence)."""
+    """컨테이너가 없거나 멈췄으면 기동. 이미지는 없을 때만 빌드(볼륨/영속 보존).
+    이미 돌고 있으면 즉시 반환 — 매번 재구축하지 않는다."""
     if _container_running():
         return
-    # --no-build: build only if image is absent, preserving existing container volumes
+    # docker compose up -d: 이미지 없으면 빌드, 있으면 재사용. 기존 named volume 보존.
     subprocess.run(
         ["docker", "compose", "up", "-d"],
         cwd=str(COMPOSE_DIR), check=True,
-        capture_output=True,
+        capture_output=True, env=_compose_env(),
     )
-    for _ in range(15):
+    for _ in range(30):
         if _container_running():
             return
         time.sleep(1)
     raise RuntimeError("vega-sandbox 컨테이너 기동 실패")
+
+
+def ensure_sandbox_ready(timeout: float = 0) -> dict:
+    """기동/설치 시 호출하는 자동 확보 진입점. Docker 가 있으면 컨테이너를 확보하고,
+    없으면 조용히 skip한다(에러로 죽지 않음). 코드 실행 도구가 항상 준비되도록 한다.
+
+    반환: {"ready": bool, "reason": str} — 호출부 로깅용."""
+    if not docker_available():
+        return {"ready": False, "reason": "docker_unavailable"}
+    try:
+        if _container_running():
+            return {"ready": True, "reason": "already_running"}
+        ensure_running()
+        return {"ready": True, "reason": "started"}
+    except Exception as e:
+        return {"ready": False, "reason": f"start_failed: {e}"}
 
 
 # ── Execution helpers ─────────────────────────────────────────────────────────

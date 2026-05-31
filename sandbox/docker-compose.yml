@@ -1,3 +1,8 @@
+# VEGA Code Sandbox — 에이전트 코드 실행용 격리 컨테이너.
+# 경로는 환경변수로 주입한다 (pipeline/sandbox.py 가 ensure_running 시 설정):
+#   VEGA_HOST_HOME : 호스트 홈 (읽기 전용 마운트) — 기본 현재 사용자 홈
+#   VEGA_DATA_DIR  : VEGA user data dir (읽기/쓰기) — 기본 ~/Library/Application Support/VEGA
+# 한 번 빌드한 이미지/볼륨은 재사용한다 (restart: unless-stopped + named volumes).
 services:
   vega-sandbox:
     build:
@@ -9,10 +14,10 @@ services:
     command: ["sleep", "infinity"]
     volumes:
       # 호스트 홈 읽기 전용
-      - /Users/unohee:/host_home:ro
+      - ${VEGA_HOST_HOME:-~}:/host_home:ro
       # VEGA data 읽기/쓰기
-      - /Users/unohee/dev/VEGA/data:/vega_data:rw
-      # 영속 작업 공간 — 에이전트 스킬 누적
+      - ${VEGA_DATA_DIR:-~/Library/Application Support/VEGA}:/vega_data:rw
+      # 영속 작업 공간 — 에이전트 스킬/패키지/이력 누적 (컨테이너 재시작에도 유지)
       - sandbox_lib:/workspace/lib            # 에이전트가 만든 Python 모듈
       - sandbox_packages:/workspace/site-packages  # pip install 패키지
       - sandbox_history:/workspace/history    # 실행 이력 JSONL
