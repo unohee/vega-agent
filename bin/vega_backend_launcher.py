@@ -10,6 +10,17 @@ from pathlib import Path
 BUNDLE_ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
 os.environ.setdefault("VEGA_BUNDLE_ROOT", str(BUNDLE_ROOT))
 
+# 배포된 PyInstaller 앱은 새 사용자 맥에서 시스템 CA 경로를 못 찾는 경우가 있다.
+# 프로세스 시작 시 certifi 번들 경로를 표준 SSL env에 고정해 모든 HTTPS 클라이언트가 공유하게 한다.
+try:
+    import certifi
+
+    ca_bundle = certifi.where()
+    os.environ.setdefault("SSL_CERT_FILE", ca_bundle)
+    os.environ.setdefault("REQUESTS_CA_BUNDLE", ca_bundle)
+except Exception:
+    pass
+
 # 작업 디렉터리를 번들 루트로 — 상대 경로 리소스(web/static, data/) 로딩 보장
 os.chdir(BUNDLE_ROOT)
 sys.path.insert(0, str(BUNDLE_ROOT))

@@ -16,6 +16,16 @@ from pydantic import BaseModel
 router = APIRouter()
 
 
+def _ssl_context():
+    """PyInstaller 번들에서 시스템 CA를 못 찾는 경우를 위해 certifi CA를 명시한다."""
+    import ssl
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        return ssl.create_default_context()
+
+
 # ── 프로바이더 카탈로그 — 마법사가 목록으로 보여줄 선택지 ──────────────────────
 # auth: "pkce"(브라우저 OAuth) | "key"(API 키) | "local"(URL만)
 PROVIDER_CATALOG = [
@@ -37,7 +47,7 @@ PROVIDER_CATALOG = [
     {
         "id": "openrouter", "label": "OpenRouter", "auth": "key",
         "key_env": "OPENROUTER_API", "key_hint": "sk-or-v1-...",
-        "verify_url": "https://openrouter.ai/api/v1/models",
+        "verify_url": "https://openrouter.ai/api/v1/key",
         "verify_header": "bearer", "default_model": "deepseek/deepseek-v4-flash",
         "desc": "한 키로 Claude·GPT·Gemini·DeepSeek 등 모두 접근.",
     },
@@ -107,7 +117,7 @@ def _verify_key(entry: dict, key: str) -> tuple[bool, str]:
         headers["Authorization"] = f"Bearer {key}"
     try:
         req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with urllib.request.urlopen(req, timeout=15, context=_ssl_context()) as resp:
             return (resp.status == 200), ("" if resp.status == 200 else f"HTTP {resp.status}")
     except urllib.error.HTTPError as e:
         return False, f"키가 거부되었습니다 (HTTP {e.code})"
@@ -195,7 +205,7 @@ def _local_reachable(base: str) -> bool:
     import urllib.request
     try:
         req = urllib.request.Request(base.rstrip("/") + "/models", method="GET")
-        with urllib.request.urlopen(req, timeout=3):
+        with urllib.request.urlopen(req, timeout=3, context=_ssl_context()):
             return True
     except Exception:
         return False

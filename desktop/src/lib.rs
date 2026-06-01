@@ -16,23 +16,33 @@ use tauri::{
     Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent,
 };
 
-fn backend_url() -> String {
+fn backend_is_listening() -> bool {
+    std::net::TcpStream::connect("127.0.0.1:8100").is_ok()
+}
+
+/// 백엔드 베이스 URL (스킴+호스트+포트, 경로 없음).
+fn backend_base() -> String {
     #[cfg(feature = "client")]
     {
         let cfg = client_config::load_config();
-        return format!("{}/chat", cfg.server_url);
+        return cfg.server_url.trim_end_matches('/').to_string();
     }
     #[cfg(not(feature = "client"))]
-    "http://localhost:8100/chat".to_string()
+    "http://localhost:8100".to_string()
 }
 
-/// 백엔드가 응답할 때까지 최대 30초 폴링 후 창에 URL 로드.
+/// 첫 진입 URL. `/entry`는 온보딩 완료 여부에 따라 서버가
+/// `/install`(API 키 등록 마법사) 또는 `/chat`으로 302 리다이렉트한다.
+fn backend_url() -> String {
+    format!("{}/entry", backend_base())
+}
+
+/// 백엔드가 응답할 때까지 최대 120초 폴링 후 창에 URL 로드.
 fn wait_and_navigate(win: tauri::WebviewWindow, url: String) {
     std::thread::spawn(move || {
-        let health = url.replace("/chat", "/api/health");
-        for _ in 0..60 {
-            if let Ok(resp) = std::net::TcpStream::connect("127.0.0.1:8100") {
-                drop(resp);
+        let health = format!("{}/api/health", backend_base());
+        for _ in 0..240 {
+            if backend_is_listening() {
                 // TCP 연결 가능 → HTTP 응답 대기 (uvicorn 초기화 시간)
                 std::thread::sleep(std::time::Duration::from_millis(300));
                 let _ = win.eval(&format!("window.location.href = {:?}", url));
@@ -40,9 +50,9 @@ fn wait_and_navigate(win: tauri::WebviewWindow, url: String) {
             }
             std::thread::sleep(std::time::Duration::from_millis(500));
         }
-        // 30초 후에도 안 뜨면 오류 페이지
+        // 120초 후에도 안 뜨면 오류 페이지
         let _ = win.eval(&format!(
-            "document.body.innerHTML = '<div style=\"font-family:sans-serif;padding:40px;color:#e6edf3;background:#0d1117\"><h2>백엔드 연결 실패</h2><p>VEGA 서버({})에 접속할 수 없습니다.</p></div>'",
+            "document.body.innerHTML = '<div style=\"font-family:sans-serif;padding:40px;color:#e6edf3;background:#0d1117\"><h2>백엔드 연결 실패</h2><p>VEGA 서버({})에 접속할 수 없습니다.</p><p style=\"color:#9aa4b2\">/tmp/vega-backend.stderr.log 를 확인하세요.</p></div>'",
             health
         ));
     });
@@ -107,54 +117,130 @@ fn resources_dir(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
     app.path().resource_dir().ok()
 }
 
-/// LaunchAgent plist가 없으면 Resources에서 복사 후 등록.
-/// 이미 등록되어 있으면 아무것도 하지 않음.
 #[cfg(feature = "daemon")]
-fn ensure_launchagent(app: &tauri::AppHandle) {
+fn bundled_backend_path(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+    app.path()
+        .resource_dir()
+        .ok()
+        .and_then(|p| p.parent().map(|contents| contents.join("MacOS/vega-backend")))
+}
+
+#[cfg(feature = "daemon")]
+fn spawn_backend_directly(app: &tauri::AppHandle) {
+    if backend_is_listening() {
+        return;
+    }
+    let Some(backend) = bundled_backend_path(app) else {
+        eprintln!("[VEGA] 백엔드 실행 파일 경로 확인 실패");
+        return;
+    };
+    if !backend.exists() {
+        eprintln!("[VEGA] 백엔드 실행 파일 없음: {}", backend.display());
+        return;
+    }
+
+    let stdout = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("/tmp/vega-backend.stdout.log")
+        .ok()
+        .map(std::process::Stdio::from)
+        .unwrap_or_else(std::process::Stdio::null);
+    let stderr = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("/tmp/vega-backend.stderr.log")
+        .ok()
+        .map(std::process::Stdio::from)
+        .unwrap_or_else(std::process::Stdio::null);
+
+    match std::process::Command::new(&backend)
+        .stdout(stdout)
+        .stderr(stderr)
+        .spawn()
+    {
+        Ok(child) => eprintln!("[VEGA] 백엔드 직접 실행 fallback: pid={}", child.id()),
+        Err(e) => eprintln!("[VEGA] 백엔드 직접 실행 실패: {e}"),
+    }
+}
+
+/// Resources의 LaunchAgent plist를 매 실행마다 갱신하고 재등록한다.
+/// 기존 백엔드가 떠 있으면 새 앱 설치 후에도 오래된 프로세스가 8100을 계속 잡을 수 있으므로
+/// bootout/bootstrap/kickstart로 현재 /Applications/VEGA.app의 백엔드를 강제로 반영한다.
+#[cfg(feature = "daemon")]
+fn ensure_launchagent(app: &tauri::AppHandle) -> bool {
     let plist_dst = launchagent_plist_path();
 
-    if !plist_dst.exists() {
-        if let Some(res) = resources_dir(app) {
-            let plist_src = res.join("com.unohee.vega-backend.plist");
-            if plist_src.exists() {
-                if let Some(parent) = plist_dst.parent() {
-                    let _ = std::fs::create_dir_all(parent);
-                }
-                // __HOME__ 플레이스홀더를 실제 홈 경로로 치환
-                match std::fs::read_to_string(&plist_src) {
-                    Ok(content) => {
-                        let home = dirs_next::home_dir()
-                            .map(|p| p.to_string_lossy().into_owned())
-                            .unwrap_or_else(|| "/tmp".to_string());
-                        let replaced = content.replace("__HOME__", &home);
-                        if let Err(e) = std::fs::write(&plist_dst, replaced) {
-                            eprintln!("[VEGA] LaunchAgent plist 쓰기 실패: {e}");
-                            return;
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!("[VEGA] LaunchAgent plist 읽기 실패: {e}");
-                        return;
-                    }
-                }
-            } else {
-                eprintln!("[VEGA] LaunchAgent plist 소스 없음: {}", plist_src.display());
-                return;
+    if let Some(res) = resources_dir(app) {
+        let plist_src = res.join("com.unohee.vega-backend.plist");
+        if plist_src.exists() {
+            if let Some(parent) = plist_dst.parent() {
+                let _ = std::fs::create_dir_all(parent);
             }
+            match std::fs::read_to_string(&plist_src) {
+                Ok(content) => {
+                    let home = dirs_next::home_dir()
+                        .map(|p| p.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| "/tmp".to_string());
+                    let replaced = content.replace("__HOME__", &home);
+                    if let Err(e) = std::fs::write(&plist_dst, replaced) {
+                        eprintln!("[VEGA] LaunchAgent plist 쓰기 실패: {e}");
+                        return false;
+                    }
+                }
+                Err(e) => {
+                    eprintln!("[VEGA] LaunchAgent plist 읽기 실패: {e}");
+                    return false;
+                }
+            }
+        } else {
+            eprintln!("[VEGA] LaunchAgent plist 소스 없음: {}", plist_src.display());
+            return false;
         }
     }
 
-    // launchctl bootstrap (이미 등록돼 있으면 오류 무시)
     let uid = unsafe { libc::getuid() };
     let domain = format!("gui/{uid}");
-    let status = std::process::Command::new("launchctl")
+    let label = "com.unohee.vega-backend";
+    let target = format!("{domain}/{label}");
+
+    // 기존 등록/프로세스를 먼저 내린다. 미등록이면 실패하므로 결과는 무시한다.
+    let _ = std::process::Command::new("launchctl")
+        .args(["bootout", &domain, plist_dst.to_str().unwrap_or("")])
+        .status();
+    let _ = std::process::Command::new("launchctl")
+        .args(["bootout", &target])
+        .status();
+
+    let bootstrap = std::process::Command::new("launchctl")
         .args(["bootstrap", &domain, plist_dst.to_str().unwrap_or("")])
         .status();
 
-    match status {
+    match bootstrap {
         Ok(s) if s.success() => eprintln!("[VEGA] LaunchAgent 등록 완료"),
-        Ok(_) => eprintln!("[VEGA] LaunchAgent 이미 등록됨 (무시)"),
-        Err(e) => eprintln!("[VEGA] launchctl 실행 실패: {e}"),
+        Ok(s) => {
+            eprintln!("[VEGA] LaunchAgent 등록 실패: {s}");
+            return false;
+        }
+        Err(e) => {
+            eprintln!("[VEGA] launchctl 실행 실패: {e}");
+            return false;
+        }
+    }
+
+    let kickstart = std::process::Command::new("launchctl")
+        .args(["kickstart", "-k", &target])
+        .status();
+    match kickstart {
+        Ok(s) if s.success() => true,
+        Ok(s) => {
+            eprintln!("[VEGA] LaunchAgent kickstart 실패: {s}");
+            false
+        }
+        Err(e) => {
+            eprintln!("[VEGA] launchctl kickstart 실행 실패: {e}");
+            false
+        }
     }
 }
 
@@ -207,9 +293,6 @@ pub fn run() {
                 .hidden_title(true)
                 .build()?;
 
-            // 백엔드 준비 후 실제 URL로 전환 (흰 화면 방지)
-            wait_and_navigate(win, backend_url());
-
             #[cfg(all(desktop, not(any(target_os = "android", target_os = "ios"))))]
             {
                 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut};
@@ -220,7 +303,12 @@ pub fn run() {
 
             // LaunchAgent 등록 (daemon 모드 첫 실행 시)
             #[cfg(feature = "daemon")]
-            ensure_launchagent(&app.handle());
+            if !ensure_launchagent(&app.handle()) {
+                spawn_backend_directly(&app.handle());
+            }
+
+            // 백엔드 준비 후 실제 URL로 전환 (흰 화면 방지)
+            wait_and_navigate(win, backend_url());
 
             // 트레이 메뉴
             let s = strings();
