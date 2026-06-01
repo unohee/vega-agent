@@ -94,8 +94,11 @@ pub fn set_lang(lang: String, app: tauri::AppHandle) -> Result<(), String> {
     cfg.lang = lang;
     save_config(&cfg)?;
 
-    // 트레이 메뉴 라벨 실시간 갱신
+    // 트레이 메뉴 라벨 실시간 갱신 — 데스크탑 전용 (모바일엔 트레이 없음)
+    #[cfg(desktop)]
     rebuild_tray(&app);
+    #[cfg(not(desktop))]
+    let _ = &app;
     Ok(())
 }
 
@@ -132,6 +135,8 @@ pub fn strings() -> Strings {
 
 /// 언어 변경 후 트레이 메뉴를 새 라벨로 재빌드.
 /// Tauri v2는 메뉴 아이템 라벨 in-place 변경을 지원하지 않으므로 트레이를 통째로 교체.
+/// 데스크탑 전용 — 모바일엔 시스템 트레이 API(`tray_by_id`)가 없다.
+#[cfg(desktop)]
 pub fn rebuild_tray(app: &tauri::AppHandle) {
     use tauri::menu::{MenuBuilder, MenuItemBuilder};
 

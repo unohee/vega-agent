@@ -8,28 +8,64 @@
 
 pub mod client_config;
 
+// strings()는 트레이/설정창 라벨용 — 데스크탑 전용.
+#[cfg(desktop)]
 use client_config::strings;
 
+use tauri::{WebviewUrl, WebviewWindowBuilder};
+// Manager: get_webview_window/resource_dir — 데스크탑 또는 데스크탑 daemon(sidecar)에서만 사용.
+// 모바일에선 daemon 코드가 not(mobile)로 배제되므로 Manager도 불필요.
+#[cfg(any(desktop, all(feature = "daemon", not(mobile))))]
+use tauri::Manager;
+
+// 트레이/메뉴/창 이벤트는 데스크탑 전용 — 모바일 빌드에선 미사용이라 가드한다.
+#[cfg(desktop)]
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder},
     tray::TrayIconBuilder,
-    Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent,
+    WindowEvent,
 };
 
 fn backend_is_listening() -> bool {
     std::net::TcpStream::connect("127.0.0.1:8100").is_ok()
 }
 
+/// 빌드타임에 주입하는 모바일 기본 백엔드 URL.
+/// `VEGA_SERVER_URL` 환경변수가 있으면 그 값을, 없으면 localhost(시뮬레이터용)를 쓴다.
+/// 예) VEGA_SERVER_URL=https://vega.example.com cargo tauri ios build
+#[cfg(mobile)]
+const MOBILE_DEFAULT_SERVER_URL: &str = match option_env!("VEGA_SERVER_URL") {
+    Some(u) => u,
+    None => "http://localhost:8100",
+};
+
 /// 백엔드 베이스 URL (스킴+호스트+포트, 경로 없음).
 fn backend_base() -> String {
-    #[cfg(feature = "client")]
+    // 모바일: 저장된 client config가 기본값이 아니면 그것을, 아니면 빌드타임 주입값을 쓴다.
+    #[cfg(mobile)]
+    {
+        let cfg = client_config::load_config();
+        let stored = cfg.server_url.trim_end_matches('/').to_string();
+        if stored == "http://localhost:8100" {
+            return MOBILE_DEFAULT_SERVER_URL.trim_end_matches('/').to_string();
+        }
+        return stored;
+    }
+    #[cfg(all(feature = "client", not(mobile)))]
     {
         let cfg = client_config::load_config();
         return cfg.server_url.trim_end_matches('/').to_string();
     }
-    #[cfg(not(feature = "client"))]
+    #[cfg(all(not(feature = "client"), not(mobile)))]
     "http://localhost:8100".to_string()
 }
+
+/// 모바일(iOS/Android) 여부 — 컴파일 타임 상수.
+/// 모바일은 로컬 sidecar 백엔드를 띄울 수 없으므로 항상 원격 URL에 바로 붙는다.
+#[cfg(any(target_os = "ios", target_os = "android"))]
+const IS_MOBILE: bool = true;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+const IS_MOBILE: bool = false;
 
 /// 첫 진입 URL. `/entry`는 온보딩 완료 여부에 따라 서버가
 /// `/install`(API 키 등록 마법사) 또는 `/chat`으로 302 리다이렉트한다.
@@ -38,7 +74,15 @@ fn backend_url() -> String {
 }
 
 /// 백엔드가 응답할 때까지 최대 120초 폴링 후 창에 URL 로드.
+///
+/// 모바일(iOS/Android)에서는 sidecar 백엔드가 없고 원격 서버에 붙으므로
+/// 로컬 TCP 폴링을 건너뛰고 곧바로 원격 URL을 로드한다. 도달 불가 시
+/// WebView 자체가 네트워크 오류를 표시한다.
 fn wait_and_navigate(win: tauri::WebviewWindow, url: String) {
+    if IS_MOBILE {
+        let _ = win.eval(&format!("window.location.href = {url:?}"));
+        return;
+    }
     std::thread::spawn(move || {
         let health = format!("{}/api/health", backend_base());
         for _ in 0..240 {
@@ -63,6 +107,7 @@ fn make_loading_page() -> WebviewUrl {
     WebviewUrl::App("index.html".into())
 }
 
+#[cfg(desktop)]
 fn toggle_main_window(app: &tauri::AppHandle) {
     if let Some(win) = app.get_webview_window("main") {
         match win.is_visible() {
@@ -76,6 +121,7 @@ fn toggle_main_window(app: &tauri::AppHandle) {
     }
 }
 
+#[cfg(desktop)]
 fn show_main_window(app: &tauri::AppHandle) {
     if let Some(win) = app.get_webview_window("main") {
         let _ = win.unminimize();
@@ -84,6 +130,7 @@ fn show_main_window(app: &tauri::AppHandle) {
     }
 }
 
+#[cfg(desktop)]
 fn open_settings_window(app: &tauri::AppHandle) {
     if let Some(win) = app.get_webview_window("settings") {
         let _ = win.show();
@@ -105,19 +152,19 @@ fn open_settings_window(app: &tauri::AppHandle) {
 
 // ── LaunchAgent 관리 (daemon 전용) ────────────────────────────────────────────
 
-#[cfg(feature = "daemon")]
+#[cfg(all(feature = "daemon", not(mobile)))]
 fn launchagent_plist_path() -> std::path::PathBuf {
     dirs_next::home_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
         .join("Library/LaunchAgents/com.unohee.vega-backend.plist")
 }
 
-#[cfg(feature = "daemon")]
+#[cfg(all(feature = "daemon", not(mobile)))]
 fn resources_dir(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
     app.path().resource_dir().ok()
 }
 
-#[cfg(feature = "daemon")]
+#[cfg(all(feature = "daemon", not(mobile)))]
 fn bundled_backend_path(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
     app.path()
         .resource_dir()
@@ -125,7 +172,7 @@ fn bundled_backend_path(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
         .and_then(|p| p.parent().map(|contents| contents.join("MacOS/vega-backend")))
 }
 
-#[cfg(feature = "daemon")]
+#[cfg(all(feature = "daemon", not(mobile)))]
 fn spawn_backend_directly(app: &tauri::AppHandle) {
     if backend_is_listening() {
         return;
@@ -167,7 +214,7 @@ fn spawn_backend_directly(app: &tauri::AppHandle) {
 /// Resources의 LaunchAgent plist를 매 실행마다 갱신하고 재등록한다.
 /// 기존 백엔드가 떠 있으면 새 앱 설치 후에도 오래된 프로세스가 8100을 계속 잡을 수 있으므로
 /// bootout/bootstrap/kickstart로 현재 /Applications/VEGA.app의 백엔드를 강제로 반영한다.
-#[cfg(feature = "daemon")]
+#[cfg(all(feature = "daemon", not(mobile)))]
 fn ensure_launchagent(app: &tauri::AppHandle) -> bool {
     let plist_dst = launchagent_plist_path();
 
@@ -249,7 +296,8 @@ pub fn run() {
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init());
 
-    #[cfg(feature = "client")]
+    // client feature 또는 모바일: 서버 URL/언어 변경 커맨드 등록.
+    #[cfg(any(feature = "client", mobile))]
     {
         builder = builder.invoke_handler(tauri::generate_handler![
             client_config::get_server_url,
@@ -258,7 +306,8 @@ pub fn run() {
             client_config::set_lang,
         ]);
     }
-    #[cfg(feature = "daemon")]
+    // 데스크탑 daemon 전용 (client/mobile이 아닐 때만): 언어 커맨드만.
+    #[cfg(all(feature = "daemon", not(mobile), not(feature = "client")))]
     {
         builder = builder.invoke_handler(tauri::generate_handler![
             client_config::get_lang,
@@ -283,15 +332,22 @@ pub fn run() {
 
     builder
         .setup(|app| {
-            let win = WebviewWindowBuilder::new(app, "main", make_loading_page())
-                .title("VEGA")
+            // 데스크탑: 크기 지정 + macOS 오버레이 타이틀바.
+            // 모바일(iOS/Android): 전체화면 단일 윈도우 — TitleBarStyle/inner_size 등은
+            // macOS 전용이거나 무의미하므로 적용하지 않는다.
+            let win_builder = WebviewWindowBuilder::new(app, "main", make_loading_page())
+                .title("VEGA");
+
+            #[cfg(desktop)]
+            let win_builder = win_builder
                 .inner_size(980.0, 760.0)
                 .min_inner_size(420.0, 480.0)
                 .resizable(true)
                 .center()
                 .title_bar_style(tauri::TitleBarStyle::Overlay)
-                .hidden_title(true)
-                .build()?;
+                .hidden_title(true);
+
+            let win = win_builder.build()?;
 
             #[cfg(all(desktop, not(any(target_os = "android", target_os = "ios"))))]
             {
@@ -302,7 +358,7 @@ pub fn run() {
             }
 
             // LaunchAgent 등록 (daemon 모드 첫 실행 시)
-            #[cfg(feature = "daemon")]
+            #[cfg(all(feature = "daemon", not(mobile)))]
             if !ensure_launchagent(&app.handle()) {
                 spawn_backend_directly(&app.handle());
             }
@@ -310,7 +366,9 @@ pub fn run() {
             // 백엔드 준비 후 실제 URL로 전환 (흰 화면 방지)
             wait_and_navigate(win, backend_url());
 
-            // 트레이 메뉴
+            // 트레이 메뉴 — 데스크탑 전용 (모바일엔 시스템 트레이가 없음)
+            #[cfg(desktop)]
+            {
             let s = strings();
             let show_item     = MenuItemBuilder::with_id("show",     s.open).build(app)?;
             let hide_item     = MenuItemBuilder::with_id("hide",     s.hide).build(app)?;
@@ -344,16 +402,22 @@ pub fn run() {
                     _ => {}
                 })
                 .build(app)?;
+            } // end #[cfg(desktop)] 트레이 블록
 
             Ok(())
         })
         .on_window_event(|window, event| {
+            // 창 닫기 시 숨김 처리는 데스크탑 전용 (트레이로 다시 열 수 있으므로).
+            // 모바일엔 트레이가 없어 닫기를 가로채면 앱을 다시 띄울 수 없다.
+            #[cfg(desktop)]
             if let WindowEvent::CloseRequested { api, .. } = event {
                 if window.label() == "main" {
                     let _ = window.hide();
                     api.prevent_close();
                 }
             }
+            #[cfg(not(desktop))]
+            let _ = (window, event);
         })
         .run(tauri::generate_context!())
         .expect("VEGA desktop error");
