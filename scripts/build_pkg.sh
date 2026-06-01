@@ -15,7 +15,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
-VERSION="0.1.2"
+VERSION="0.1.3"
 APP_NAME="VEGA"
 IDENTIFIER="com.unohee.vega"
 SIGN_APP="Developer ID Application: Heewon Oh (635QK74RYK)"
@@ -52,7 +52,7 @@ echo "  ✓ vega-backend ($(du -sh bin/vega-backend | cut -f1))"
 # ── 1. Tauri 앱 빌드 ──────────────────────────────────────────────────────────
 echo "[1/6] cargo tauri build..."
 cd "$REPO_ROOT/desktop"
-cargo tauri build --target aarch64-apple-darwin 2>&1 | grep -E "Compiling|Finished|error|Bundling"
+cargo tauri build --target aarch64-apple-darwin --bundles app 2>&1 | grep -E "Compiling|Finished|error|Bundling"
 TAURI_APP="$REPO_ROOT/desktop/target/aarch64-apple-darwin/release/bundle/macos/${APP_NAME}.app"
 if [ ! -d "$TAURI_APP" ]; then
     echo "ERROR: VEGA.app 빌드 실패 — $TAURI_APP 없음" >&2

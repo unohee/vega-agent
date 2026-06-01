@@ -54,6 +54,20 @@ for _meta_pkg in ("fastmcp", "mcp", "openai", "anthropic", "fastapi",
     except Exception:
         pass
 
+# certifi CA 번들(cacert.pem) 명시 동봉 — SSL 검증의 신뢰 루트.
+# PyInstaller 내장 hook 이 보통 cacert.pem 을 자동 동봉하지만, hook 누락/버전
+# 변화에 대비해 명시적으로 못박는다. 이게 없으면 깨끗한 사용자 맥에서 외부 HTTPS 가
+# CERTIFICATE_VERIFY_FAILED 로 죽는다(certifi.where() 가 가리키는 파일이 번들에 없음).
+hiddenimports += ["certifi"]
+try:
+    datas += collect_data_files("certifi")  # cacert.pem
+except Exception:
+    pass
+try:
+    datas += copy_metadata("certifi")
+except Exception:
+    pass
+
 # 백엔드가 import 하는 자체 패키지 전부
 hiddenimports += collect_submodules("pipeline")
 hiddenimports += collect_submodules("web")

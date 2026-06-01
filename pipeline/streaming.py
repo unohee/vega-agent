@@ -15,6 +15,8 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from pipeline.ssl_ctx import certified_context
+
 logger = logging.getLogger(__name__)
 
 # Max chars for dashboard section in system prompt (guards token budget)
@@ -322,7 +324,8 @@ def _stream_sse(
             host_port = url.split("//", 1)[1].split("/", 1)[0]
             path = "/" + url.split("//", 1)[1].split("/", 1)[1] if "/" in url.split("//", 1)[1] else "/"
             ConnCls = http.client.HTTPSConnection if is_https else http.client.HTTPConnection
-            ctx = ssl.create_default_context() if is_https else None
+            # certifi 명시 context — PyInstaller 번들/깨끗한 사용자 맥에서도 CA 검증 통과
+            ctx = certified_context() if is_https else None
             conn = ConnCls(host_port, context=ctx, timeout=30) if is_https else ConnCls(host_port, timeout=30)
             conn.connect()
             conn.sock.settimeout(None)  # model can take a long time before the first token
@@ -338,7 +341,8 @@ def _stream_sse(
                 try: conn.close()
                 except Exception: pass
             conn = None
-            line_iter = urllib.request.urlopen(req, timeout=600)
+            _ufctx = certified_context() if req.full_url.startswith("https://") else None
+            line_iter = urllib.request.urlopen(req, timeout=600, context=_ufctx)
 
         # 2) Consume SSE lines
         for raw_line in line_iter:
