@@ -5349,6 +5349,17 @@ async function init() {
       headerAuth.classList.remove('ok'); headerAuth.classList.add('warn');
     }
     document.getElementById('status-server').classList.add('ok');
+
+    // sandbox 경고 — docker_off / container_down 이면 status-auth에 추가 힌트
+    if (data.sandbox === 'docker_off') {
+      const hint = document.createElement('span');
+      hint.id = 'status-sandbox-warn';
+      hint.className = 'status-item';
+      hint.style.color = 'var(--error)';
+      hint.title = 'Docker가 꺼져 있어 bash/python 도구가 작동하지 않습니다. Docker Desktop을 실행하세요.';
+      hint.textContent = '⚠ Docker';
+      document.getElementById('status-server').after(hint);
+    }
   } catch {}
 
   await checkOnboarding();  // 첫 실행이면 온보딩 모달 표시
