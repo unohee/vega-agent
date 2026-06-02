@@ -21,9 +21,11 @@ _RECENT_FAILURES_LIMIT = 200
 
 
 def _db_path() -> Path:
+    # 영속 데이터 루트에 둔다 — repo_data_dir()(번들 내 data/)은 onefile 에서
+    # 읽기전용/임시(_MEIPASS)라 SQLite write 가 깨진다.
     try:
-        from pipeline.data_paths import repo_data_dir
-        return repo_data_dir() / "tool_telemetry.db"
+        from pipeline.data_paths import data_dir
+        return data_dir() / "tool_telemetry.db"
     except Exception:
         return Path(__file__).parent.parent / "data" / "tool_telemetry.db"
 

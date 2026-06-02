@@ -354,7 +354,12 @@ print(json.dumps(result, ensure_ascii=False, default=str))
 def _log_improvement(tool_name: str, patch_code: str) -> None:
     """Append improvement record to VEGA data."""
     try:
-        log_path = Path(__file__).parent.parent / "data" / "improvements.jsonl"
+        # 영속 데이터 루트에 기록 — 번들 상대경로(_MEIPASS)는 onefile 에서 읽기전용/임시.
+        try:
+            from pipeline.data_paths import data_dir
+            log_path = data_dir() / "improvements.jsonl"
+        except Exception:
+            log_path = Path(__file__).parent.parent / "data" / "improvements.jsonl"
         record = {
             "ts": datetime.now(KST).isoformat(),
             "tool": tool_name,

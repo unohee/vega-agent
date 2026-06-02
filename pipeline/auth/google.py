@@ -33,7 +33,6 @@ import webbrowser
 from pathlib import Path
 
 
-ENV_PATH = Path("/Users/unohee/dev/intrect-platform/.env")
 KEYCHAIN_SERVICE = "vega-google-oauth"
 REDIRECT_PORT = 9876
 REDIRECT_URI = f"http://localhost:{REDIRECT_PORT}/callback"
@@ -64,13 +63,16 @@ ACCOUNTS = {
 
 
 def load_env() -> dict[str, str]:
-    env = {}
-    for line in ENV_PATH.read_text().splitlines():
-        line = line.strip()
-        if "=" in line and not line.startswith("#"):
-            k, v = line.split("=", 1)
-            env[k.strip()] = v.strip()
-    return env
+    """Google OAuth client_id/secret 을 통합 keychain 모듈로 조회한다.
+    우선순위: Keychain → 영속 .env(~/Library/Application Support/VEGA/.env) → 환경변수.
+    (과거엔 하드코딩된 개인 절대경로 .env 만 읽어 배포본/타 사용자 맥에서 깨졌다.)
+    """
+    from pipeline import keychain
+    keys = set()
+    for info in ACCOUNTS.values():
+        keys.add(info["client_id_key"])
+        keys.add(info["client_secret_key"])
+    return {k: keychain.get(k) for k in keys if keychain.get(k)}
 
 
 def keychain_save(account: str, token: str) -> None:
