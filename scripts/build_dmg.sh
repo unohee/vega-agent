@@ -57,6 +57,21 @@ cd "$REPO_ROOT/desktop"
 # 로 빌드 자체를 죽인다. 서명은 [1.5] 에서 sign_and_notarize.sh 가 키체인을
 # unlock/partition 설정한 뒤 entitlements 와 함께 전담한다.
 unset APPLE_SIGNING_IDENTITY || true
+
+# ── 자동 업데이트 서명 키 (updater 아티팩트의 .sig 생성에 필요) ────────────────
+# tauri.conf.json 의 createUpdaterArtifacts: true 가 .app.tar.gz 와 .sig 를 만들려면
+# 빌드 시점에 TAURI_SIGNING_PRIVATE_KEY 가 있어야 한다. 없으면 updater 아티팩트는
+# 서명 없이 생성 시도되다 실패하므로, 키가 없을 땐 경고만 하고 계속 진행한다(DMG 자체는 생성됨).
+UPDATER_KEY_PATH="${TAURI_SIGNING_PRIVATE_KEY_PATH:-$HOME/.tauri/vega-updater.key}"
+if [ -f "$UPDATER_KEY_PATH" ]; then
+    export TAURI_SIGNING_PRIVATE_KEY="$(cat "$UPDATER_KEY_PATH")"
+    export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}"
+    echo "  updater 서명 키: $UPDATER_KEY_PATH"
+else
+    echo "  ⚠️  updater 서명 키 없음($UPDATER_KEY_PATH) — updater 아티팩트(.sig) 생성 skip."
+    echo "     키 생성: cargo tauri signer generate -w ~/.tauri/vega-updater.key --password \"\""
+fi
+
 # --bundles app: app 번들만 생성. dmg 타겟은 create-dmg(osascript/Finder)로 헤드리스
 # 환경에서 hang 하므로 제외 — DMG 는 아래 hdiutil 단계에서 만든다.
 cargo tauri build --target aarch64-apple-darwin --bundles app 2>&1 | grep -E "Compiling|Finished|error|Bundling"
@@ -106,6 +121,31 @@ echo "  ✓ DMG 생성"
 echo "[4/5] DMG 서명/공증..."
 VEGA_SIGN_ID="$SIGN_APP" bash "$REPO_ROOT/scripts/sign_and_notarize.sh" --artifact-only "$DMG_OUT"
 
+# ── 4.5. 자동 업데이트 아티팩트 생성 ──────────────────────────────────────────
+# updater 가 내려받아 적용할 패키지는 *재서명·공증된* VEGA.app 을 tar.gz 로 압축한 것.
+# (cargo tauri build 가 자동 생성하는 .app.tar.gz 는 [1.5] 재서명 *이전*의 adhoc
+#  앱이라 Gatekeeper 에 막힌다. 그래서 여기서 최종 앱으로 다시 만든다.)
+# 서명 키가 있을 때만 수행. 산출물: build_output/VEGA-<ver>-aarch64.app.tar.gz(.sig)
+UPDATER_DIR="$BUILD_DIR/updater"
+if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
+    echo "[4.5/5] updater 아티팩트(.app.tar.gz + .sig) 생성..."
+    mkdir -p "$UPDATER_DIR"
+    UPDATER_TGZ="$UPDATER_DIR/${APP_NAME}-${VERSION}-aarch64.app.tar.gz"
+    # gzip tar 로 .app 통째 압축 (Tauri updater 가 기대하는 형식)
+    tar -C "$(dirname "$TAURI_APP")" -czf "$UPDATER_TGZ" "$(basename "$TAURI_APP")"
+    # minisign(.sig) 서명 — TAURI_SIGNING_PRIVATE_KEY(_PASSWORD) 환경변수 사용
+    ( cd "$REPO_ROOT/desktop" && cargo tauri signer sign "$UPDATER_TGZ" ) \
+        && echo "  ✓ $UPDATER_TGZ(.sig)" \
+        || echo "  ⚠️  서명 실패 — .sig 미생성"
+    # latest.json 채우기 도우미: .sig 내용을 출력
+    if [ -f "${UPDATER_TGZ}.sig" ]; then
+        echo "  → latest.json 의 darwin-aarch64.signature 에 넣을 값:"
+        echo "    $(cat "${UPDATER_TGZ}.sig")"
+    fi
+else
+    echo "[4.5/5] updater 아티팩트 skip (서명 키 없음)"
+fi
+
 # ── 5. 완료 ───────────────────────────────────────────────────────────────────
 echo "[5/5] 완료"
 ls -lh "$DMG_OUT"
@@ -115,6 +155,14 @@ echo "설치:"
 echo "  open \"$DMG_OUT\""
 echo "  → VEGA.app을 Applications 폴더로 드래그"
 echo "  → 첫 실행 시 백그라운드 데몬 자동 등록"
+if [ -d "$UPDATER_DIR" ]; then
+    echo ""
+    echo "자동 업데이트 배포(CF R2):"
+    echo "  1) $UPDATER_DIR/*.app.tar.gz 를 R2 릴리스 경로에 업로드"
+    echo "  2) desktop/updater/latest.json.template 을 채워(version/url/signature)"
+    echo "     tauri.conf.json 의 endpoints 경로에 업로드"
+    echo "  ⚠️  endpoints 는 현재 PLACEHOLDER — 실제 R2 도메인으로 교체 필요"
+fi
 if [ -z "${VEGA_NOTARY_PROFILE:-}" ]; then
     echo ""
     echo "⚠️  공증 안 됨 — 다른 맥에서 Gatekeeper 차단될 수 있음."

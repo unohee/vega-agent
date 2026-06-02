@@ -1,11 +1,12 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "desktop",
-  "description": "데스크탑 전용 권한 — 전역 단축키 (모바일엔 global-shortcut 플러그인이 없음)",
+  "description": "데스크탑 전용 권한 — 전역 단축키 + 자동 업데이트 (모바일엔 둘 다 없음)",
   "platforms": ["macOS", "windows", "linux"],
   "windows": ["main", "settings"],
   "permissions": [
     "global-shortcut:allow-register",
-    "global-shortcut:allow-unregister"
+    "global-shortcut:allow-unregister",
+    "updater:default"
   ]
 }

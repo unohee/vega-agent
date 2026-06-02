@@ -107,6 +107,42 @@ fn make_loading_page() -> WebviewUrl {
     WebviewUrl::App("index.html".into())
 }
 
+// ── 자동 업데이트 (데스크탑 전용) ─────────────────────────────────────────────
+// 앱 시작 시 백그라운드로 CF R2(plugins.updater.endpoints)에서 최신 버전을 조회한다.
+// 새 버전이 있으면 조용히 내려받아 설치 후 앱을 재시작한다. 사용자 개입 없음.
+// 엔드포인트가 placeholder(미배포)이거나 네트워크 실패 시 조용히 무시한다.
+#[cfg(all(desktop, not(any(target_os = "android", target_os = "ios"))))]
+fn spawn_update_check(app: tauri::AppHandle) {
+    use tauri_plugin_updater::UpdaterExt;
+
+    tauri::async_runtime::spawn(async move {
+        // endpoints 미설정/placeholder면 updater()가 에러를 내므로 전부 조용히 흘린다.
+        let updater = match app.updater() {
+            Ok(u) => u,
+            Err(e) => {
+                eprintln!("[VEGA] updater 초기화 skip: {e}");
+                return;
+            }
+        };
+
+        match updater.check().await {
+            Ok(Some(update)) => {
+                let version = update.version.clone();
+                eprintln!("[VEGA] 새 버전 발견: {version} — 다운로드 시작");
+                match update.download_and_install(|_chunk, _total| {}, || {}).await {
+                    Ok(_) => {
+                        eprintln!("[VEGA] 업데이트 설치 완료 — 재시작");
+                        app.restart();
+                    }
+                    Err(e) => eprintln!("[VEGA] 업데이트 설치 실패: {e}"),
+                }
+            }
+            Ok(None) => eprintln!("[VEGA] 최신 버전 — 업데이트 없음"),
+            Err(e) => eprintln!("[VEGA] 업데이트 체크 실패(무시): {e}"),
+        }
+    });
+}
+
 #[cfg(desktop)]
 fn toggle_main_window(app: &tauri::AppHandle) {
     if let Some(win) = app.get_webview_window("main") {
@@ -296,6 +332,12 @@ pub fn run() {
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init());
 
+    // 자동 업데이트 플러그인 — 데스크탑 전용 (모바일은 스토어 정책상 자체 업데이트 불가).
+    #[cfg(all(desktop, not(any(target_os = "android", target_os = "ios"))))]
+    {
+        builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+    }
+
     // client feature 또는 모바일: 서버 URL/언어 변경 커맨드 등록.
     #[cfg(any(feature = "client", mobile))]
     {
@@ -355,6 +397,12 @@ pub fn run() {
                 let toggle_shortcut =
                     Shortcut::new(Some(Modifiers::SUPER | Modifiers::SHIFT), Code::KeyV);
                 let _ = app.global_shortcut().register(toggle_shortcut);
+            }
+
+            // 자동 업데이트 백그라운드 체크 (데스크탑 전용)
+            #[cfg(all(desktop, not(any(target_os = "android", target_os = "ios"))))]
+            {
+                spawn_update_check(app.handle().clone());
             }
 
             // LaunchAgent 등록 (daemon 모드 첫 실행 시)

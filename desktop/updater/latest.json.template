@@ -1,0 +1,16 @@
+{
+  "_comment": "VEGA 자동 업데이트 매니페스트 템플릿. 빌드 후 이 파일을 채워 CF R2의 endpoints 경로에 업로드한다. endpoints 패턴: https://<R2>/vega/updates/{{target}}/{{arch}}/{{current_version}} → 서버(R2)는 이 JSON을 반환. signature는 빌드 산출물 VEGA.app.tar.gz.sig 파일의 '내용'(경로/URL 아님). url은 .app.tar.gz의 공개 다운로드 주소.",
+  "version": "0.1.4",
+  "notes": "여기에 릴리스 노트",
+  "pub_date": "2026-06-02T00:00:00Z",
+  "platforms": {
+    "darwin-aarch64": {
+      "signature": "PASTE_CONTENT_OF_VEGA.app.tar.gz.sig_HERE",
+      "url": "https://PLACEHOLDER-r2.example.com/vega/releases/0.1.4/VEGA-aarch64.app.tar.gz"
+    },
+    "darwin-x86_64": {
+      "signature": "PASTE_CONTENT_OF_x86_64_SIG_HERE",
+      "url": "https://PLACEHOLDER-r2.example.com/vega/releases/0.1.4/VEGA-x86_64.app.tar.gz"
+    }
+  }
+}
