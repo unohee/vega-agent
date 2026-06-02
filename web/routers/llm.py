@@ -14,8 +14,19 @@ from fastapi.responses import JSONResponse
 
 router = APIRouter()
 
-_AGENT_MD_DIR = Path(__file__).parent.parent.parent / "data" / "agents"
-_MCP_JSON_PATH = Path(__file__).parent.parent.parent / "data" / "mcp.json"
+def _agent_md_dir() -> Path:
+    try:
+        from pipeline.data_paths import data_dir
+        return data_dir() / "agents"
+    except Exception:
+        return Path(__file__).parent.parent.parent / "data" / "agents"
+
+def _mcp_json_path() -> Path:
+    try:
+        from pipeline.data_paths import data_dir
+        return data_dir() / "mcp.json"
+    except Exception:
+        return Path(__file__).parent.parent.parent / "data" / "mcp.json"
 
 # ── Per-provider model catalog (5-minute cache) ───────────────────────────────
 _MODELS_CACHE: dict[str, tuple[float, list[dict]]] = {}
@@ -241,7 +252,7 @@ async def llm_agent_md_get(name: str):
     """Return data/agents/{name}.md. name='_default' is also valid. Returns empty string if file is absent."""
     if "/" in name or ".." in name:
         return JSONResponse({"error": "invalid name"}, status_code=400)
-    p = _AGENT_MD_DIR / f"{name}.md"
+    p = _agent_md_dir() / f"{name}.md"
     if not p.exists():
         return JSONResponse({"name": name, "exists": False, "text": ""})
     try:
@@ -262,8 +273,8 @@ async def llm_agent_md_set(request: Request):
         return JSONResponse({"error": "text must be string"}, status_code=400)
     if len(text) > 200_000:
         return JSONResponse({"error": "too large (>200KB)"}, status_code=400)
-    _AGENT_MD_DIR.mkdir(parents=True, exist_ok=True)
-    p = _AGENT_MD_DIR / f"{name}.md"
+    _agent_md_dir().mkdir(parents=True, exist_ok=True)
+    p = _agent_md_dir() / f"{name}.md"
     p.write_text(text, encoding="utf-8")
     return JSONResponse({"ok": True})
 
@@ -271,10 +282,10 @@ async def llm_agent_md_set(request: Request):
 # ── MCP server management ────────────────────────────────────────────────────
 
 def _read_mcp_json() -> dict:
-    if not _MCP_JSON_PATH.exists():
+    if not _mcp_json_path().exists():
         return {"mcpServers": {}}
     try:
-        return json.loads(_MCP_JSON_PATH.read_text(encoding="utf-8"))
+        return json.loads(_mcp_json_path().read_text(encoding="utf-8"))
     except Exception:
         return {"mcpServers": {}}
 
@@ -282,7 +293,7 @@ def _read_mcp_json() -> dict:
 def _write_mcp_json(data: dict) -> None:
     if "mcpServers" not in data or not isinstance(data["mcpServers"], dict):
         data["mcpServers"] = {}
-    _MCP_JSON_PATH.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    _mcp_json_path().write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def _validate_mcp_entry(name: str, entry: dict) -> str | None:
