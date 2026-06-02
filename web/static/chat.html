@@ -285,6 +285,28 @@ header button, header button *, header a, header a * { -webkit-app-region: no-dr
   text-align: center;
 }
 
+/* ── 드래그 인용 팝업 ── */
+#quote-popup {
+  position: fixed;
+  z-index: 9999;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 6px;
+  display: flex; gap: 4px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.35);
+  pointer-events: all;
+}
+#quote-popup.hidden { display: none; }
+.quote-popup-btn {
+  background: none; border: none; cursor: pointer;
+  color: var(--text); font-size: 11px; font-family: inherit;
+  padding: 3px 8px; border-radius: 4px;
+  display: inline-flex; align-items: center; gap: 4px;
+  white-space: nowrap;
+}
+.quote-popup-btn:hover { background: var(--accent); color: #fff; }
+
 /* ── .docx 미리보기 (mammoth HTML → Word 스타일) ── */
 #preview-body:has(.preview-doc) {
   background: #2a2a2a;  /* Word 같은 darkmode 페이지 배경 (실 배경은 흰 페이지) */
@@ -1486,6 +1508,29 @@ button.status-item:hover { background: var(--surface2); color: var(--text); }
   .msg-row { padding: 6px 12px; }
   #preview-pane { width: 100%; min-width: 0; max-width: 100%; }
   #chat-main.preview-open { display: none; }  /* 좁은 화면: split 대신 토글 */
+  /* 터치 타겟 최소 44px */
+  .panel-btn { width: 36px; height: 32px; }
+  #btn-new { padding: 6px 14px; }
+  .session-item { padding: 10px 14px; }
+  #input-area { padding: 10px 14px calc(10px + env(safe-area-inset-bottom)); }
+  #send { padding: 10px 14px; }
+  /* statusbar: safe-area 반영 */
+  #statusbar {
+    height: calc(22px + env(safe-area-inset-bottom));
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  #layout { bottom: calc(22px + env(safe-area-inset-bottom)); }
+  /* header: safe-area left (노치) */
+  header { padding-left: calc(10px + env(safe-area-inset-left)); padding-right: calc(10px + env(safe-area-inset-right)); }
+  /* 세션 이름 짧게 */
+  #header-session-name { max-width: 160px; }
+  /* iOS Safari auto-zoom 방지: 입력 요소 폰트 ≥16px이면 포커스 시 줌인 안 함 */
+  #input,
+  #ob-name, #ob-role, #ob-company, #ob-email-prefix,
+  .ob-email-row input, .mcp-form-fields input, .mcp-form-fields select,
+  #llm-model-search {
+    font-size: 16px;
+  }
 }
 </style>
 </head>
@@ -1607,6 +1652,9 @@ button.status-item:hover { background: var(--surface2); color: var(--text); }
           <button id="preview-attach-btn" class="preview-action-btn" title="채팅에 첨부">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 17.93 8.8l-8.59 8.57a2 2 0 1 1-2.83-2.83l8.49-8.48"/></svg>
           </button>
+          <button id="preview-editor-btn" class="preview-action-btn hidden" title="에디터로 열기">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+          </button>
           <button id="preview-close-btn" class="preview-action-btn" title="닫기 (Esc)">✕</button>
         </div>
         <div id="preview-body"></div>
@@ -1679,6 +1727,18 @@ button.status-item:hover { background: var(--surface2); color: var(--text); }
     <span class="status-item muted" id="status-server" title="VEGA 서버">●</span>
   </div>
 </footer>
+
+<!-- 드래그 인용 팝업 -->
+<div id="quote-popup" class="hidden" role="toolbar" aria-label="선택 텍스트 작업">
+  <button class="quote-popup-btn" id="quote-cite-btn" title="채팅에 인용">
+    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 2v6c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-.25 1.75-1 2.5C3 20.25 3 21 3 21z"/><path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 2v6c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3c0 1 0 1 1 1z"/></svg>
+    인용
+  </button>
+  <button class="quote-popup-btn" id="quote-ask-btn" title="이 내용으로 질문하기">
+    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+    질문
+  </button>
+</div>
 
 <!-- 온보딩 모달 (첫 실행 시 자동 표시) -->
 <div id="onboarding-modal" class="modal hidden" role="dialog" aria-labelledby="ob-title">
@@ -3406,8 +3466,14 @@ async function refreshSessions() {
 }
 
 // ── 세션 로드 ──
-async function loadSession(sid, name) {
-  if (streaming) return;
+async function loadSession(sid, name, opts) {
+  // force=true면 streaming 중에도 전환을 허용한다(작업 중인 다른 세션으로 점프).
+  // 호출 측에서 streamAbort로 현재 SSE를 먼저 끊어 streaming 플래그를 정리해야 한다.
+  const force = !!(opts && opts.force);
+  if (streaming && !force) return;
+  // 모바일: history fetch/렌더 전에 드로어를 즉시 닫아 채팅 화면으로 바로 진입.
+  // (await 뒤의 closeSidebar는 ~1.5s 지연돼 드로어가 한참 열려 보였음)
+  closeSidebar();
   try {
     const r = await fetch(`/api/sessions/${sid}/history`);
     if (!r.ok) return;
@@ -4901,6 +4967,108 @@ document.getElementById('preview-attach-btn').addEventListener('click', () => {
   showToast('첨부됨');
   inputEl.focus();
 });
+
+// ── 에디터로 열기 ────────────────────────────────────────────────────────────
+const previewEditorBtn = document.getElementById('preview-editor-btn');
+
+// 사용 가능한 에디터 감지 → 버튼 표시
+(async function detectEditors() {
+  try {
+    const r = await fetch('/api/fs/available_editors');
+    const data = await r.json();
+    if (data.editors && data.editors.length > 0) {
+      const label = { cursor: 'Cursor', code: 'VS Code', idea: 'IntelliJ', subl: 'Sublime', zed: 'Zed' };
+      previewEditorBtn.title = `${label[data.editors[0]] || data.editors[0]}로 열기`;
+      previewEditorBtn.classList.remove('hidden');
+      previewEditorBtn.dataset.editor = data.editors[0];
+    }
+  } catch (_) {}
+})();
+
+previewEditorBtn.addEventListener('click', async () => {
+  if (!_previewPath) return;
+  try {
+    const r = await fetch('/api/fs/open_in_editor', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: _previewPath, editor: previewEditorBtn.dataset.editor || '' }),
+    });
+    const data = await r.json();
+    if (!r.ok) { showToast(data.error || '에디터 열기 실패'); return; }
+    const label = { cursor: 'Cursor', code: 'VS Code', idea: 'IntelliJ', subl: 'Sublime', zed: 'Zed' };
+    showToast(`${label[data.editor] || data.editor}로 열었습니다`);
+  } catch (e) {
+    showToast(e.message);
+  }
+});
+
+// ── 드래그 인용 팝업 ─────────────────────────────────────────────────────────
+const quotePopup    = document.getElementById('quote-popup');
+const quoteCiteBtn  = document.getElementById('quote-cite-btn');
+const quoteAskBtn   = document.getElementById('quote-ask-btn');
+let _quotedText = '';
+
+function _hideQuotePopup() {
+  quotePopup.classList.add('hidden');
+  _quotedText = '';
+}
+
+previewBody.addEventListener('mouseup', (e) => {
+  // 팝업 자신 클릭은 무시
+  if (quotePopup.contains(e.target)) return;
+
+  const sel = window.getSelection();
+  const text = sel ? sel.toString().trim() : '';
+  if (!text || text.length < 3) { _hideQuotePopup(); return; }
+
+  // 선택 영역이 previewBody 안에 있는지 확인
+  const range = sel.rangeCount > 0 ? sel.getRangeAt(0) : null;
+  if (!range || !previewBody.contains(range.commonAncestorContainer)) {
+    _hideQuotePopup(); return;
+  }
+
+  _quotedText = text;
+
+  // 팝업을 마우스 위치 근처에 표시
+  quotePopup.classList.remove('hidden');
+  const pw = quotePopup.offsetWidth || 120;
+  const ph = quotePopup.offsetHeight || 32;
+  let x = e.clientX - pw / 2;
+  let y = e.clientY - ph - 10;
+  x = Math.max(8, Math.min(x, window.innerWidth - pw - 8));
+  y = Math.max(8, y);
+  quotePopup.style.left = x + 'px';
+  quotePopup.style.top  = y + 'px';
+});
+
+document.addEventListener('mousedown', (e) => {
+  if (!quotePopup.classList.contains('hidden') && !quotePopup.contains(e.target)) {
+    _hideQuotePopup();
+  }
+});
+
+quoteCiteBtn.addEventListener('click', () => {
+  if (!_quotedText) return;
+  const lines = _quotedText.split('\n').map(l => '> ' + l).join('\n');
+  const insert = lines + '\n\n';
+  insertAtCursor(inputEl, insert);
+  _hideQuotePopup();
+  window.getSelection()?.removeAllRanges();
+  inputEl.focus();
+  showToast('인용 삽입됨');
+});
+
+quoteAskBtn.addEventListener('click', () => {
+  if (!_quotedText) return;
+  const lines = _quotedText.split('\n').map(l => '> ' + l).join('\n');
+  inputEl.value = lines + '\n\n이 내용에 대해 설명해줘.';
+  inputEl.dispatchEvent(new Event('input'));
+  _hideQuotePopup();
+  window.getSelection()?.removeAllRanges();
+  inputEl.focus();
+  showToast('질문 삽입됨');
+});
+
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && !previewPane.classList.contains('hidden')) {
     // 다른 모달/메뉴가 먼저 닫혀야 하므로 우선순위 체크
@@ -4961,19 +5129,36 @@ const sidebarBtn  = document.getElementById('toggle-sidebar');
 const terminalBtn = document.getElementById('toggle-terminal');
 const dirBtn      = document.getElementById('toggle-dir');
 
+// 모바일 드로어 상태는 데스크탑 패널 상태(_panelState.sidebar)와 분리한다.
+// chatgpt.com 방식: 모바일에선 드로어가 항상 "닫힘"으로 시작하고 햄버거로만 연다.
+// (데스크탑에서 사이드바를 접어둔 상태가 모바일 드로어로 새어들지 않도록)
+let _mobileDrawerOpen = false;
+const _isMobile = () => window.innerWidth <= 768;
+
 function _syncSidebar() {
-  const isMobile = window.innerWidth <= 768;
-  const open = _panelState.sidebar !== false;  // 기본 true
-  if (isMobile) {
-    sidebar.classList.toggle('open', open);
-    overlay.classList.toggle('visible', open);
+  if (_isMobile()) {
+    // 모바일: 드로어 = _mobileDrawerOpen. 데스크탑 grid 상태는 건드리지 않음.
+    // #layout(position:fixed)이 stacking context라 그 자식인 #sidebar의 z-index가
+    // 형제 #sidebar-overlay에 가려진다 → 모바일에선 사이드바를 body 직속으로 끌어올려
+    // 오버레이 위에 오게 한다 (btn-new 클릭 가능).
+    if (sidebar.parentElement !== document.body) {
+      document.body.appendChild(sidebar);
+    }
+    sidebar.classList.toggle('open', _mobileDrawerOpen);
+    overlay.classList.toggle('visible', _mobileDrawerOpen);
     layoutEl.classList.remove('no-sidebar');
+    sidebarBtn.classList.toggle('active', _mobileDrawerOpen);
   } else {
+    // 데스크탑: 사이드바를 #layout 안 원위치(첫 grid 컬럼)로 복원.
+    if (sidebar.parentElement !== layoutEl) {
+      layoutEl.insertBefore(sidebar, layoutEl.firstChild);
+    }
+    const open = _panelState.sidebar !== false;
     sidebar.classList.remove('open');
     overlay.classList.remove('visible');
     layoutEl.classList.toggle('no-sidebar', !open);
+    sidebarBtn.classList.toggle('active', open);
   }
-  sidebarBtn.classList.toggle('active', open);
 }
 
 function _syncDir() {
@@ -4988,8 +5173,14 @@ function _syncDir() {
 }
 
 function toggleSidebar() {
-  _panelState.sidebar = _panelState.sidebar === false;
-  _savePanelState(); _syncSidebar();
+  if (_isMobile()) {
+    // 모바일: 드로어 토글 (localStorage에 저장하지 않음 — 매 진입 시 닫힘 시작)
+    _mobileDrawerOpen = !_mobileDrawerOpen;
+    _syncSidebar();
+  } else {
+    _panelState.sidebar = _panelState.sidebar === false;
+    _savePanelState(); _syncSidebar();
+  }
 }
 function toggleDirPanel() {
   _panelState.dir = !_panelState.dir;
@@ -4997,9 +5188,11 @@ function toggleDirPanel() {
   if (_panelState.dir) refreshWorkdir();
 }
 function closeSidebar() {
-  if (window.innerWidth <= 768) {
+  if (_isMobile()) {
+    _mobileDrawerOpen = false;
     sidebar.classList.remove('open');
     overlay.classList.remove('visible');
+    sidebarBtn.classList.remove('active');
   }
 }
 
@@ -5025,19 +5218,25 @@ window.addEventListener('keydown', (e) => {
 
 // ── 새 대화 ──
 document.getElementById('btn-new').addEventListener('click', async () => {
-  const title = prompt('세션 이름을 입력하세요 (비워두면 "VEGA 세션"):', '') ?? '';
+  // 모바일: 채팅 화면으로 즉시 진입하도록 드로어를 먼저 닫는다 (await 이후가 아니라 바로).
+  closeSidebar();
   const r = await fetch('/api/sessions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title: title.trim() || 'VEGA 세션' }),
+    body: JSON.stringify({ title: 'VEGA 세션' }),
   });
-  const { uuid, name } = await r.json();
+  const { uuid } = await r.json();
   currentSid = uuid;
   messagesEl.innerHTML = '';
-  headerSid.textContent = uuid.slice(0, 8) + '…';
+  if (headerSid) headerSid.textContent = uuid.slice(0, 8) + '…';
+  if (typeof headerSessionName !== 'undefined' && headerSessionName) headerSessionName.textContent = '새 세션';
   setWorkdirLabel(null);
-  closeSidebar();
-  refreshSessions();
+  await refreshSessions();
+  // refreshSessions 후 active 마킹
+  document.querySelectorAll('.session-item').forEach(el => {
+    el.classList.toggle('active', el.dataset.sid === uuid);
+  });
+  closeSidebar();  // refreshSessions가 _syncSidebar를 다시 불렀을 수 있어 한 번 더 보장
   inputEl.focus();
 });
 
@@ -5307,6 +5506,8 @@ document.getElementById('terminal-clear-btn').addEventListener('click', () => _t
 
 // 창 리사이즈 시 xterm fit
 window.addEventListener('resize', () => { if (_termOpen) { _fitAddon?.fit(); _termSendResize(); } });
+// 데스크탑↔모바일 경계를 넘나들 때 사이드바 상태 재동기화 (드로어 잔상 방지)
+window.addEventListener('resize', () => { _syncSidebar(); });
 
 // ── 온보딩 모달 ──
 const obModal = document.getElementById('onboarding-modal');
