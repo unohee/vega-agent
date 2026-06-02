@@ -1625,6 +1625,10 @@ button.status-item:hover { background: var(--surface2); color: var(--text); }
     </span>
   </div>
   <div class="status-right">
+    <button class="status-item" id="status-profile" title="내 프로필 (이름·역할·소속) 수정">
+      <svg viewBox="0 0 16 16" width="11" height="11" fill="currentColor"><path d="M8 8a3 3 0 100-6 3 3 0 000 6zm0 1.5c-2.7 0-5 1.4-5 3.2V14h10v-1.3c0-1.8-2.3-3.2-5-3.2z"/></svg>
+      <span id="status-profile-label">프로필</span>
+    </button>
     <button class="status-item" id="status-llm" title="LLM 프로바이더 선택">
       <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><line x1="14.5" y1="9.5" x2="17.5" y2="6.5"/><line x1="9.5" y1="14.5" x2="6.5" y2="17.5"/></svg>
       <span id="status-llm-label">—</span>
@@ -5283,20 +5287,38 @@ document.getElementById('ob-submit').addEventListener('click', async () => {
   }
 });
 
+// 프로필 폼을 기존 값으로 채운다(온보딩 자동 표시 + 수동 '프로필' 버튼 공용).
+function _fillProfileForm(p) {
+  p = p || {};
+  document.getElementById('ob-name').value =
+    (p.display_name && p.display_name !== '사용자') ? p.display_name : '';
+  document.getElementById('ob-role').value = p.role_summary || '';
+  document.getElementById('ob-company').value = p.company || '';
+  // 이메일 행 초기화 후 다시 채움(수동 재오픈 시 중복 누적 방지)
+  const list = document.getElementById('ob-email-list');
+  if (list) list.innerHTML = '';
+  (p.email_accounts || []).forEach(a => _obAddEmailRow(a.key || '', a.email || ''));
+  if ((p.email_accounts || []).length === 0) _obAddEmailRow('personal', '');
+}
+
+// 상태바 '프로필' 버튼 — 온보딩 완료 여부와 무관하게 언제든 프로필 모달을 연다.
+document.getElementById('status-profile').addEventListener('click', async () => {
+  try {
+    const r = await fetch('/api/onboarding');
+    const data = await r.json();
+    _fillProfileForm(data.profile || {});
+  } catch {
+    _fillProfileForm({});
+  }
+  obModal.classList.remove('hidden');
+});
+
 async function checkOnboarding() {
   try {
     const r = await fetch('/api/onboarding');
     const data = await r.json();
     if (!data.onboarded) {
-      // 기존 프로필 값이 있으면 폼 미리 채움
-      const p = data.profile || {};
-      if (p.display_name && p.display_name !== '사용자') {
-        document.getElementById('ob-name').value = p.display_name;
-      }
-      if (p.role_summary) document.getElementById('ob-role').value = p.role_summary;
-      if (p.company) document.getElementById('ob-company').value = p.company;
-      (p.email_accounts || []).forEach(a => _obAddEmailRow(a.key || '', a.email || ''));
-      if ((p.email_accounts || []).length === 0) _obAddEmailRow('personal', '');
+      _fillProfileForm(data.profile || {});
       obModal.classList.remove('hidden');
     }
   } catch {}
@@ -5307,11 +5329,16 @@ async function init() {
   try {
     const r = await fetch('/api/health');
     const data = await r.json();
+    // 인증 표시는 active 프로바이더에 맞춘다(OAuth 전용 문구 하드코딩 제거).
+    const prov = data.active_provider || '';
     if (data.auth === 'ok') {
-      headerAuth.textContent = `✓ GPT · ${data.auth_remaining_min}분`;
+      // OAuth(chatgpt)면 만료 분을, 키 기반이면 프로바이더명만 표시.
+      headerAuth.textContent = data.auth_remaining_min
+        ? `✓ ${prov || '인증'} · ${data.auth_remaining_min}분`
+        : `✓ ${prov || '인증됨'}`;
       headerAuth.classList.remove('warn'); headerAuth.classList.add('ok');
     } else {
-      headerAuth.textContent = `⚠ OAuth ${data.auth}`;
+      headerAuth.textContent = `⚠ ${data.auth}`;
       headerAuth.classList.remove('ok'); headerAuth.classList.add('warn');
     }
     document.getElementById('status-server').classList.add('ok');

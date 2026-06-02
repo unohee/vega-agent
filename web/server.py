@@ -794,19 +794,71 @@ async def upload_image_base64(request: Request):
 
 @app.get("/api/health")
 async def health():
+    # 인증 상태는 *현재 active 프로바이더의 auth_type 에 맞춰* 판정한다.
+    # 예전엔 프로바이더와 무관하게 ChatGPT OAuth 토큰만 봐서, OpenRouter 등
+    # 키 기반 프로바이더를 써도 "No OAuth profile found" 가 떴다.
+    auth_status = "ok"
+    auth_remaining_min = 0
+    active_name = ""
     try:
-        from pipeline.auth.chatgpt import ensure_valid_token, _load_profile
-        ensure_valid_token()  # auto-refresh if expiry is near
-        profile = _load_profile()
-        remains = profile.get("expires_at", 0) - int(time.time())
-        auth_status = "ok"
-        auth_remaining_min = max(0, remains // 60)
+        from pipeline.llm_gateway import get_active_provider
+        prov = get_active_provider()
+        active_name = prov.get("name", "")
+        auth_type = prov.get("auth_type", "")
+
+        if auth_type == "chatgpt_oauth":
+            from pipeline.auth.chatgpt import ensure_valid_token, _load_profile
+            ensure_valid_token()  # 만료 임박 시 자동 갱신
+            profile = _load_profile() or {}
+            remains = profile.get("expires_at", 0) - int(time.time())
+            auth_status = "ok"
+            auth_remaining_min = max(0, remains // 60)
+        elif auth_type in ("bearer", "anthropic_key"):
+            from pipeline import keychain
+            key_env = prov.get("api_key_env", "")
+            has_key = bool(key_env and keychain.get(key_env))
+            auth_status = "ok" if has_key else "API 키 미설정"
+        elif auth_type == "none":
+            auth_status = "ok"  # 로컬/온프레미스 — 키 불필요
+        else:
+            auth_status = "ok"
     except Exception as e:
-        auth_status = str(e).split("\n")[0]  # first line only
+        auth_status = str(e).split("\n")[0]  # 첫 줄만
         auth_remaining_min = 0
     from pipeline.mcp_client import _tool_server
     mcp_tools = len(_tool_server)
-    return JSONResponse({"status": "ok", "auth": auth_status, "auth_remaining_min": auth_remaining_min, "mcp_tools": mcp_tools})
+
+    # 샌드박스(Docker) 가용성 — 꺼져 있으면 bash_exec/python_exec/sandbox 가
+    # 등록돼 있어도 실제 실행이 안 된다. "도구가 몇 개 안 보인다"의 흔한 원인이라
+    # health 에 노출해 진단을 쉽게 한다.
+    sandbox_status = "unknown"
+    try:
+        from pipeline.sandbox import docker_available, _container_running
+        if not docker_available():
+            sandbox_status = "docker_off"   # Docker Desktop 미기동/미설치
+        elif _container_running():
+            sandbox_status = "ok"
+        else:
+            sandbox_status = "container_down"  # Docker 는 떠 있으나 컨테이너 미기동
+    except Exception:
+        sandbox_status = "unknown"
+
+    # 전체 도구 개수(office/sandbox 포함) — TOOL_SCHEMAS 기준.
+    try:
+        from pipeline.tools import TOOL_SCHEMAS
+        total_tools = len(TOOL_SCHEMAS)
+    except Exception:
+        total_tools = 0
+
+    return JSONResponse({
+        "status": "ok",
+        "auth": auth_status,
+        "auth_remaining_min": auth_remaining_min,
+        "active_provider": active_name,
+        "mcp_tools": mcp_tools,
+        "total_tools": total_tools,
+        "sandbox": sandbox_status,
+    })
 
 
 @app.post("/api/approve")
