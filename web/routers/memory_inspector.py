@@ -186,6 +186,18 @@ async def delete_entity(entity_id: int):
     return JSONResponse({"ok": True, "deleted_id": entity_id})
 
 
+# ── Rules & Skills (에이전트 자기진화 산물) ──────────────────────
+
+@router.get("/api/memory/rules")
+async def list_rules():
+    """저장된 행동 규칙 목록 (RULES.md)."""
+    try:
+        from pipeline.tools import _rule_list
+        return JSONResponse(_rule_list())
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e), "rules": []}, status_code=500)
+
+
 # ── Summary ──────────────────────────────────────────────────────
 
 @router.get("/api/memory/summary")
@@ -199,8 +211,14 @@ async def memory_summary():
         entity_kinds = conn.execute(
             "SELECT kind, count(*) as cnt FROM entities GROUP BY kind ORDER BY cnt DESC"
         ).fetchall()
+        # 세션 메모리(narrative) 카운트도 — 테이블 없을 수 있어 방어적
+        try:
+            sessions_total = conn.execute("SELECT count(*) FROM session_digest").fetchone()[0]
+        except Exception:
+            sessions_total = 0
     return JSONResponse({
         "persona": {"total": persona_total, "active": persona_active},
         "events": {"total": events_total},
         "entities": {"total": entities_total, "by_kind": [dict(r) for r in entity_kinds]},
+        "sessions": {"total": sessions_total},
     })

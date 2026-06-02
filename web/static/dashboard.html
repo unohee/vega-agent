@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ko" id="html-root">
+<html lang="ko">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -17,6 +17,7 @@
   --yellow:  #d29922;
   --red:     #f85149;
   --purple:  #bc8cff;
+  --error:   #f85149;
 }
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html, body {
@@ -25,30 +26,24 @@ html, body {
   font-size: 15px; line-height: 1.6;
 }
 
-/* ── 레이아웃 ── */
-.page {
-  min-height: 100vh;
-  display: flex; flex-direction: column;
-  padding: 0 0 40px;
-}
+.page { min-height: 100vh; display: flex; flex-direction: column; padding: 0 0 40px; }
 
 /* ── 헤더 ── */
 header {
   display: flex; align-items: center; justify-content: space-between;
   padding: 20px 32px 16px;
   border-bottom: 1px solid var(--border);
-  -webkit-app-region: drag;  /* 창 드래그 영역 (브라우저에선 무시) */
+  -webkit-app-region: drag;
 }
-/* Tauri: 신호등 버튼 공간 확보 */
 body.tauri header { padding-top: 28px; padding-left: 92px; }
-/* 인터랙티브 요소는 드래그 제외 */
 header button, header button *, header a, header a *,
 header input, header select { -webkit-app-region: no-drag; }
 .header-left { display: flex; align-items: baseline; gap: 16px; }
 .logo { font-size: 22px; font-weight: 700; letter-spacing: -.5px; color: var(--text); }
 .logo span { color: var(--accent); }
 .date-line { font-size: 14px; color: var(--muted); }
-.header-right { display: flex; gap: 10px; }
+.header-right { display: flex; gap: 10px; align-items: center; }
+.clock { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .btn {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 7px 14px; border-radius: 8px; border: 1px solid var(--border);
@@ -58,301 +53,202 @@ header input, header select { -webkit-app-region: no-drag; }
 .btn:hover { border-color: var(--accent); background: var(--surface2); }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #000; font-weight: 600; }
 .btn.primary:hover { opacity: .88; }
-
-/* ── 그리드 ── */
-.grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: 20px;
-  padding: 28px 32px 0;
-}
-.grid-wide {
-  display: grid;
-  grid-template-columns: 1fr 2fr;
-  gap: 20px;
-  padding: 20px 32px 0;
-}
-@media (max-width: 900px) { .grid, .grid-wide { grid-template-columns: 1fr; } }
-
-/* ── 카드 ── */
-.card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  overflow: hidden;
-}
-.card-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 14px 18px 10px;
-  border-bottom: 1px solid var(--border);
-}
-.card-title {
-  display: flex; align-items: center; gap: 8px;
-  font-size: 13px; font-weight: 600; color: var(--muted);
-  text-transform: uppercase; letter-spacing: .06em;
-}
-.card-count {
-  font-size: 12px; color: var(--muted);
-  background: var(--surface2); border-radius: 10px;
-  padding: 1px 8px;
-}
-.card-body { padding: 6px 0; }
-
-/* ── 로딩 ── */
-.skeleton {
-  padding: 14px 18px;
-  display: flex; flex-direction: column; gap: 10px;
-}
-.sk-line {
-  height: 13px; border-radius: 4px;
-  background: linear-gradient(90deg, var(--surface2) 25%, var(--border) 50%, var(--surface2) 75%);
-  background-size: 200% 100%;
-  animation: shimmer 1.4s infinite;
-}
-@keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
-
-/* ── 날짜 구분선 ── */
-.day-header {
-  padding: 8px 18px 4px;
-  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
-  color: var(--muted); background: var(--surface2);
-  border-bottom: 1px solid var(--border);
-  display: flex; align-items: center; gap: 6px;
-}
-.day-header .day-badge {
-  font-size: 10px; padding: 1px 6px; border-radius: 8px;
-  background: var(--accent); color: #000; font-weight: 700;
-}
-
-/* ── 일정 아이템 ── */
-.event-item {
-  display: flex; align-items: flex-start; gap: 12px;
-  padding: 9px 18px;
-  border-bottom: 1px solid rgba(48,54,61,.5);
-  transition: background .12s;
-}
-.event-item:last-child { border-bottom: none; }
-.event-item:hover { background: var(--surface2); }
-.event-time {
-  min-width: 44px; text-align: right;
-  font-size: 12px; color: var(--accent); font-variant-numeric: tabular-nums;
-  padding-top: 2px; font-weight: 500;
-}
-.event-body { flex: 1; min-width: 0; }
-.event-title { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.event-meta { font-size: 12px; color: var(--muted); margin-top: 1px; }
-.event-dot {
-  width: 8px; height: 8px; border-radius: 50%;
-  background: var(--accent); margin-top: 6px; flex-shrink: 0;
-}
-.event-dot.lesson  { background: #79c0ff; }
-.event-dot.allday  { background: var(--muted); }
-
-/* ── TODO 아이템 ── */
-.todo-item {
-  display: flex; align-items: flex-start; gap: 10px;
-  padding: 9px 18px;
-  border-bottom: 1px solid rgba(48,54,61,.5);
-  cursor: pointer; transition: background .12s;
-}
-.todo-item:last-child { border-bottom: none; }
-.todo-item:hover { background: var(--surface2); }
-.todo-check {
-  width: 16px; height: 16px; border-radius: 50%;
-  border: 1.5px solid var(--border);
-  flex-shrink: 0; margin-top: 3px;
-  transition: border-color .15s;
-  display: flex; align-items: center; justify-content: center;
-}
-.todo-item:hover .todo-check { border-color: var(--green); }
-.todo-check.done { background: var(--green); border-color: var(--green); }
-.todo-check.done::after { content: '✓'; font-size: 10px; color: #000; }
-.todo-body { flex: 1; min-width: 0; }
-.todo-title { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.todo-title.done { text-decoration: line-through; color: var(--muted); }
-.todo-proj { font-size: 12px; color: var(--muted); margin-top: 1px; }
-.todo-deadline { font-size: 11px; color: var(--red); margin-top: 1px; }
-
-/* ── Linear 아이템 ── */
-.issue-item {
-  display: flex; align-items: flex-start; gap: 10px;
-  padding: 9px 18px;
-  border-bottom: 1px solid rgba(48,54,61,.5);
-  transition: background .12s;
-}
-.issue-item:last-child { border-bottom: none; }
-.issue-item:hover { background: var(--surface2); }
-.issue-id { font-size: 11px; color: var(--muted); font-family: monospace; min-width: 56px; padding-top: 2px; }
-.issue-body { flex: 1; min-width: 0; }
-.issue-title { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.issue-meta { font-size: 11px; color: var(--muted); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.issue-labels { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 3px; }
-.label-chip {
-  font-size: 10px; padding: 1px 6px; border-radius: 10px;
-  background: var(--surface2); border: 1px solid var(--border); color: var(--muted);
-}
-.priority-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; margin-top: 6px; }
-.p1 { background: var(--red); }
-.p2 { background: var(--yellow); }
-.p3 { background: var(--accent); }
-.p4 { background: var(--muted); }
-.p0 { background: var(--border); }
-
-/* ── 빈 상태 ── */
-.empty { padding: 24px 18px; text-align: center; color: var(--muted); font-size: 13px; }
-
-/* ── 메모리 아이템 ── */
-.memory-item {
-  padding: 9px 18px;
-  border-bottom: 1px solid var(--border);
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--text);
-}
-.memory-item:last-child { border-bottom: none; }
-.memory-date { font-size: 11px; color: var(--muted); margin-bottom: 2px; }
-
-/* ── 브리핑 / 프로젝트 ── */
-.brief-item {
-  padding: 10px 18px;
-  border-bottom: 1px solid var(--border);
-}
-.brief-item:last-child { border-bottom: none; }
-.brief-head { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
-.brief-body {
-  font-size: 12.5px; line-height: 1.6; color: var(--text);
-  white-space: pre-wrap; max-height: 220px; overflow-y: auto;
-  padding-bottom: 4px;  /* 스크롤 끝이 카드 프레임에 붙지 않게 */
-}
-.proj-item {
-  padding: 9px 18px;
-  border-bottom: 1px solid var(--border);
-  font-size: 13px;
-}
-.proj-item:last-child { border-bottom: none; }
-.proj-name { font-weight: 600; color: var(--text); }
-.proj-status {
-  font-size: 11px; color: var(--muted); margin-left: 6px;
-}
-.proj-line { font-size: 12px; color: var(--muted); margin-top: 2px; }
-
-/* ── 메일 아이템 ── */
-.mail-item {
-  display: flex; align-items: flex-start; gap: 10px;
-  padding: 10px 18px;
-  border-bottom: 1px solid rgba(48,54,61,.5);
-  transition: background .12s;
-}
-.mail-item:last-child { border-bottom: none; }
-.mail-item:hover { background: var(--surface2); }
-.mail-priority {
-  font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 6px;
-  flex-shrink: 0; margin-top: 2px; text-transform: uppercase; letter-spacing: .04em;
-}
-.mail-priority.high { background: rgba(248,81,73,.15); color: var(--red); border: 1px solid rgba(248,81,73,.3); }
-.mail-priority.medium { background: rgba(210,153,34,.15); color: var(--yellow); border: 1px solid rgba(210,153,34,.3); }
-.mail-body { flex: 1; min-width: 0; }
-.mail-subject { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.mail-from { font-size: 11px; color: var(--muted); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.mail-reason { font-size: 11px; color: var(--accent); margin-top: 2px; }
-
-/* ── 제안 아이템 ── */
-.suggest-item {
-  display: flex; align-items: flex-start; gap: 10px;
-  padding: 10px 18px;
-  border-bottom: 1px solid rgba(48,54,61,.5);
-  transition: background .12s;
-}
-.suggest-item:last-child { border-bottom: none; }
-.suggest-item:hover { background: var(--surface2); }
-.suggest-body { flex: 1; min-width: 0; }
-.suggest-title { font-size: 14px; }
-.suggest-reason { font-size: 11px; color: var(--muted); margin-top: 2px; }
-.suggest-project { font-size: 11px; color: var(--purple); margin-top: 1px; }
-.suggest-actions { display: flex; gap: 6px; flex-shrink: 0; margin-top: 2px; }
-.suggest-btn {
-  font-size: 11px; padding: 3px 9px; border-radius: 6px; border: 1px solid var(--border);
-  background: var(--surface2); color: var(--muted); cursor: pointer; transition: all .12s;
-  white-space: nowrap;
-}
-.suggest-btn.accept { border-color: var(--green); color: var(--green); }
-.suggest-btn.accept:hover { background: rgba(63,185,80,.15); }
-.suggest-btn.defer:hover { border-color: var(--muted); color: var(--text); }
-.suggest-btn:disabled { opacity: .4; cursor: default; }
-.suggest-loading { padding: 20px 18px; text-align: center; color: var(--muted); font-size: 13px; }
-
-/* ── 커스텀 위젯 ── */
-.widget-stat { padding: 14px 18px 18px; }
-.widget-stat .w-value { font-size: 32px; font-weight: 700; color: var(--text); line-height: 1.1; }
-.widget-stat .w-label { font-size: 13px; color: var(--muted); margin-top: 4px; }
-.widget-text { padding: 12px 18px 16px; font-size: 13px; line-height: 1.6; color: var(--text); white-space: pre-wrap; max-height: 240px; overflow-y: auto; }
-.widget-list .w-item { padding: 8px 18px; border-bottom: 1px solid var(--border); font-size: 13px; }
-.widget-list .w-item:last-child { border-bottom: none; }
-.widget-list .w-item-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
-.widget-err { padding: 14px 18px; font-size: 12px; color: var(--muted); }
-
-/* action 위젯 — 폼 + 실행 버튼 + 결과 */
-.widget-action { padding: 12px 16px 14px; display: flex; flex-direction: column; gap: 8px; }
-.widget-action .wa-form { display: flex; flex-direction: column; gap: 6px; }
-.widget-action .wa-row { display: flex; flex-direction: column; gap: 2px; }
-.widget-action label { font-size: 11px; color: var(--muted); }
-.widget-action input,
-.widget-action textarea {
-  width: 100%; box-sizing: border-box;
-  background: rgba(0,0,0,.2); color: var(--text);
-  border: 1px solid var(--border); border-radius: 5px;
-  padding: 6px 9px; font: inherit; font-size: 12px;
-  outline: none;
-}
-.widget-action textarea { resize: vertical; min-height: 60px; max-height: 200px; font-family: inherit; }
-.widget-action input:focus, .widget-action textarea:focus { border-color: rgba(88,166,255,.6); }
-.widget-action .wa-actions { display: flex; gap: 6px; justify-content: flex-end; align-items: center; margin-top: 2px; }
-.widget-action .wa-status { font-size: 11px; color: var(--muted); flex: 1; }
-.widget-action .wa-run {
-  padding: 5px 14px; font-size: 12px; font-weight: 600;
-  background: rgba(56,139,253,.18); color: #79c0ff;
-  border: 1px solid rgba(56,139,253,.35); border-radius: 5px;
-  cursor: pointer;
-}
-.widget-action .wa-run:hover { background: rgba(56,139,253,.28); }
-.widget-action .wa-run:disabled { opacity: .5; cursor: wait; }
-.widget-action .wa-result {
-  margin-top: 4px;
-  font-size: 12px; line-height: 1.6;
-  background: rgba(0,0,0,.22);
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  padding: 8px 10px;
-  max-height: 320px; overflow-y: auto;
-  white-space: pre-wrap; word-break: break-word;
-  display: none;
-}
-.widget-action .wa-result.show { display: block; }
-.widget-action .wa-result.empty { color: var(--muted); font-style: italic; }
-.widget-action .wa-tool {
-  display: inline-block;
-  font-size: 10px; padding: 1px 6px;
-  border-radius: 8px; background: rgba(210,168,255,.15); color: #d2a8ff;
-  margin-right: 4px;
-}
-
-.card.span-2 { grid-column: span 2; }
-.card.span-3 { grid-column: span 3; }
-.grid-lower { margin-top: 0; }
-@media (max-width: 900px) { .card.span-2, .card.span-3 { grid-column: span 1; } }
-
-/* ── 새로고침 버튼 ── */
-.refresh-btn {
-  background: none; border: none; cursor: pointer;
-  color: var(--muted); font-size: 13px; padding: 2px 6px;
-  border-radius: 4px; transition: color .12s;
-}
+.refresh-btn { background: none; border: none; cursor: pointer; color: var(--muted); font-size: 13px; padding: 2px 6px; border-radius: 4px; }
 .refresh-btn:hover { color: var(--text); }
 .spin { animation: spin .6s linear infinite; display: inline-block; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* ── 시계 ── */
-.clock { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+/* ── 히어로: VEGA가 지금 기억하는 것 ── */
+.hero { padding: 26px 32px 20px; }
+.hero-eyebrow { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 12px; }
+.hero-stats { display: flex; flex-wrap: wrap; gap: 14px; }
+.stat-pill {
+  display: flex; flex-direction: column; gap: 2px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; padding: 14px 20px; min-width: 120px;
+  cursor: pointer; transition: border-color .15s, transform .1s;
+}
+.stat-pill:hover { border-color: var(--accent); transform: translateY(-1px); }
+.stat-pill .sp-value { font-size: 28px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+.stat-pill .sp-label { font-size: 12px; color: var(--muted); }
+.stat-pill .sp-sub { font-size: 11px; color: var(--muted); opacity: .8; }
+.stat-pill.persona .sp-value { color: var(--purple); }
+.stat-pill.events  .sp-value { color: var(--accent); }
+.stat-pill.entities .sp-value { color: var(--green); }
+.stat-pill.sessions .sp-value { color: var(--yellow); }
+
+/* 제안 배너 */
+.suggest-banner {
+  margin-top: 16px;
+  background: linear-gradient(90deg, rgba(188,140,255,.10), rgba(88,166,255,.06));
+  border: 1px solid rgba(188,140,255,.3);
+  border-radius: 12px; padding: 12px 16px;
+  display: flex; align-items: center; gap: 12px;
+}
+.suggest-banner.hidden { display: none; }
+.sb-icon { font-size: 18px; }
+.sb-text { flex: 1; min-width: 0; font-size: 13px; }
+.sb-text b { color: var(--text); }
+.sb-toggle { font-size: 12px; color: var(--accent); cursor: pointer; white-space: nowrap; }
+.suggest-list { margin-top: 10px; display: none; flex-direction: column; gap: 6px; }
+.suggest-list.show { display: flex; }
+.suggest-item {
+  display: flex; align-items: flex-start; gap: 10px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 9px 12px;
+}
+.suggest-body { flex: 1; min-width: 0; }
+.suggest-title { font-size: 13px; }
+.suggest-reason { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.suggest-project { font-size: 11px; color: var(--purple); margin-top: 1px; }
+.suggest-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.suggest-btn { font-size: 11px; padding: 3px 9px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface2); color: var(--muted); cursor: pointer; white-space: nowrap; }
+.suggest-btn.accept { border-color: var(--green); color: var(--green); }
+.suggest-btn.accept:hover { background: rgba(63,185,80,.15); }
+.suggest-btn:disabled { opacity: .4; cursor: default; }
+
+/* ── 탭 ── */
+.tabs {
+  display: flex; gap: 4px; padding: 0 32px;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+}
+.tab {
+  padding: 10px 16px; font-size: 13px; font-weight: 600; color: var(--muted);
+  background: none; border: none; border-bottom: 2px solid transparent;
+  cursor: pointer; white-space: nowrap; transition: color .12s;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--text); border-bottom-color: var(--accent); }
+.tab .tab-count { font-size: 11px; color: var(--muted); background: var(--surface2); border-radius: 9px; padding: 0 6px; }
+
+/* ── 탭 패널 ── */
+.tab-panel { display: none; padding: 22px 32px 0; }
+.tab-panel.active { display: block; }
+
+/* 검색 바 */
+.search-row { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+.search-input {
+  flex: 1; min-width: 200px;
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 8px 12px; font: inherit; font-size: 13px; outline: none;
+}
+.search-input:focus { border-color: var(--accent); }
+.filter-chip {
+  font-size: 12px; padding: 6px 12px; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--muted);
+  cursor: pointer; white-space: nowrap;
+}
+.filter-chip.active { border-color: var(--accent); color: var(--accent); background: var(--surface2); }
+
+/* ── 카드 (탭 내부 그룹) ── */
+.cards { display: grid; grid-template-columns: 1fr; gap: 14px; }
+@media (min-width: 900px) { .cards.two { grid-template-columns: 1fr 1fr; align-items: start; } }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+.card-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 13px 18px 10px; border-bottom: 1px solid var(--border);
+}
+.card-title { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.card-count { font-size: 12px; color: var(--muted); background: var(--surface2); border-radius: 10px; padding: 1px 8px; }
+.card-body { padding: 4px 0; }
+
+/* ── 메모리 행 (편집/삭제 hover 액션) ── */
+.mem-row {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 10px 18px; border-bottom: 1px solid rgba(48,54,61,.5);
+  transition: background .12s; position: relative;
+}
+.mem-row:last-child { border-bottom: none; }
+.mem-row:hover { background: var(--surface2); }
+.mem-main { flex: 1; min-width: 0; }
+.mem-title { font-size: 14px; line-height: 1.45; }
+.mem-meta { font-size: 11px; color: var(--muted); margin-top: 3px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.mem-kind { font-size: 10px; padding: 1px 7px; border-radius: 9px; background: var(--surface2); border: 1px solid var(--border); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.mem-kind.person   { color: #79c0ff; border-color: rgba(121,192,255,.35); }
+.mem-kind.org      { color: #ff9d7a; border-color: rgba(255,157,122,.35); }
+.mem-kind.project  { color: var(--green); border-color: rgba(63,185,80,.35); }
+.mem-kind.topic    { color: var(--purple); border-color: rgba(188,140,255,.35); }
+.mem-kind.decision { color: var(--yellow); border-color: rgba(210,153,34,.35); }
+.mem-notes { font-size: 12px; color: var(--muted); margin-top: 4px; line-height: 1.5; }
+.mem-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
+.tag-chip { font-size: 10px; padding: 1px 6px; border-radius: 8px; background: var(--surface2); border: 1px solid var(--border); color: var(--muted); }
+.mem-actions { display: flex; gap: 6px; flex-shrink: 0; opacity: 0; transition: opacity .12s; }
+.mem-row:hover .mem-actions { opacity: 1; }
+.mem-act-btn {
+  font-size: 11px; padding: 3px 9px; border-radius: 6px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--muted); cursor: pointer;
+}
+.mem-act-btn:hover { color: var(--text); border-color: var(--accent); }
+.mem-act-btn.danger:hover { color: var(--red); border-color: var(--red); }
+
+/* 날짜 구분선 (타임라인) */
+.day-header {
+  padding: 8px 18px 4px; font-size: 11px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .06em;
+  color: var(--muted); background: var(--surface2); border-bottom: 1px solid var(--border);
+}
+
+/* 인라인 편집 */
+.mem-edit { width: 100%; background: rgba(0,0,0,.25); color: var(--text); border: 1px solid var(--accent); border-radius: 6px; padding: 6px 9px; font: inherit; font-size: 13px; resize: vertical; min-height: 54px; outline: none; }
+
+/* 브리핑 / 내러티브 본문 */
+.brief-body { font-size: 12.5px; line-height: 1.6; color: var(--text); white-space: pre-wrap; max-height: 220px; overflow-y: auto; padding: 2px 0; }
+.brief-head { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+
+/* 일정/메일/이슈 (오늘 탭) */
+.event-time { min-width: 44px; text-align: right; font-size: 12px; color: var(--accent); font-variant-numeric: tabular-nums; padding-top: 2px; font-weight: 500; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-top: 6px; flex-shrink: 0; }
+.dot.lesson { background: #79c0ff; } .dot.allday { background: var(--muted); }
+.issue-id { font-size: 11px; color: var(--muted); font-family: monospace; min-width: 56px; padding-top: 2px; }
+.priority-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; margin-top: 7px; }
+.p1{background:var(--red);} .p2{background:var(--yellow);} .p3{background:var(--accent);} .p4{background:var(--muted);} .p0{background:var(--border);}
+.mail-priority { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 6px; flex-shrink: 0; margin-top: 2px; text-transform: uppercase; }
+.mail-priority.high { background: rgba(248,81,73,.15); color: var(--red); border: 1px solid rgba(248,81,73,.3); }
+.mail-priority.medium { background: rgba(210,153,34,.15); color: var(--yellow); border: 1px solid rgba(210,153,34,.3); }
+
+/* 상태 표시 */
+.empty { padding: 24px 18px; text-align: center; color: var(--muted); font-size: 13px; }
+.skeleton { padding: 14px 18px; display: flex; flex-direction: column; gap: 10px; }
+.sk-line { height: 13px; border-radius: 4px; background: linear-gradient(90deg, var(--surface2) 25%, var(--border) 50%, var(--surface2) 75%); background-size: 200% 100%; animation: shimmer 1.4s infinite; }
+@keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+.load-more { display: block; width: calc(100% - 36px); margin: 10px 18px 4px; padding: 8px; text-align: center; font-size: 12px; color: var(--muted); background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
+.load-more:hover { color: var(--text); border-color: var(--accent); }
+
+/* 커스텀 위젯 (오늘 탭 하단) */
+.widget-stat { padding: 14px 18px 18px; }
+.widget-stat .w-value { font-size: 32px; font-weight: 700; line-height: 1.1; }
+.widget-stat .w-label { font-size: 13px; color: var(--muted); margin-top: 4px; }
+.widget-text { padding: 12px 18px 16px; font-size: 13px; line-height: 1.6; white-space: pre-wrap; max-height: 240px; overflow-y: auto; }
+.widget-list .w-item { padding: 8px 18px; border-bottom: 1px solid var(--border); font-size: 13px; }
+.widget-list .w-item:last-child { border-bottom: none; }
+.widget-list .w-item-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.widget-err { padding: 14px 18px; font-size: 12px; color: var(--muted); }
+.widget-action { padding: 12px 16px 14px; display: flex; flex-direction: column; gap: 8px; }
+.widget-action .wa-row { display: flex; flex-direction: column; gap: 2px; }
+.widget-action label { font-size: 11px; color: var(--muted); }
+.widget-action input, .widget-action textarea { width: 100%; background: rgba(0,0,0,.2); color: var(--text); border: 1px solid var(--border); border-radius: 5px; padding: 6px 9px; font: inherit; font-size: 12px; outline: none; }
+.widget-action textarea { resize: vertical; min-height: 60px; max-height: 200px; }
+.widget-action input:focus, .widget-action textarea:focus { border-color: rgba(88,166,255,.6); }
+.widget-action .wa-actions { display: flex; gap: 6px; justify-content: flex-end; align-items: center; }
+.widget-action .wa-status { font-size: 11px; color: var(--muted); flex: 1; }
+.widget-action .wa-run { padding: 5px 14px; font-size: 12px; font-weight: 600; background: rgba(56,139,253,.18); color: #79c0ff; border: 1px solid rgba(56,139,253,.35); border-radius: 5px; cursor: pointer; }
+.widget-action .wa-run:hover { background: rgba(56,139,253,.28); }
+.widget-action .wa-run:disabled { opacity: .5; cursor: wait; }
+.widget-action .wa-result { margin-top: 4px; font-size: 12px; line-height: 1.6; background: rgba(0,0,0,.22); border: 1px solid var(--border); border-radius: 5px; padding: 8px 10px; max-height: 320px; overflow-y: auto; white-space: pre-wrap; word-break: break-word; display: none; }
+.widget-action .wa-result.show { display: block; }
+.widget-action .wa-result.empty { color: var(--muted); font-style: italic; }
+
+@media (max-width: 600px) {
+  header { padding: 14px 16px 12px; flex-wrap: wrap; gap: 8px; }
+  .clock { display: none; }
+  .hero { padding: 18px 16px 14px; }
+  .tabs, .tab-panel { padding-left: 16px; padding-right: 16px; }
+  .stat-pill { padding: 12px 16px; min-width: 90px; }
+  .stat-pill .sp-value { font-size: 22px; }
+}
 </style>
 </head>
 <body>
@@ -364,129 +260,138 @@ header input, header select { -webkit-app-region: no-drag; }
     </div>
     <div class="header-right">
       <span class="clock" id="clock">—</span>
-      <button class="btn" id="refresh-btn" onclick="load()">
-        <span id="refresh-icon">↻</span> <span data-i18n="refresh_btn">새로고침</span>
-      </button>
-      <a class="btn primary" href="/chat" data-i18n="chat_btn">💬 대화하기</a>
-      <button id="lang-toggle-btn" title="언어 / Language" style="background:none;border:1px solid var(--border);border-radius:8px;color:var(--muted);font-size:11px;font-weight:600;padding:7px 10px;cursor:pointer;transition:border-color .15s,color .15s;">KO</button>
+      <button class="btn" id="refresh-btn" onclick="refreshAll()"><span id="refresh-icon">↻</span> 새로고침</button>
+      <a class="btn primary" href="/chat">💬 대화하기</a>
     </div>
   </header>
 
-  <div class="grid">
-    <!-- 이번주 일정 -->
-    <div class="card">
-      <div class="card-header">
-        <div class="card-title">
-          <span>📅</span> <span data-i18n="card_events">이번주 일정</span>
-        </div>
-        <span class="card-count" id="event-count">—</span>
-      </div>
-      <div class="card-body" id="events-body">
-        <div class="skeleton">
-          <div class="sk-line" style="width:80%"></div>
-          <div class="sk-line" style="width:65%"></div>
-          <div class="sk-line" style="width:72%"></div>
-        </div>
-      </div>
+  <!-- 히어로: VEGA가 지금 기억하는 것 -->
+  <section class="hero">
+    <div class="hero-eyebrow">VEGA가 지금 기억하는 것</div>
+    <div class="hero-stats" id="hero-stats">
+      <div class="stat-pill persona"  data-tab="persona"><div class="sp-value" id="st-persona">—</div><div class="sp-label">페르소나</div><div class="sp-sub" id="st-persona-sub">&nbsp;</div></div>
+      <div class="stat-pill entities" data-tab="entities"><div class="sp-value" id="st-entities">—</div><div class="sp-label">인물·엔티티</div><div class="sp-sub" id="st-entities-sub">&nbsp;</div></div>
+      <div class="stat-pill events"   data-tab="timeline"><div class="sp-value" id="st-events">—</div><div class="sp-label">이벤트</div><div class="sp-sub">타임라인</div></div>
+      <div class="stat-pill sessions" data-tab="recent"><div class="sp-value" id="st-sessions">—</div><div class="sp-label">대화 메모리</div><div class="sp-sub" id="st-rules-sub">&nbsp;</div></div>
     </div>
 
+    <div class="suggest-banner hidden" id="suggest-banner">
+      <span class="sb-icon">💡</span>
+      <div class="sb-text" id="sb-text">VEGA 제안을 불러오는 중…</div>
+      <span class="sb-toggle" id="sb-toggle" style="display:none">펼치기 ›</span>
+    </div>
+    <div class="suggest-list" id="suggest-list"></div>
+  </section>
 
-    <!-- Linear In Progress -->
-    <div class="card">
-      <div class="card-header">
-        <div class="card-title">
-          <span>⚡</span> <span data-i18n="card_inprogress">진행 중</span>
-        </div>
-        <span class="card-count" id="issue-count">—</span>
+  <!-- 탭 -->
+  <nav class="tabs" id="tabs">
+    <button class="tab active" data-tab="recent">🧠 최근 기억</button>
+    <button class="tab" data-tab="entities">👤 인물·엔티티 <span class="tab-count" id="tc-entities"></span></button>
+    <button class="tab" data-tab="timeline">📅 타임라인 <span class="tab-count" id="tc-timeline"></span></button>
+    <button class="tab" data-tab="persona">🎭 페르소나 <span class="tab-count" id="tc-persona"></span></button>
+    <button class="tab" data-tab="rules">⚖️ 규칙·스킬</button>
+    <button class="tab" data-tab="today">☀️ 오늘</button>
+  </nav>
+
+  <!-- 최근 기억 -->
+  <section class="tab-panel active" data-tab="recent">
+    <div class="cards two">
+      <div class="card">
+        <div class="card-header"><div class="card-title"><span>🧠</span> 최근 대화 메모리</div><span class="card-count" id="recent-count">—</span></div>
+        <div class="card-body" id="recent-body"><div class="skeleton"><div class="sk-line" style="width:90%"></div><div class="sk-line" style="width:80%"></div></div></div>
       </div>
-      <div class="card-body" id="issues-body">
-        <div class="skeleton">
-          <div class="sk-line" style="width:70%"></div>
-          <div class="sk-line" style="width:85%"></div>
-          <div class="sk-line" style="width:55%"></div>
-        </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title"><span>📋</span> 최근 브리핑</div><span class="card-count" id="briefs-count">—</span></div>
+        <div class="card-body" id="briefs-body"><div class="empty">아직 생성된 브리핑이 없습니다</div></div>
       </div>
     </div>
-  </div>
+  </section>
 
-  <div class="grid-wide">
-    <!-- 중요 메일 -->
-    <div class="card">
-      <div class="card-header">
-        <div class="card-title">
-          <span>📬</span> <span data-i18n="card_mails">중요 메일</span>
-        </div>
-        <span class="card-count" id="mail-count">—</span>
+  <!-- 인물·엔티티 -->
+  <section class="tab-panel" data-tab="entities">
+    <div class="search-row">
+      <input class="search-input" id="ent-search" placeholder="인물·조직·프로젝트 검색…">
+      <button class="filter-chip active" data-kind="">전체</button>
+      <button class="filter-chip" data-kind="person">인물</button>
+      <button class="filter-chip" data-kind="org">조직</button>
+      <button class="filter-chip" data-kind="project">프로젝트</button>
+      <button class="filter-chip" data-kind="topic">주제</button>
+      <button class="filter-chip" data-kind="decision">결정</button>
+    </div>
+    <div class="card"><div class="card-body" id="entities-body"><div class="skeleton"><div class="sk-line" style="width:85%"></div><div class="sk-line" style="width:70%"></div></div></div></div>
+  </section>
+
+  <!-- 타임라인 -->
+  <section class="tab-panel" data-tab="timeline">
+    <div class="search-row">
+      <input class="search-input" id="ev-search" placeholder="이벤트 검색…">
+      <button class="filter-chip active" data-tag="">전체</button>
+      <button class="filter-chip" data-tag="family">가족</button>
+      <button class="filter-chip" data-tag="trading">트레이딩</button>
+      <button class="filter-chip" data-tag="research">연구</button>
+      <button class="filter-chip" data-tag="business">사업</button>
+      <button class="filter-chip" data-tag="ai_infra">AI인프라</button>
+    </div>
+    <div class="card"><div class="card-body" id="timeline-body"><div class="skeleton"><div class="sk-line" style="width:80%"></div><div class="sk-line" style="width:65%"></div></div></div></div>
+  </section>
+
+  <!-- 페르소나 -->
+  <section class="tab-panel" data-tab="persona">
+    <div class="search-row">
+      <input class="search-input" id="pers-search" placeholder="페르소나 섹션 검색…">
+      <button class="filter-chip active" id="pers-active-chip">활성만</button>
+    </div>
+    <div class="card"><div class="card-body" id="persona-body"><div class="skeleton"><div class="sk-line" style="width:90%"></div><div class="sk-line" style="width:75%"></div></div></div></div>
+  </section>
+
+  <!-- 규칙·스킬 -->
+  <section class="tab-panel" data-tab="rules">
+    <div class="cards two">
+      <div class="card">
+        <div class="card-header"><div class="card-title"><span>⚖️</span> 행동 규칙</div><span class="card-count" id="rules-count">—</span></div>
+        <div class="card-body" id="rules-body"><div class="empty">불러오는 중…</div></div>
       </div>
-      <div class="card-body" id="mails-body">
-        <div class="skeleton">
-          <div class="sk-line" style="width:85%"></div>
-          <div class="sk-line" style="width:70%"></div>
-          <div class="sk-line" style="width:60%"></div>
-        </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title"><span>🧩</span> 스킬 (슬래시 커맨드)</div><span class="card-count" id="skills-count">—</span></div>
+        <div class="card-body" id="skills-body"><div class="empty">불러오는 중…</div></div>
       </div>
     </div>
+  </section>
 
-    <!-- VEGA 제안 할 일 -->
-    <div class="card">
-      <div class="card-header">
-        <div class="card-title">
-          <span>🤖</span> <span data-i18n="card_suggest">VEGA 제안</span>
-        </div>
-        <span class="card-count" id="suggest-count">—</span>
+  <!-- 오늘 (일정/메일/이슈 + 커스텀 위젯) -->
+  <section class="tab-panel" data-tab="today">
+    <div class="cards two" id="today-grid">
+      <div class="card">
+        <div class="card-header"><div class="card-title"><span>📅</span> 이번주 일정</div><span class="card-count" id="event-count">—</span></div>
+        <div class="card-body" id="events-body"><div class="skeleton"><div class="sk-line" style="width:80%"></div><div class="sk-line" style="width:65%"></div></div></div>
       </div>
-      <div class="card-body" id="suggests-body">
-        <div class="suggest-loading">gemma 분석 중…</div>
+      <div class="card">
+        <div class="card-header"><div class="card-title"><span>📬</span> 중요 메일</div><span class="card-count" id="mail-count">—</span></div>
+        <div class="card-body" id="mails-body"><div class="empty">중요 메일 없음</div></div>
       </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title"><span>⚡</span> 진행 중 이슈</div><span class="card-count" id="issue-count">—</span></div>
+        <div class="card-body" id="issues-body"><div class="skeleton"><div class="sk-line" style="width:70%"></div><div class="sk-line" style="width:55%"></div></div></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title"><span>🗂️</span> 프로젝트 상태</div><span class="card-count" id="projects-count">—</span></div>
+        <div class="card-body" id="projects-body"><div class="empty">프로젝트 상태 없음</div></div>
+      </div>
+      <!-- 커스텀 위젯이 여기에 append -->
     </div>
-  </div>
-
-  <!-- 메모리 + 요약 + 프로젝트 (그리드 정렬, 위 카드들과 동일 폭·여백) -->
-  <div class="grid grid-lower">
-    <!-- 최근 대화 메모리 (넓게) -->
-    <div class="card span-2">
-      <div class="card-header">
-        <div class="card-title"><span>🧠</span> <span data-i18n="card_memory">최근 대화 메모리</span></div>
-        <span class="card-count" id="memory-count">—</span>
-      </div>
-      <div class="card-body" id="memory-body">
-        <div class="skeleton">
-          <div class="sk-line" style="width:90%"></div>
-          <div class="sk-line" style="width:80%"></div>
-          <div class="sk-line" style="width:75%"></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 오늘 요약 (Daily Brief) -->
-    <div class="card">
-      <div class="card-header">
-        <div class="card-title"><span>📋</span> <span data-i18n="card_briefs">오늘 요약</span></div>
-        <span class="card-count" id="briefs-count">—</span>
-      </div>
-      <div class="card-body" id="briefs-body">
-        <div class="empty">아직 생성된 브리핑이 없습니다</div>
-      </div>
-    </div>
-
-    <!-- 프로젝트 상태 -->
-    <div class="card span-3">
-      <div class="card-header">
-        <div class="card-title"><span>🗂️</span> <span data-i18n="card_projects">프로젝트 상태</span></div>
-        <span class="card-count" id="projects-count">—</span>
-      </div>
-      <div class="card-body" id="projects-body">
-        <div class="empty">프로젝트 상태 없음</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- VEGA 커스텀 위젯 (data/widgets.json) — 비어있으면 숨김 -->
-  <div class="grid" id="widget-grid" style="display:none"></div>
+  </section>
 </div>
 
 <script>
-// ── Tauri 데스크탑: 신호등 공간 + 헤더 드래그로 창 이동 ──
+// ── 공통 ──
+function esc(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+function _debounce(fn, ms) {
+  let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
+}
+
+// ── Tauri: 신호등 공간 + 헤더 드래그 ──
 (function () {
   function detectTauri() {
     const t = !!(window.__TAURI__ || window.__TAURI_INTERNALS__ || window.isTauri);
@@ -521,369 +426,389 @@ function tickClock() {
   document.getElementById('clock').textContent =
     now.toLocaleTimeString('ko-KR', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
 }
-setInterval(tickClock, 1000);
-tickClock();
+setInterval(tickClock, 1000); tickClock();
 
-// ── 우선순위 색상 ──
-const PRIORITY_CLASS = {0:'p0',1:'p1',2:'p2',3:'p3',4:'p4'};
+// ── 탭 전환 ──
+const _loadedTabs = new Set();
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.dataset.tab === name));
+  // 탭 최초 진입 시 lazy 로드
+  if (!_loadedTabs.has(name)) {
+    _loadedTabs.add(name);
+    if (name === 'entities') loadEntities();
+    else if (name === 'timeline') loadTimeline();
+    else if (name === 'persona') loadPersona();
+    else if (name === 'rules') { loadRules(); loadSkills(); }
+    else if (name === 'today') loadToday();
+  }
+}
+document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => switchTab(t.dataset.tab)));
+// 히어로 통계 클릭 → 해당 탭으로
+document.querySelectorAll('.stat-pill').forEach(p => p.addEventListener('click', () => switchTab(p.dataset.tab)));
 
-// ── 캘린더 렌더링 (이번주) ──
+// ── 히어로: 메모리 요약 ──
+async function loadSummary() {
+  try {
+    const d = await (await fetch('/api/memory/summary')).json();
+    document.getElementById('st-persona').textContent = d.persona?.total ?? '—';
+    document.getElementById('st-persona-sub').textContent = `활성 ${d.persona?.active ?? 0}`;
+    document.getElementById('st-events').textContent = d.events?.total ?? '—';
+    document.getElementById('st-entities').textContent = d.entities?.total ?? '—';
+    const kinds = (d.entities?.by_kind || []).slice(0, 2).map(k => `${esc(k.kind)} ${k.cnt}`).join(' · ');
+    document.getElementById('st-entities-sub').textContent = kinds || ' ';
+    document.getElementById('st-sessions').textContent = d.sessions?.total ?? '—';
+    document.getElementById('tc-persona').textContent = d.persona?.total ?? '';
+    document.getElementById('tc-entities').textContent = d.entities?.total ?? '';
+    document.getElementById('tc-timeline').textContent = d.events?.total ?? '';
+  } catch (e) { console.warn('summary 실패', e); }
+}
+
+// ── 최근 기억 (narrative) ──
+async function loadRecent() {
+  try {
+    const d = await (await fetch('/api/memory/recent')).json();
+    const memories = d.memories || [];
+    document.getElementById('recent-count').textContent = memories.length || '0';
+    const el = document.getElementById('recent-body');
+    if (!memories.length) { el.innerHTML = '<div class="empty">아직 기록된 대화 메모리가 없습니다</div>'; return; }
+    el.innerHTML = memories.map(m => {
+      const dt = new Date(m.updated_at || m.ingested_at);
+      const dateStr = isNaN(dt) ? '' : `${dt.getMonth()+1}/${dt.getDate()}`;
+      const narrative = m.narrative || m.title || '';
+      return `<div class="mem-row"><div class="mem-main">
+        <div class="mem-title">${esc(narrative)}</div>
+        <div class="mem-meta"><span>${esc(m.title || '')}</span>${dateStr ? `<span>· ${dateStr}</span>` : ''}</div>
+      </div></div>`;
+    }).join('');
+  } catch (e) {
+    document.getElementById('recent-body').innerHTML = '<div class="empty">메모리 로드 실패</div>';
+  }
+}
+
+// ── 최근 브리핑 ──
+async function loadBriefs() {
+  try {
+    const d = await (await fetch('/api/briefs/recent')).json();
+    const briefs = d.briefs || [];
+    document.getElementById('briefs-count').textContent = briefs.length || '0';
+    const el = document.getElementById('briefs-body');
+    if (!briefs.length) { el.innerHTML = '<div class="empty">아직 생성된 브리핑이 없습니다</div>'; return; }
+    el.innerHTML = briefs.map(b => {
+      const kindLabel = b.kind === 'morning' ? '🌅 아침 브리핑' : '🌆 저녁 리뷰';
+      return `<div class="mem-row"><div class="mem-main">
+        <div class="brief-head">${kindLabel} — ${esc(b.date)}</div>
+        <div class="brief-body">${esc(b.body_md || '')}</div>
+      </div></div>`;
+    }).join('');
+  } catch (e) {
+    document.getElementById('briefs-body').innerHTML = '<div class="empty">브리핑 로드 실패</div>';
+  }
+}
+
+// ── 인물·엔티티 ──
+let _entKind = '', _entSearch = '';
+async function loadEntities() {
+  const el = document.getElementById('entities-body');
+  try {
+    const q = new URLSearchParams({ limit: '60' });
+    if (_entKind) q.set('kind', _entKind);
+    if (_entSearch) q.set('search', _entSearch);
+    const d = await (await fetch('/api/memory/entities?' + q)).json();
+    const rows = d.rows || [];
+    if (!rows.length) { el.innerHTML = '<div class="empty">일치하는 엔티티 없음</div>'; return; }
+    el.innerHTML = rows.map(r => {
+      let aliases = [];
+      try { aliases = JSON.parse(r.aliases_json || '[]'); } catch {}
+      const aliasStr = aliases.length ? ` · ${aliases.slice(0,3).map(esc).join(', ')}` : '';
+      return `<div class="mem-row" data-id="${r.id}">
+        <div class="mem-main">
+          <div class="mem-title">${esc(r.name)}</div>
+          <div class="mem-meta"><span class="mem-kind ${esc(r.kind)}">${esc(r.kind)}</span><span>${esc((r.last_seen||'').slice(0,10))}${aliasStr}</span></div>
+          ${r.notes ? `<div class="mem-notes">${esc(r.notes)}</div>` : ''}
+        </div>
+        <div class="mem-actions">
+          <button class="mem-act-btn danger" onclick="deleteEntity(${r.id}, this)">삭제</button>
+        </div>
+      </div>`;
+    }).join('');
+  } catch (e) { el.innerHTML = '<div class="empty">엔티티 로드 실패</div>'; }
+}
+async function deleteEntity(id, btn) {
+  if (!confirm('이 엔티티를 삭제할까요? (재적재 가능)')) return;
+  btn.disabled = true;
+  try {
+    const r = await fetch(`/api/memory/entities/${id}`, { method: 'DELETE' });
+    if (r.ok) { const row = btn.closest('.mem-row'); row.style.opacity = '.3'; row.style.pointerEvents = 'none'; loadSummary(); }
+    else btn.disabled = false;
+  } catch { btn.disabled = false; }
+}
+
+// ── 타임라인 (events) ──
+let _evTag = '', _evSearch = '', _evOffset = 0;
+async function loadTimeline(append) {
+  const el = document.getElementById('timeline-body');
+  if (!append) _evOffset = 0;
+  try {
+    const q = new URLSearchParams({ limit: '50', offset: String(_evOffset) });
+    if (_evTag) q.set('tag', _evTag);
+    if (_evSearch) q.set('search', _evSearch);
+    const d = await (await fetch('/api/memory/events?' + q)).json();
+    const rows = d.rows || [];
+    const html = rows.map(r => {
+      const tags = (r.tags || '').split(',').map(t => t.trim()).filter(Boolean);
+      const tagChips = tags.map(t => `<span class="tag-chip">${esc(t)}</span>`).join('');
+      return `<div class="mem-row" data-id="${r.id}">
+        <div class="mem-main">
+          <div class="mem-title">${esc(r.title)}</div>
+          <div class="mem-meta"><span>${esc((r.event_date||'').slice(0,10))}</span>${r.era ? `<span>· ${esc(r.era)}</span>` : ''}</div>
+          ${r.body ? `<div class="mem-notes">${esc(r.body)}</div>` : ''}
+          ${tagChips ? `<div class="mem-tags">${tagChips}</div>` : ''}
+        </div>
+        <div class="mem-actions"><button class="mem-act-btn danger" onclick="deleteEvent(${r.id}, this)">삭제</button></div>
+      </div>`;
+    }).join('');
+    if (!append) {
+      el.innerHTML = rows.length ? html : '<div class="empty">일치하는 이벤트 없음</div>';
+    } else {
+      el.querySelector('.load-more')?.remove();
+      el.insertAdjacentHTML('beforeend', html);
+    }
+    _evOffset += rows.length;
+    if (rows.length >= 50 && _evOffset < (d.total || 0)) {
+      el.insertAdjacentHTML('beforeend', `<button class="load-more" onclick="loadTimeline(true)">더 보기 (${_evOffset}/${d.total})</button>`);
+    }
+  } catch (e) { el.innerHTML = '<div class="empty">타임라인 로드 실패</div>'; }
+}
+async function deleteEvent(id, btn) {
+  if (!confirm('이 이벤트를 삭제할까요? (재적재 가능)')) return;
+  btn.disabled = true;
+  try {
+    const r = await fetch(`/api/memory/events/${id}`, { method: 'DELETE' });
+    if (r.ok) { const row = btn.closest('.mem-row'); row.style.opacity = '.3'; row.style.pointerEvents = 'none'; loadSummary(); }
+    else btn.disabled = false;
+  } catch { btn.disabled = false; }
+}
+
+// ── 페르소나 ──
+let _persActive = true, _persSearch = '';
+async function loadPersona() {
+  const el = document.getElementById('persona-body');
+  try {
+    const q = new URLSearchParams();
+    if (_persActive) q.set('active_only', 'true');
+    if (_persSearch) q.set('search', _persSearch);
+    const d = await (await fetch('/api/memory/persona?' + q)).json();
+    const rows = d.rows || [];
+    if (!rows.length) { el.innerHTML = '<div class="empty">페르소나 섹션 없음</div>'; return; }
+    el.innerHTML = rows.map(r => `
+      <div class="mem-row" data-id="${r.id}">
+        <div class="mem-main">
+          <div class="mem-meta"><span class="mem-kind">${esc(r.section_key || r.scope || '')}</span>${r.user_edited ? '<span>✏️ 사용자 편집</span>' : ''}${!r.is_active ? '<span>· 비활성</span>' : ''}</div>
+          <div class="mem-notes" id="pers-content-${r.id}">${esc(r.content || '')}</div>
+        </div>
+        <div class="mem-actions"><button class="mem-act-btn" onclick="editPersona(${r.id}, this)">편집</button></div>
+      </div>`).join('');
+  } catch (e) { el.innerHTML = '<div class="empty">페르소나 로드 실패</div>'; }
+}
+function editPersona(id, btn) {
+  const contentEl = document.getElementById(`pers-content-${id}`);
+  const cur = contentEl.textContent;
+  const ta = document.createElement('textarea');
+  ta.className = 'mem-edit'; ta.value = cur;
+  contentEl.replaceWith(ta); ta.focus();
+  btn.textContent = '저장';
+  btn.onclick = async () => {
+    btn.disabled = true;
+    try {
+      const r = await fetch(`/api/memory/persona/${id}`, {
+        method: 'PATCH', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ content: ta.value }),
+      });
+      if (r.ok) loadPersona();
+      else btn.disabled = false;
+    } catch { btn.disabled = false; }
+  };
+}
+
+// ── 규칙 ──
+async function loadRules() {
+  const el = document.getElementById('rules-body');
+  try {
+    const d = await (await fetch('/api/memory/rules')).json();
+    const rules = d.rules || [];
+    document.getElementById('rules-count').textContent = rules.length || '0';
+    if (!rules.length) { el.innerHTML = '<div class="empty">저장된 행동 규칙 없음</div>'; return; }
+    el.innerHTML = rules.map(r => `<div class="mem-row"><div class="mem-main">
+      <div class="mem-title">${esc(r.rule_text)}</div>
+      <div class="mem-meta"><span class="mem-kind">${esc(r.section)}</span><span>${esc(r.rule_id)}</span></div>
+    </div></div>`).join('');
+  } catch (e) { el.innerHTML = '<div class="empty">규칙 로드 실패</div>'; }
+}
+async function loadSkills() {
+  const el = document.getElementById('skills-body');
+  try {
+    const d = await (await fetch('/api/commands')).json();
+    const custom = (d.commands || []).filter(c => c.custom);
+    document.getElementById('skills-count').textContent = custom.length || '0';
+    if (!custom.length) { el.innerHTML = '<div class="empty">커스텀 스킬 없음 — 채팅에서 /skill로 생성</div>'; return; }
+    el.innerHTML = custom.map(c => `<div class="mem-row"><div class="mem-main">
+      <div class="mem-title">/${esc(c.name)}</div>
+      ${c.desc ? `<div class="mem-notes">${esc(c.desc)}</div>` : ''}
+    </div></div>`).join('');
+  } catch (e) { el.innerHTML = '<div class="empty">스킬 로드 실패</div>'; }
+}
+
+// ── VEGA 제안 (히어로 배너) ──
+async function loadSuggestions() {
+  const banner = document.getElementById('suggest-banner');
+  const text = document.getElementById('sb-text');
+  const toggle = document.getElementById('sb-toggle');
+  const list = document.getElementById('suggest-list');
+  try {
+    const d = await (await fetch('/api/todos/suggest')).json();
+    const sugg = d.suggestions || [];
+    banner.classList.remove('hidden');
+    if (!sugg.length) { text.innerHTML = 'VEGA 제안 없음 — gemma 분석 대기 중'; return; }
+    text.innerHTML = `<b>VEGA 제안 ${sugg.length}건</b> — ${esc(sugg[0].title)}`;
+    toggle.style.display = '';
+    list.innerHTML = sugg.map((s, i) => `
+      <div class="suggest-item" id="suggest-${i}">
+        <div class="suggest-body">
+          <div class="suggest-title">${esc(s.title)}</div>
+          ${s.reason ? `<div class="suggest-reason">${esc(s.reason)}</div>` : ''}
+          ${s.project ? `<div class="suggest-project">${esc(s.project)}</div>` : ''}
+        </div>
+        <div class="suggest-actions">
+          <button class="suggest-btn accept" onclick="acceptSuggest(${i}, ${JSON.stringify(s.title).replace(/"/g,'&quot;')}, ${JSON.stringify(s.project||'').replace(/"/g,'&quot;')}, this)">✓ 수락</button>
+        </div>
+      </div>`).join('');
+    let open = false;
+    toggle.onclick = () => { open = !open; list.classList.toggle('show', open); toggle.textContent = open ? '접기 ›' : '펼치기 ›'; };
+  } catch (e) {
+    banner.classList.remove('hidden');
+    text.innerHTML = 'VEGA 제안 로드 실패';
+  }
+}
+async function acceptSuggest(idx, title, project, btn) {
+  btn.disabled = true;
+  try {
+    await fetch('/api/todos/suggest/accept', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ title, project }),
+    });
+    btn.textContent = '✓ 추가됨';
+    document.getElementById(`suggest-${idx}`).style.opacity = '.4';
+  } catch { btn.disabled = false; }
+}
+
+// ── 오늘 탭 (일정/메일/이슈/프로젝트 + 커스텀 위젯) ──
+async function loadToday() {
+  // 일정 + 이슈 (한 API)
+  try {
+    const d = await (await fetch('/api/dashboard')).json();
+    renderEvents(d.events || []);
+    renderIssues(d.issues || []);
+  } catch (e) { console.warn('dashboard 실패', e); }
+  // 중요 메일
+  try {
+    const d = await (await fetch('/api/emails/priority')).json();
+    renderMails(d.emails || []);
+  } catch { document.getElementById('mails-body').innerHTML = '<div class="empty">메일 로드 실패</div>'; }
+  // 프로젝트
+  try {
+    const d = await (await fetch('/api/projects/state')).json();
+    renderProjects(d.projects || []);
+  } catch { document.getElementById('projects-body').innerHTML = '<div class="empty">프로젝트 로드 실패</div>'; }
+  // 커스텀 위젯
+  loadWidgets();
+}
 function renderEvents(events) {
   const el = document.getElementById('events-body');
   document.getElementById('event-count').textContent = events.length + '개';
-  if (!events.length) {
-    el.innerHTML = '<div class="empty">이번주 일정 없음</div>';
-    return;
-  }
-
-  // 날짜별 그룹핑
+  if (!events.length) { el.innerHTML = '<div class="empty">이번주 일정 없음</div>'; return; }
   const groups = {};
-  for (const e of events) {
-    const key = e.date || '';
-    if (!groups[key]) groups[key] = [];
-    groups[key].push(e);
-  }
-
+  for (const e of events) { (groups[e.date || ''] ??= []).push(e); }
   const html = [];
   for (const date of Object.keys(groups).sort()) {
     const first = groups[date][0];
-    const isToday = first.is_today;
     const [, mm, dd] = date.split('-');
-    const label = `${mm}/${dd} (${first.day})`;
-    html.push(`<div class="day-header">
-      ${esc(label)}
-      ${isToday ? '<span class="day-badge">오늘</span>' : ''}
-    </div>`);
+    html.push(`<div class="day-header">${esc(`${mm}/${dd} (${first.day})`)}${first.is_today ? ' · 오늘' : ''}</div>`);
     for (const e of groups[date]) {
-      const isLesson = e.title.includes('레슨') || e.title.includes('수업');
+      const isLesson = (e.title||'').includes('레슨') || (e.title||'').includes('수업');
       const isAllDay = e.start === '종일';
       const dotClass = isAllDay ? 'allday' : isLesson ? 'lesson' : '';
       const timeLabel = isAllDay ? '종일' : (e.end ? `${e.start}–${e.end}` : e.start);
-      const meta = [e.calendar, e.location].filter(Boolean).join(' · ');
-      html.push(`
-        <div class="event-item">
-          <div class="event-time">${esc(timeLabel)}</div>
-          <div class="event-dot ${dotClass}"></div>
-          <div class="event-body">
-            <div class="event-title">${esc(e.title)}</div>
-            ${meta ? `<div class="event-meta">${esc(meta)}</div>` : ''}
-          </div>
-        </div>`);
+      html.push(`<div class="mem-row"><div class="event-time">${esc(timeLabel)}</div><div class="dot ${dotClass}"></div>
+        <div class="mem-main"><div class="mem-title">${esc(e.title)}</div>${e.location ? `<div class="mem-meta">${esc(e.location)}</div>` : ''}</div></div>`);
     }
   }
   el.innerHTML = html.join('');
 }
-
-// ── Things 렌더링 ──
-function renderTodos(todos) {
-  const el = document.getElementById('todos-body');
-  const incomplete = todos.filter(t => t.status !== 'completed');
-  document.getElementById('todo-count').textContent = incomplete.length + '개';
-  if (!todos.length) {
-    el.innerHTML = '<div class="empty">오늘 할 일 없음</div>';
-    return;
-  }
-  el.innerHTML = todos.map(t => {
-    const done = t.status === 'completed';
-    return `
-      <div class="todo-item" onclick="completeTodo('${t.uuid}', this)" data-uuid="${t.uuid}">
-        <div class="todo-check ${done ? 'done' : ''}"></div>
-        <div class="todo-body">
-          <div class="todo-title ${done ? 'done' : ''}">${esc(t.title)}</div>
-          ${t.project ? `<div class="todo-proj">${esc(t.project)}</div>` : ''}
-          ${t.deadline ? `<div class="todo-deadline">⏰ ${t.deadline}</div>` : ''}
-        </div>
-      </div>`;
-  }).join('');
-}
-
-// ── Linear 렌더링 ──
 function renderIssues(issues) {
   const el = document.getElementById('issues-body');
   document.getElementById('issue-count').textContent = issues.length + '개';
-  if (!issues.length) {
-    el.innerHTML = '<div class="empty">진행 중인 이슈 없음</div>';
-    return;
-  }
-  el.innerHTML = issues.map(i => {
-    const labels = (i.labels || []).map(l => `<span class="label-chip">${esc(l)}</span>`).join('');
-    const meta = i.project || i.team || '';
-    return `
-      <div class="issue-item">
-        <div class="priority-dot ${PRIORITY_CLASS[i.priority] || 'p0'}"></div>
-        <div class="issue-id">${esc(i.identifier)}</div>
-        <div class="issue-body">
-          <div class="issue-title">${esc(i.title)}</div>
-          ${meta ? `<div class="issue-meta">${esc(meta)}</div>` : ''}
-          ${labels ? `<div class="issue-labels">${labels}</div>` : ''}
-        </div>
-      </div>`;
-  }).join('');
+  if (!issues.length) { el.innerHTML = '<div class="empty">진행 중인 이슈 없음</div>'; return; }
+  const P = {0:'p0',1:'p1',2:'p2',3:'p3',4:'p4'};
+  el.innerHTML = issues.map(i => `<div class="mem-row">
+    <div class="priority-dot ${P[i.priority] || 'p0'}"></div>
+    <div class="issue-id">${esc(i.identifier)}</div>
+    <div class="mem-main"><div class="mem-title">${esc(i.title)}</div>${(i.project||i.team) ? `<div class="mem-meta">${esc(i.project||i.team)}</div>` : ''}</div>
+  </div>`).join('');
 }
-
-// ── Things 완료 처리 ──
-async function completeTodo(uuid, row) {
-  if (!uuid || row.dataset.completing) return;
-  row.dataset.completing = '1';
-  const check = row.querySelector('.todo-check');
-  const title = row.querySelector('.todo-title');
-  check.classList.add('done');
-  title.classList.add('done');
-  try {
-    await fetch('/api/todo/complete', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({uuid}),
-    });
-  } catch(e) { console.warn('todo complete failed', e); }
-}
-
-// ── 중요 메일 렌더링 ──
 function renderMails(emails) {
   const el = document.getElementById('mails-body');
-  const cnt = document.getElementById('mail-count');
-  cnt.textContent = emails.length + '개';
-  if (!emails.length) {
-    el.innerHTML = '<div class="empty">중요 메일 없음</div>';
-    return;
-  }
+  document.getElementById('mail-count').textContent = emails.length + '개';
+  if (!emails.length) { el.innerHTML = '<div class="empty">중요 메일 없음</div>'; return; }
   el.innerHTML = emails.map(m => {
-    const from = m.sender.replace(/<.*?>/, '').trim();
-    return `
-      <div class="mail-item">
-        <span class="mail-priority ${m.priority}">${m.priority === 'high' ? '긴급' : '중요'}</span>
-        <div class="mail-body">
-          <div class="mail-subject">${esc(m.subject)}</div>
-          <div class="mail-from">${esc(from)}</div>
-          ${m.reason ? `<div class="mail-reason">${esc(m.reason)}</div>` : ''}
-        </div>
-      </div>`;
-  }).join('');
-}
-
-// ── VEGA 제안 렌더링 ──
-function renderSuggestions(suggestions) {
-  const el = document.getElementById('suggests-body');
-  const cnt = document.getElementById('suggest-count');
-  cnt.textContent = suggestions.length + '개';
-  if (!suggestions.length) {
-    el.innerHTML = '<div class="empty">ChatGPT director 응답 없음 — 잠시 후 새로고침</div>';
-    return;
-  }
-  el.innerHTML = suggestions.map((s, i) => `
-    <div class="suggest-item" id="suggest-${i}">
-      <div class="suggest-body">
-        <div class="suggest-title">${esc(s.title)}</div>
-        ${s.reason ? `<div class="suggest-reason">${esc(s.reason)}</div>` : ''}
-        ${s.project ? `<div class="suggest-project">${esc(s.project)}</div>` : ''}
-      </div>
-      <div class="suggest-actions">
-        <button class="suggest-btn accept" onclick="acceptSuggest(${i}, '${esc(s.title)}', '${esc(s.project || '')}', this)">✓ 수락</button>
-        <button class="suggest-btn defer" onclick="deferSuggest(${i}, '${esc(s.title)}', '${esc(s.project || '')}', this)">→ 내일</button>
-      </div>
-    </div>`).join('');
-}
-
-async function acceptSuggest(idx, title, project, btn) {
-  btn.disabled = true; btn.closest('.suggest-actions').querySelector('.defer').disabled = true;
-  try {
-    await fetch('/api/todos/suggest/accept', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({title, project}),
-    });
-    const row = document.getElementById(`suggest-${idx}`);
-    row.style.opacity = '.4';
-    btn.textContent = '✓ 추가됨';
-  } catch(e) { btn.disabled = false; }
-}
-
-async function deferSuggest(idx, title, project, btn) {
-  btn.disabled = true; btn.closest('.suggest-actions').querySelector('.accept').disabled = true;
-  try {
-    await fetch('/api/todos/suggest/defer', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({title, project}),
-    });
-    const row = document.getElementById(`suggest-${idx}`);
-    row.style.opacity = '.4';
-    btn.textContent = '→ 내일로';
-  } catch(e) { btn.disabled = false; }
-}
-
-// ── 대시보드 로드 ──
-async function load() {
-  const icon = document.getElementById('refresh-icon');
-  icon.className = 'spin';
-  try {
-    const r = await fetch('/api/dashboard');
-    const d = await r.json();
-    document.getElementById('date-line').textContent = d.date;
-    renderEvents(d.events || []);
-    renderIssues(d.issues || []);
-  } catch(e) {
-    console.error(e);
-  } finally {
-    icon.className = '';
-  }
-}
-
-// ── 메모리 렌더링 ──
-function renderMemories(memories) {
-  const el = document.getElementById('memory-body');
-  document.getElementById('memory-count').textContent = memories.length || '0';
-  if (!memories.length) {
-    el.innerHTML = '<div class="empty">아직 기록된 대화 메모리가 없습니다</div>';
-    return;
-  }
-  el.innerHTML = memories.map(m => {
-    const dt = new Date(m.updated_at || m.ingested_at);
-    const dateStr = `${dt.getMonth()+1}월 ${dt.getDate()}일`;
-    // narrative에 날짜가 없으면 앞에 붙여줌
-    const narrative = m.narrative || m.title || '';
-    const text = narrative.startsWith(dateStr) ? narrative : `${dateStr} ${narrative}`;
-    return `<div class="memory-item">${esc(text)}</div>`;
-  }).join('');
-}
-
-// ── 브리핑 렌더링 ──
-function renderBriefs(briefs) {
-  const el = document.getElementById('briefs-body');
-  document.getElementById('briefs-count').textContent = briefs.length || '0';
-  if (!briefs.length) {
-    el.innerHTML = '<div class="empty">아직 생성된 브리핑이 없습니다</div>';
-    return;
-  }
-  el.innerHTML = briefs.map(b => {
-    const kindLabel = b.kind === 'morning' ? '🌅 아침 브리핑' : '🌆 저녁 리뷰';
-    const lms = b.lms_used ? '' : ' · gemma 미사용';
-    const sent = b.sent ? '' : ' · 미발송';
-    return `<div class="brief-item">
-      <div class="brief-head">${kindLabel} — ${esc(b.date)}${lms}${sent}</div>
-      <div class="brief-body">${esc(b.body_md || '')}</div>
+    const from = (m.sender || m.from || '').replace(/<.*?>/, '').trim();
+    return `<div class="mem-row">
+      <span class="mail-priority ${m.priority}">${m.priority === 'high' ? '긴급' : '중요'}</span>
+      <div class="mem-main"><div class="mem-title">${esc(m.subject)}</div><div class="mem-meta">${esc(from)}</div>${m.reason ? `<div class="mem-notes">${esc(m.reason)}</div>` : ''}</div>
     </div>`;
   }).join('');
 }
-
-// ── 프로젝트 상태 렌더링 ──
 function renderProjects(projects) {
   const el = document.getElementById('projects-body');
-  const meaningful = projects.filter(p =>
-    p.positioning || (p.metrics && Object.keys(p.metrics).length) ||
-    (p.next_actions && p.next_actions.length));
+  const meaningful = projects.filter(p => p.positioning || (p.metrics && Object.keys(p.metrics).length) || (p.next_actions && p.next_actions.length));
   document.getElementById('projects-count').textContent = projects.length || '0';
-  if (!meaningful.length) {
-    el.innerHTML = '<div class="empty">프로젝트 상태 미입력 — 채팅에서 VEGA에게 갱신 요청</div>';
-    return;
-  }
+  if (!meaningful.length) { el.innerHTML = '<div class="empty">프로젝트 상태 미입력 — 채팅에서 갱신 요청</div>'; return; }
   el.innerHTML = meaningful.map(p => {
     let lines = '';
-    if (p.positioning) lines += `<div class="proj-line">${esc(p.positioning)}</div>`;
-    if (p.metrics && Object.keys(p.metrics).length) {
-      const m = Object.entries(p.metrics).slice(0, 2).map(([k, v]) => {
-        const val = (v && typeof v === 'object') ? v.value : v;
-        const asOf = (v && typeof v === 'object' && v.as_of) ? ` (${v.as_of})` : '';
-        return `${k}=${val}${asOf}`;
-      }).join(', ');
-      lines += `<div class="proj-line">📊 ${esc(m)}</div>`;
-    }
-    if (p.next_actions && p.next_actions.length) {
-      lines += `<div class="proj-line">→ ${esc(p.next_actions[0])}</div>`;
-    }
-    return `<div class="proj-item">
-      <span class="proj-name">${esc(p.name)}</span><span class="proj-status">${esc(p.status || '')}</span>
-      ${lines}
-    </div>`;
+    if (p.positioning) lines += `<div class="mem-meta">${esc(p.positioning)}</div>`;
+    if (p.next_actions && p.next_actions.length) lines += `<div class="mem-meta">→ ${esc(p.next_actions[0])}</div>`;
+    return `<div class="mem-row"><div class="mem-main"><div class="mem-title">${esc(p.name)} <span style="color:var(--muted);font-size:12px">${esc(p.status||'')}</span></div>${lines}</div></div>`;
   }).join('');
 }
 
-// 메일·제안·메모리는 별도 로드 (느린 API — 블로킹 없이)
-async function loadAsync() {
-  // 최근 대화 메모리
-  try {
-    const r = await fetch('/api/memory/recent');
-    const d = await r.json();
-    renderMemories(d.memories || []);
-  } catch(e) {
-    document.getElementById('memory-body').innerHTML = '<div class="empty">메모리 로드 실패</div>';
-  }
-  // 중요 메일
-  try {
-    const r = await fetch('/api/emails/priority');
-    const d = await r.json();
-    renderMails(d.emails || []);
-  } catch(e) {
-    document.getElementById('mails-body').innerHTML = '<div class="empty">메일 로드 실패</div>';
-  }
-  // VEGA 제안 (LMS 기동 시에만 유의미)
-  try {
-    const r = await fetch('/api/todos/suggest');
-    const d = await r.json();
-    renderSuggestions(d.suggestions || []);
-  } catch(e) {
-    document.getElementById('suggests-body').innerHTML = '<div class="empty">제안 로드 실패</div>';
-  }
-  // 오늘 요약 (Daily Brief)
-  try {
-    const r = await fetch('/api/briefs/recent');
-    const d = await r.json();
-    renderBriefs(d.briefs || []);
-  } catch(e) {
-    document.getElementById('briefs-body').innerHTML = '<div class="empty">브리핑 로드 실패</div>';
-  }
-  // 프로젝트 상태
-  try {
-    const r = await fetch('/api/projects/state');
-    const d = await r.json();
-    renderProjects(d.projects || []);
-  } catch(e) {
-    document.getElementById('projects-body').innerHTML = '<div class="empty">프로젝트 상태 로드 실패</div>';
-  }
-  // 커스텀 위젯
-  loadWidgets();
-}
-
-// ── 커스텀 위젯 렌더링 엔진 ──
+// ── 커스텀 위젯 엔진 (오늘 탭 하단) ──
 async function loadWidgets() {
-  const grid = document.getElementById('widget-grid');
+  const grid = document.getElementById('today-grid');
   let widgets = [];
-  try {
-    const r = await fetch('/api/widgets');
-    widgets = (await r.json()).widgets || [];
-  } catch { return; }
-  if (!widgets.length) { grid.style.display = 'none'; return; }
-  grid.style.display = '';
-  grid.innerHTML = '';
+  try { widgets = (await (await fetch('/api/widgets')).json()).widgets || []; } catch { return; }
+  grid.querySelectorAll('.custom-widget').forEach(el => el.remove());
   for (const w of widgets) {
     const card = document.createElement('div');
-    card.className = 'card' + (w.span === 2 ? ' span-2' : w.span === 3 ? ' span-3' : '');
-    card.innerHTML = `<div class="card-header"><div class="card-title">`
-      + `<span>${esc(w.icon || '🧩')}</span> ${esc(w.title || '위젯')}</div></div>`
-      + `<div class="card-body"><div class="widget-err">불러오는 중…</div></div>`;
+    card.className = 'card custom-widget';
+    card.innerHTML = `<div class="card-header"><div class="card-title"><span>${esc(w.icon || '🧩')}</span> ${esc(w.title || '위젯')}</div></div><div class="card-body"><div class="widget-err">불러오는 중…</div></div>`;
     grid.appendChild(card);
     renderWidget(card.querySelector('.card-body'), w);
   }
 }
-
 async function renderWidget(body, w) {
   let data = {};
   if (w.source) {
     try {
-      const r = await fetch(`/api/widgets/data/${encodeURIComponent(w.source)}`);
-      data = await r.json();
+      data = await (await fetch(`/api/widgets/data/${encodeURIComponent(w.source)}`)).json();
       if (data.error) { body.innerHTML = `<div class="widget-err">${esc(data.error)}</div>`; return; }
-    } catch (e) {
-      body.innerHTML = `<div class="widget-err">데이터 로드 실패</div>`; return;
-    }
+    } catch { body.innerHTML = '<div class="widget-err">데이터 로드 실패</div>'; return; }
   }
   if (w.type === 'stat') {
-    body.innerHTML = `<div class="widget-stat"><div class="w-value">${esc(data.value ?? w.value ?? '—')}</div>`
-      + `<div class="w-label">${esc(data.label ?? w.label ?? '')}</div></div>`;
+    body.innerHTML = `<div class="widget-stat"><div class="w-value">${esc(data.value ?? w.value ?? '—')}</div><div class="w-label">${esc(data.label ?? w.label ?? '')}</div></div>`;
   } else if (w.type === 'list') {
     const items = data.items || w.items || [];
     body.innerHTML = items.length
-      ? '<div class="widget-list">' + items.map(it =>
-          `<div class="w-item">${esc(it.title || '')}`
-          + (it.sub ? `<div class="w-item-sub">${esc(it.sub)}</div>` : '') + `</div>`).join('') + '</div>'
+      ? '<div class="widget-list">' + items.map(it => `<div class="w-item">${esc(it.title || '')}${it.sub ? `<div class="w-item-sub">${esc(it.sub)}</div>` : ''}</div>`).join('') + '</div>'
       : '<div class="widget-err">항목 없음</div>';
   } else if (w.type === 'text') {
     body.innerHTML = `<div class="widget-text">${esc(data.text ?? w.text ?? '')}</div>`;
@@ -893,7 +818,6 @@ async function renderWidget(body, w) {
     body.innerHTML = `<div class="widget-err">알 수 없는 위젯 타입: ${esc(w.type)}</div>`;
   }
 }
-
 function renderActionWidget(body, w) {
   const inputs = Array.isArray(w.inputs) ? w.inputs : [];
   const rowsHtml = inputs.map(inp => {
@@ -901,199 +825,98 @@ function renderActionWidget(body, w) {
     const tag = inp.type === 'textarea'
       ? `<textarea id="${id}" name="${esc(inp.name)}" placeholder="${esc(inp.placeholder || '')}"${inp.required === false ? '' : ' required'}></textarea>`
       : `<input id="${id}" name="${esc(inp.name)}" type="${esc(inp.type === 'number' ? 'number' : (inp.type === 'url' ? 'url' : 'text'))}" placeholder="${esc(inp.placeholder || '')}"${inp.required === false ? '' : ' required'}>`;
-    return `<div class="wa-row">
-      <label for="${id}">${esc(inp.label || inp.name)}</label>
-      ${tag}
-    </div>`;
+    return `<div class="wa-row"><label for="${id}">${esc(inp.label || inp.name)}</label>${tag}</div>`;
   }).join('');
-  body.innerHTML = `
-    <div class="widget-action">
-      <div class="wa-form">${rowsHtml}</div>
-      <div class="wa-actions">
-        <span class="wa-status"></span>
-        <button class="wa-run" type="button">▶ 실행</button>
-      </div>
-      <div class="wa-result"></div>
-    </div>`;
-  const btn = body.querySelector('.wa-run');
-  btn.addEventListener('click', () => runActionWidget(body, w));
-  // Enter 키도 단일 input일 때 트리거
+  body.innerHTML = `<div class="widget-action"><div class="wa-form">${rowsHtml}</div><div class="wa-actions"><span class="wa-status"></span><button class="wa-run" type="button">▶ 실행</button></div><div class="wa-result"></div></div>`;
+  body.querySelector('.wa-run').addEventListener('click', () => runActionWidget(body, w));
   if (inputs.length === 1 && inputs[0].type !== 'textarea') {
-    const single = body.querySelector('input');
-    if (single) single.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') { e.preventDefault(); runActionWidget(body, w); }
-    });
+    body.querySelector('input')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); runActionWidget(body, w); } });
   }
 }
-
 async function runActionWidget(body, w) {
   const btn = body.querySelector('.wa-run');
   const status = body.querySelector('.wa-status');
   const result = body.querySelector('.wa-result');
-
-  // 입력 수집 + required 검증
   const values = {};
   for (const inp of (w.inputs || [])) {
     const el = body.querySelector(`[name="${inp.name}"]`);
     if (!el) continue;
     const v = (el.value || '').trim();
-    if ((inp.required !== false) && !v) {
-      status.textContent = `✗ ${inp.label || inp.name} 필요`;
-      status.style.color = 'var(--error, #f85149)';
-      el.focus();
-      return;
-    }
+    if ((inp.required !== false) && !v) { status.textContent = `✗ ${inp.label || inp.name} 필요`; status.style.color = 'var(--error)'; el.focus(); return; }
     values[inp.name] = v;
   }
-
-  btn.disabled = true;
-  btn.textContent = '⏳ 실행 중';
-  status.textContent = '';
-  status.style.color = '';
-  result.classList.remove('empty');
-  result.classList.add('show');
-  result.textContent = '';
-
-  let received = '';
-  let toolLog = [];
-
+  btn.disabled = true; btn.textContent = '⏳ 실행 중'; status.textContent = ''; status.style.color = '';
+  result.classList.remove('empty'); result.classList.add('show'); result.textContent = '';
+  let received = '', toolN = 0;
   try {
-    const resp = await fetch('/api/widgets/run', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({widget_id: w.id, inputs: values}),
-    });
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({error: 'HTTP ' + resp.status}));
-      result.textContent = '✗ ' + (err.error || ('HTTP ' + resp.status));
-      result.classList.add('empty');
-      return;
-    }
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder();
-    let rawBuf = '';
+    const resp = await fetch('/api/widgets/run', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ widget_id: w.id, inputs: values }) });
+    if (!resp.ok) { const err = await resp.json().catch(() => ({error:'HTTP '+resp.status})); result.textContent = '✗ ' + (err.error || ('HTTP '+resp.status)); result.classList.add('empty'); return; }
+    const reader = resp.body.getReader(); const decoder = new TextDecoder(); let rawBuf = '';
     while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+      const { done, value } = await reader.read(); if (done) break;
       rawBuf += decoder.decode(value, { stream: true });
       let idx;
       while ((idx = rawBuf.indexOf('\n\n')) >= 0) {
-        const chunk = rawBuf.slice(0, idx);
-        rawBuf = rawBuf.slice(idx + 2);
+        const chunk = rawBuf.slice(0, idx); rawBuf = rawBuf.slice(idx + 2);
         if (!chunk.trim()) continue;
         let event = 'message', dataStr = '';
-        for (const line of chunk.split('\n')) {
-          if (line.startsWith('event: ')) event = line.slice(7).trim();
-          else if (line.startsWith('data: ')) dataStr = line.slice(6);
-        }
-        let payload;
-        try { payload = JSON.parse(dataStr); } catch { continue; }
-        if (event === 'token') {
-          received += payload.token || '';
-          result.textContent = received;
-          result.scrollTop = result.scrollHeight;
-        } else if (event === 'tool_start') {
-          toolLog.push(payload.name || '');
-          status.textContent = `🔧 ${toolLog.length}개 도구 호출 중…`;
-        } else if (event === 'thinking') {
-          status.textContent = '🤔 생각 중…';
-        } else if (event === 'done') {
-          status.textContent = '✓ 완료';
-          status.style.color = '#7ee787';
-          if (!received) {
-            result.textContent = '(응답 비어있음)';
-            result.classList.add('empty');
-          }
-        } else if (event === 'error') {
-          status.textContent = '✗ 실패';
-          status.style.color = 'var(--error, #f85149)';
-          result.textContent = '✗ ' + (payload.message || '실행 실패');
-          result.classList.add('empty');
-        }
+        for (const line of chunk.split('\n')) { if (line.startsWith('event: ')) event = line.slice(7).trim(); else if (line.startsWith('data: ')) dataStr = line.slice(6); }
+        let payload; try { payload = JSON.parse(dataStr); } catch { continue; }
+        if (event === 'token') { received += payload.token || ''; result.textContent = received; result.scrollTop = result.scrollHeight; }
+        else if (event === 'tool_start') { toolN++; status.textContent = `🔧 ${toolN}개 도구 호출 중…`; }
+        else if (event === 'thinking') { status.textContent = '🤔 생각 중…'; }
+        else if (event === 'done') { status.textContent = '✓ 완료'; status.style.color = '#7ee787'; if (!received) { result.textContent = '(응답 비어있음)'; result.classList.add('empty'); } }
+        else if (event === 'error') { status.textContent = '✗ 실패'; status.style.color = 'var(--error)'; result.textContent = '✗ ' + (payload.message || '실행 실패'); result.classList.add('empty'); }
       }
     }
   } catch (e) {
-    status.textContent = '✗ 네트워크 오류';
-    status.style.color = 'var(--error, #f85149)';
-    result.textContent = '✗ ' + (e.message || e);
-    result.classList.add('empty');
-  } finally {
-    btn.disabled = false;
-    btn.textContent = '▶ 실행';
-  }
+    status.textContent = '✗ 네트워크 오류'; status.style.color = 'var(--error)'; result.textContent = '✗ ' + (e.message || e); result.classList.add('empty');
+  } finally { btn.disabled = false; btn.textContent = '▶ 실행'; }
 }
 
-function esc(s) {
-  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/'/g,'&#39;');
-}
+// ── 검색·필터 바인딩 ──
+document.getElementById('ent-search').addEventListener('input', _debounce(e => { _entSearch = e.target.value.trim(); loadEntities(); }, 300));
+document.querySelectorAll('[data-tab="entities"] .filter-chip').forEach(c => c.addEventListener('click', () => {
+  document.querySelectorAll('[data-tab="entities"] .filter-chip').forEach(x => x.classList.remove('active'));
+  c.classList.add('active'); _entKind = c.dataset.kind; loadEntities();
+}));
+document.getElementById('ev-search').addEventListener('input', _debounce(e => { _evSearch = e.target.value.trim(); loadTimeline(); }, 300));
+document.querySelectorAll('[data-tab="timeline"] .filter-chip').forEach(c => c.addEventListener('click', () => {
+  document.querySelectorAll('[data-tab="timeline"] .filter-chip').forEach(x => x.classList.remove('active'));
+  c.classList.add('active'); _evTag = c.dataset.tag; loadTimeline();
+}));
+document.getElementById('pers-search').addEventListener('input', _debounce(e => { _persSearch = e.target.value.trim(); loadPersona(); }, 300));
+document.getElementById('pers-active-chip').addEventListener('click', e => {
+  _persActive = !_persActive; e.target.classList.toggle('active', _persActive);
+  e.target.textContent = _persActive ? '활성만' : '전체'; loadPersona();
+});
 
-function refreshAll() { load(); loadAsync(); }
+// ── 초기 로드 ──
+function refreshAll() {
+  const icon = document.getElementById('refresh-icon');
+  icon.className = 'spin';
+  Promise.allSettled([loadSummary(), loadRecent(), loadBriefs(), loadSuggestions()])
+    .finally(() => { icon.className = ''; });
+  // 현재 활성 탭이 lazy 탭이면 다시 로드
+  const active = document.querySelector('.tab.active')?.dataset.tab;
+  if (active === 'entities') loadEntities();
+  else if (active === 'timeline') loadTimeline();
+  else if (active === 'persona') loadPersona();
+  else if (active === 'rules') { loadRules(); loadSkills(); }
+  else if (active === 'today') loadToday();
+}
 refreshAll();
 
-// ── i18n ──────────────────────────────────────────────────────────────────
-const VEGA_STRINGS = {
-  ko: {
-    refresh_btn: '새로고침',
-    chat_btn: '💬 대화하기',
-    card_events: '이번주 일정',
-    card_inprogress: '진행 중',
-    card_mails: '중요 메일',
-    card_suggest: 'VEGA 제안',
-    card_memory: '최근 대화 메모리',
-    card_briefs: '오늘 요약',
-    card_projects: '프로젝트 상태',
-    lang_btn: 'KO',
-  },
-  en: {
-    refresh_btn: 'Refresh',
-    chat_btn: '💬 Chat',
-    card_events: 'This week',
-    card_inprogress: 'In Progress',
-    card_mails: 'Priority Mail',
-    card_suggest: 'VEGA Suggestions',
-    card_memory: 'Recent Memory',
-    card_briefs: "Today's Summary",
-    card_projects: 'Project Status',
-    lang_btn: 'EN',
-  },
-};
+// 주기 갱신 — 히어로·최근 기억만 (가벼움)
+setInterval(() => { loadSummary(); loadRecent(); }, 3 * 60 * 1000);
 
-function applyLang(lang) {
-  const strings = VEGA_STRINGS[lang] || VEGA_STRINGS.ko;
-  document.getElementById('html-root').lang = lang;
-  document.querySelectorAll('[data-i18n]').forEach(el => {
-    const key = el.dataset.i18n;
-    if (key in strings) el.innerHTML = strings[key];
-  });
-  const langBtn = document.getElementById('lang-toggle-btn');
-  if (langBtn) langBtn.textContent = strings.lang_btn;
-}
-
-(function initLang() {
-  const saved = localStorage.getItem('vega_lang') || 'ko';
-  applyLang(saved);
-  const btn = document.getElementById('lang-toggle-btn');
-  if (!btn) return;
-  btn.addEventListener('click', () => {
-    const current = localStorage.getItem('vega_lang') || 'ko';
-    const next = current === 'ko' ? 'en' : 'ko';
-    localStorage.setItem('vega_lang', next);
-    applyLang(next);
-  });
-})();
-
-// 주기 갱신 — 일정/할일/이슈는 2분, 무거운 메일/제안/브리핑은 5분
-setInterval(load, 2 * 60 * 1000);
-setInterval(loadAsync, 5 * 60 * 1000);
-
-// 창을 다시 보거나(트레이에서 열기·탭 전환·포커스) 할 때 즉시 최신화.
-// 단 너무 잦은 트리거 방지를 위해 마지막 갱신 후 20초 지났을 때만.
+// 포커스 시 최신화 (20초 디바운스)
 let _lastRefresh = Date.now();
 function refreshIfStale() {
   if (document.visibilityState !== 'visible') return;
-  if (Date.now() - _lastRefresh < 20 * 1000) return;
+  if (Date.now() - _lastRefresh < 20000) return;
   _lastRefresh = Date.now();
-  refreshAll();
+  loadSummary(); loadRecent();
 }
 document.addEventListener('visibilitychange', refreshIfStale);
 window.addEventListener('focus', refreshIfStale);
