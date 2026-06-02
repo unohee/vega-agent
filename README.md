@@ -127,6 +127,15 @@ sandbox/                  Code execution Docker container
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full module reference.
 
+### 문서
+
+| 문서 | 내용 |
+|------|------|
+| [docs/VEGA_OVERVIEW.md](docs/VEGA_OVERVIEW.md) | 전체 아키텍처·컴포넌트·빌드 파이프라인 개발 보고서 |
+| [docs/ONBOARDING.md](docs/ONBOARDING.md) | 설치·LLM 설정·Google 연동·개발 환경 온보딩 가이드 |
+| [DEBUGGING.md](DEBUGGING.md) | 경로 치트시트 + 증상별 트러블슈팅 |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | 모듈 레퍼런스 (에이전트 온보딩용) |
+
 ---
 
 ## Deployment patterns
