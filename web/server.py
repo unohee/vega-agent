@@ -297,18 +297,23 @@ def _is_loopback(request: Request) -> bool:
 
 
 def _get_access_level(request: Request) -> str:
-    """Return request access level: 'local' | 'enterprise' | 'ce'"""
+    """요청의 접근 레벨 반환: 'local' | 'enterprise'
+
+    CE 모드 제거(2026-06-02): 비-loopback·키 없는 원격 접속도 더 이상 'ce'로
+    강등하지 않는다. 모든 세션이 로컬 시스템 도구 전체를 받는다.
+    """
     if _is_loopback(request):
         return "local"
     key = request.headers.get("x-vega-key", "").strip()
     if key and key in _load_enterprise_keys():
         return "enterprise"
-    return "ce"
+    # 과거엔 "ce"(로컬 도구 차단)였으나 CE 모드 폐지로 local과 동일 취급.
+    return "local"
 
 
-# Backward compat — used where a ce_mode bool is required
+# 하위 호환 — ce_mode bool이 필요한 곳에서 사용. CE 모드 폐지로 항상 False.
 def _ce_mode_from_access(level: str) -> bool:
-    return level == "ce"
+    return False
 
 
 _PLAN_MODE_GUIDE = """## 🔒 Plan 모드 활성
@@ -395,8 +400,44 @@ def _tool_label(name: str, args: dict) -> str:
     }.get(name, f"🔧 {name} 실행 중…")
 
 
-def _tool_summary(name: str, result: str) -> tuple[str, dict | None]:
-    """Return (summary text, chart meta dict | None)."""
+def _exec_summary(command: str, stdout: str, err: str, rc) -> str:
+    """host_exec / bash_exec 결과 한 줄 요약 — '무엇을 했는지'(명령어)를 표현.
+    출력은 terminal 블럭에서 담당하므로 여기엔 명령어 + rc만."""
+    cmd = " ".join((command or "").split())  # 개행/연속공백 압축
+    if len(cmd) > 70:
+        cmd = cmd[:70] + "…"
+    failed = rc not in (0, None)
+    prefix = "✗" if failed else "✓"
+    if cmd:
+        tail = f" · {err.splitlines()[0][:50]}" if (failed and err) else (f" rc={rc}" if failed else "")
+        return f"{prefix} {cmd}{tail}"
+    # 명령어 미상 폴백
+    if err:
+        return f"✗ {err.splitlines()[0][:80]}"
+    return f"{prefix} 완료 (rc={rc})"
+
+
+_EXEC_TERMINAL_MAX_LINES = 20  # 이보다 긴 출력은 terminal 블럭 생략 (긴 파일 목록 등)
+
+
+def _build_aborted_message(partial_text: str, tool_trace: list[str]) -> str:
+    """중단된 응답을 DB에 영속화할 텍스트로 조합.
+    텍스트 토큰이 없어도 도구 실행 흔적이 있으면 보존 → 재방문 시 사라지지 않음.
+    아무것도 없으면 빈 문자열(저장 안 함)."""
+    parts = []
+    if tool_trace:
+        parts.append("\n".join(f"- {t}" for t in tool_trace))
+    if partial_text.strip():
+        parts.append(partial_text.strip())
+    combined = "\n\n".join(parts).strip()
+    if not combined:
+        return ""
+    return (combined + "\n\n_⏹ 응답이 중단됐습니다._").strip()
+
+
+def _tool_summary(name: str, result: str, command: str = "") -> tuple[str, dict | None]:
+    """(요약 텍스트, 차트 메타 dict | None) 반환.
+    command: host_exec/bash_exec일 때 실행한 명령어 (summary에 표시)."""
     try:
         parsed = json.loads(result)
     except Exception:
@@ -423,10 +464,14 @@ def _tool_summary(name: str, result: str) -> tuple[str, dict | None]:
 
     if isinstance(parsed, dict) and "stdout" in parsed:
         out = parsed["stdout"].strip()
-        base = out[:200] if out else f"(exit code {parsed.get('returncode', '?')})"
+        rc = parsed.get("returncode", 0)
+        # 명령어를 요약으로, 출력은 terminal 블럭에서 표시
+        err = parsed.get("stderr", "").strip() if rc not in (0, None) else ""
+        cmd = command or parsed.get("command", "")
+        summary = _exec_summary(cmd, out, err, rc)
         if parsed.get("warnings"):
-            base = "⚠️ " + " | ".join(parsed["warnings"]) + "\n" + base
-        return (f"✓ {base}", None)
+            summary = "⚠️ " + " | ".join(parsed["warnings"][:2]) + " · " + summary
+        return (summary, None)
 
     if isinstance(parsed, list):
         return (f"✓ {len(parsed)}건", None)
@@ -1320,9 +1365,17 @@ async def _run_gpt_task(sid: str, history: list[dict], images: list[dict]) -> No
     async def on_tool_start(name: str, args: dict, call_id: str = ""):
         label = _tool_label(name, args)
         reg["tool_count"] = reg.get("tool_count", 0) + 1
-        # Compact args for UI expand view — truncate if too long
+        # call_id → args 매핑 저장 (on_tool_done에서 명령어 요약에 사용)
+        if call_id:
+            reg.setdefault("_tool_args", {})[call_id] = args
+        # args를 압축해서 전달 (UI 펼쳐보기용) — 긴 값은 자름
         try:
-            args_preview = json.dumps(args, ensure_ascii=False, indent=2)
+            _MAX_VAL = 200
+            clipped = {
+                k: (v[:_MAX_VAL] + "…(생략)" if isinstance(v, str) and len(v) > _MAX_VAL else v)
+                for k, v in args.items()
+            }
+            args_preview = json.dumps(clipped, ensure_ascii=False, indent=2)
             if len(args_preview) > 2000:
                 args_preview = args_preview[:2000] + "\n… (생략)"
         except Exception:
@@ -1372,8 +1425,8 @@ async def _run_gpt_task(sid: str, history: list[dict], images: list[dict]) -> No
                     yolo_result = await loop.run_in_executor(None, _host_exec, command, "off")
                     actual = json.dumps(yolo_result, ensure_ascii=False)
                     stdout = (yolo_result.get("stdout") or "").strip()
-                    err = yolo_result.get("error", "")
-                    summary = f"✓ {stdout[:120]}" if stdout else (f"✗ {err[:120]}" if err else f"✓ 완료 (rc={yolo_result.get('returncode','?')})")
+                    err = yolo_result.get("error") or yolo_result.get("stderr") or ""
+                    summary = _exec_summary(command, stdout, err.strip(), yolo_result.get("returncode", 0))
                     _push_event(reg, {"event": "tool_done", "data": {
                         "call_id": f"{call_id}-yolo", "name": "host_exec",
                         "summary": summary,
@@ -1404,17 +1457,20 @@ async def _run_gpt_task(sid: str, history: list[dict], images: list[dict]) -> No
                 # Update tool_done badge
                 if approved and exec_result:
                     stdout = (exec_result.get("stdout") or "").strip()
-                    err = exec_result.get("error", "")
-                    summary = f"✓ {stdout[:120]}" if stdout else (f"✗ {err[:120]}" if err else f"✓ 완료 (rc={exec_result.get('returncode','?')})")
+                    err = exec_result.get("error") or exec_result.get("stderr") or ""
+                    summary = _exec_summary(command, stdout, err.strip(), exec_result.get("returncode", 0))
                 else:
                     summary = "✗ 거절됨"
                 done_data: dict = {"name": name, "summary": summary, "has_chart": False, "call_id": call_id}
                 if approved and exec_result and ("stdout" in exec_result or "stderr" in exec_result):
                     stdout = (exec_result.get("stdout") or "").strip()
                     stderr = (exec_result.get("stderr") or "").strip()
-                    if stdout or stderr:
-                        done_data["terminal"] = (stdout + ("\n" + stderr if stderr else "")).strip()
-                        done_data["returncode"] = exec_result.get("returncode")
+                    combined = (stdout + ("\n" + stderr if stderr else "")).strip()
+                    rc = exec_result.get("returncode", 0)
+                    n_lines = combined.count("\n") + 1 if combined else 0
+                    if combined and (rc not in (0, None) or n_lines <= _EXEC_TERMINAL_MAX_LINES):
+                        done_data["terminal"] = combined
+                        done_data["returncode"] = rc
                 _push_event(reg, {"event": "tool_done", "data": done_data})
                 return actual  # streaming.py uses this as function_call_output
             if isinstance(parsed, dict) and parsed.get("__improvement_pending__"):
@@ -1426,7 +1482,16 @@ async def _run_gpt_task(sid: str, history: list[dict], images: list[dict]) -> No
                     "test_output": parsed.get("test_output", ""),
                 }})
                 return
-            # AskUserQuestion — convert to UI widget and wait for response
+            # 자동 적용 완료 통지 (auditor 통과 후 자동 적용 — 승인 대기 아님)
+            if isinstance(parsed, dict) and parsed.get("__improvement_applied__"):
+                _push_event(reg, {"event": "improvement_applied", "data": {
+                    "tool_name": parsed["tool_name"],
+                    "diff": parsed.get("diff", ""),
+                    "failures": parsed.get("failures", 0),
+                    "audit_reason": parsed.get("audit_reason", ""),
+                }})
+                return
+            # AskUserQuestion — UI 위젯으로 변환 후 응답 대기
             if isinstance(parsed, dict) and parsed.get("__needs_user_answer__"):
                 questions = parsed.get("questions", [])
                 _push_event(reg, {"event": "question", "data": {
@@ -1488,22 +1553,34 @@ async def _run_gpt_task(sid: str, history: list[dict], images: list[dict]) -> No
         # __improve__<name> virtual tool events are not shown in the UI
         if name.startswith("__improve__"):
             return
-        summary, chart = _tool_summary(name, result)
+        # 실행한 명령어 복원 (summary에 표시)
+        _cmd = ""
+        _saved_args = reg.get("_tool_args", {}).get(call_id) if call_id else None
+        if isinstance(_saved_args, dict):
+            _cmd = _saved_args.get("command", "")
+        summary, chart = _tool_summary(name, result, command=_cmd)
         done_data: dict = {"name": name, "summary": summary, "has_chart": chart is not None, "call_id": call_id}
         if chart:
             done_data["chart_type"] = chart["type"]
             done_data["chart_url"] = chart["url"]
-        # Forward code execution stdout/stderr (displayed as terminal snippet in UI)
+        # 코드 실행 stdout/stderr 전달 — 짧은 출력만 터미널 블럭으로 (긴 파일 목록 등은 생략)
         try:
             parsed = json.loads(result)
             if isinstance(parsed, dict) and ("stdout" in parsed or "stderr" in parsed):
                 stdout = (parsed.get("stdout") or "").strip()
                 stderr = (parsed.get("stderr") or "").strip()
-                if stdout or stderr:
-                    done_data["terminal"] = (stdout + ("\n" + stderr if stderr else "")).strip()
-                    done_data["returncode"] = parsed.get("returncode")
+                combined = (stdout + ("\n" + stderr if stderr else "")).strip()
+                # 에러(rc≠0)면 항상 표시, 정상이면 짧을 때만
+                rc = parsed.get("returncode", 0)
+                n_lines = combined.count("\n") + 1 if combined else 0
+                show = combined and (rc not in (0, None) or n_lines <= _EXEC_TERMINAL_MAX_LINES)
+                if show:
+                    done_data["terminal"] = combined
+                    done_data["returncode"] = rc
         except Exception:
             pass
+        # 중단 시 부분 응답 복원용 — 완료된 도구 요약을 누적
+        reg.setdefault("_tool_trace", []).append(summary)
         _push_event(reg, {"event": "tool_done", "data": done_data})
         # Deregister host_exec callback
         try:
@@ -1588,11 +1665,12 @@ async def _run_gpt_task(sid: str, history: list[dict], images: list[dict]) -> No
         _push_event(reg, {"event": "done", "data": {"session_id": sid, "usage": usage_stats}})
 
     except asyncio.CancelledError:
-        # Explicit cancellation (user requested /abort etc.) — preserve partial response
-        text = "".join(partial).strip()
-        if text:
-            history.append({"role": "assistant", "content": text})
-            append_message(sid, "assistant", text)
+        # 명시적 취소 (사용자가 /abort 등으로 요청한 경우만) — 부분 응답 보존.
+        # 텍스트 토큰이 없어도 도구가 실행됐으면 그 흔적을 남겨야 재방문 시 사라지지 않는다.
+        saved = _build_aborted_message("".join(partial), reg.get("_tool_trace", []))
+        if saved:
+            history.append({"role": "assistant", "content": saved})
+            append_message(sid, "assistant", saved)
         elif history and history[-1]["role"] == "user":
             history.pop()
         _push_event(reg, {"event": "error", "data": {"message": "응답이 취소됐어."}})

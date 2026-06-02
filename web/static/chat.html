@@ -960,14 +960,17 @@ header button, header button *, header a, header a * { -webkit-app-region: no-dr
   background: rgba(255,255,255,.08); border-radius: 3px;
   padding: 0 4px;
 }
-.tool-caret { font-size: 9px; opacity: .55; margin-left: 2px; }
+.tool-caret { font-size: 9px; opacity: .4; margin-left: 4px; transition: opacity .15s; }
+.tool-badge:hover .tool-caret { opacity: .7; }
 .tool-args {
   margin: 0; padding: 8px 10px;
   font-family: monospace; font-size: 11px; line-height: 1.5;
   background: rgba(15,15,15,.7); color: #9da7b3;
-  border: 1px solid rgba(110,110,110,.25); border-radius: 5px;
+  border: 1px solid rgba(110,110,110,.25);
+  border-top: none;
+  border-radius: 0 0 5px 5px;
   white-space: pre-wrap; word-break: break-all;
-  max-height: 240px; overflow-y: auto;
+  max-height: 200px; overflow-y: auto;
 }
 .approval-box {
   border: 1px solid rgba(210,153,34,.35);
@@ -2506,23 +2509,53 @@ function addToolBadge(bub, name, label, callId, step, args) {
   badge.innerHTML = `<span class="spin-icon">⟳</span>${stepLabel}<span class="tool-label">${esc(label)}</span>${caret}`;
   wrap.appendChild(badge);
 
-  // 호출 인자 펼쳐보기 (클릭 토글)
+  // 호출 인자 펼쳐보기 (클릭 토글 아코디언)
   if (args) {
     const argsBox = document.createElement('pre');
     argsBox.className = 'tool-args';
     argsBox.style.display = 'none';
-    argsBox.textContent = args;
+    argsBox.textContent = typeof args === 'string' ? args : JSON.stringify(args, null, 2);
     wrap.appendChild(argsBox);
     badge.style.cursor = 'pointer';
-    badge.addEventListener('click', () => {
+    const _toggleArgs = () => {
       const open = argsBox.style.display === 'none';
       argsBox.style.display = open ? 'block' : 'none';
+      badge.style.borderRadius = open ? '4px 4px 0 0' : '4px';
       const caretEl = badge.querySelector('.tool-caret');
       if (caretEl) caretEl.textContent = open ? '▾' : '▸';
-    });
+    };
+    badge.addEventListener('click', _toggleArgs);
   }
   c.appendChild(wrap);
   scrollBottom();
+}
+// 중단/종료 시 아직 회전 중인(완료 안 된) 도구 배지를 '중단됨' 상태로 마감.
+// done/error 클래스가 없는 spin-icon 보유 배지가 대상.
+function clearSpinningBadges(bub) {
+  const badges = bub.querySelectorAll('.tool-badge');
+  badges.forEach(badge => {
+    if (badge.classList.contains('done') || badge.classList.contains('error')) return;
+    const spin = badge.querySelector('.spin-icon');
+    if (!spin) return;
+    badge.classList.add('error');
+    const labelEl = badge.querySelector('.tool-label');
+    const labelTxt = labelEl ? labelEl.textContent : '';
+    const wrap = badge.closest('.tool-item');
+    const hasArgs = wrap && wrap.querySelector('.tool-args');
+    const caret = hasArgs ? `<span class="tool-caret">▸</span>` : '';
+    badge.innerHTML = `<span>⏹</span><span class="tool-label">${esc(labelTxt)} (중단됨)</span>${caret}`;
+    if (hasArgs) {
+      const argsBox = wrap.querySelector('.tool-args');
+      badge.style.cursor = 'pointer';
+      badge.addEventListener('click', () => {
+        const open = argsBox.style.display === 'none';
+        argsBox.style.display = open ? 'block' : 'none';
+        badge.style.borderRadius = open ? '4px 4px 0 0' : '4px';
+        const caretEl = badge.querySelector('.tool-caret');
+        if (caretEl) caretEl.textContent = open ? '▾' : '▸';
+      });
+    }
+  });
 }
 function updateToolBadge(bub, name, summary, callId) {
   // call_id로 정확히 매칭, 없으면 미완료 뱃지 중 첫 번째
@@ -2548,6 +2581,7 @@ function updateToolBadge(bub, name, summary, callId) {
     badge.addEventListener('click', () => {
       const open = argsBox.style.display === 'none';
       argsBox.style.display = open ? 'block' : 'none';
+      badge.style.borderRadius = open ? '4px 4px 0 0' : '4px';
       const caretEl = badge.querySelector('.tool-caret');
       if (caretEl) caretEl.textContent = open ? '▾' : '▸';
     });
@@ -3389,6 +3423,8 @@ async function streamChat(msg, opts) {
     } catch (e) {
       if (e.name === 'AbortError') {
         userAborted = true;
+        hideThinking(bub);          // 중단 시 생각 중 스피너 제거
+        clearSpinningBadges(bub);   // 미완료 도구 배지를 중단 상태로 마감
         typer.flush();
         const mark = document.createElement('div');
         mark.className = 'stopped-mark';
@@ -3407,6 +3443,8 @@ async function streamChat(msg, opts) {
     }
   }
 
+  hideThinking(bub);        // 안전망 — 어떤 경로로 끝나든 생각 중 스피너 제거
+  clearSpinningBadges(bub); // 안전망 — 미완료 도구 배지를 멈춤 상태로 마감
   streaming = false;
   streamAbort = null;
   setSendMode(false);
@@ -5047,10 +5085,19 @@ document.addEventListener('mousedown', (e) => {
   }
 });
 
+function _buildQuoteBlock(text) {
+  // 경로가 있으면 "[파일명]\n> 인용" 형식, 없으면 "> 인용" 만
+  const lines = text.split('\n').map(l => '> ' + l).join('\n');
+  if (_previewPath) {
+    const name = _previewPath.split('/').pop();
+    return `[${name}]\n${lines}`;
+  }
+  return lines;
+}
+
 quoteCiteBtn.addEventListener('click', () => {
   if (!_quotedText) return;
-  const lines = _quotedText.split('\n').map(l => '> ' + l).join('\n');
-  const insert = lines + '\n\n';
+  const insert = _buildQuoteBlock(_quotedText) + '\n\n';
   insertAtCursor(inputEl, insert);
   _hideQuotePopup();
   window.getSelection()?.removeAllRanges();
@@ -5060,8 +5107,7 @@ quoteCiteBtn.addEventListener('click', () => {
 
 quoteAskBtn.addEventListener('click', () => {
   if (!_quotedText) return;
-  const lines = _quotedText.split('\n').map(l => '> ' + l).join('\n');
-  inputEl.value = lines + '\n\n이 내용에 대해 설명해줘.';
+  inputEl.value = _buildQuoteBlock(_quotedText) + '\n\n이 내용에 대해 설명해줘.';
   inputEl.dispatchEvent(new Event('input'));
   _hideQuotePopup();
   window.getSelection()?.removeAllRanges();
