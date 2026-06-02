@@ -69,9 +69,36 @@ def _catalog_entry(pid: str) -> dict | None:
 
 # ── 현재 상태 ────────────────────────────────────────────────────────────────
 
+def _provider_configured(entry: dict) -> bool:
+    """프로바이더가 사용 가능하게 설정돼 있는지(키/URL/OAuth 보유). 키 값은 보지 않는다."""
+    from pipeline import keychain
+    auth = entry.get("auth")
+    if auth == "key":
+        key_env = entry.get("key_env", "")
+        if not key_env:
+            return False
+        # keychain.get: Keychain → .env → 환경변수 순으로 탐색
+        return bool(keychain.get(key_env))
+    if auth == "pkce":  # ChatGPT — OAuth 프로필 파일 존재 여부
+        try:
+            from pipeline.auth.chatgpt import _load_profile
+            return _load_profile() is not None
+        except Exception:
+            return False
+    if auth == "local":  # llm_providers.json 에 local base_url 이 등록됐는지
+        try:
+            from pipeline.llm_gateway import _provider_by_name
+            prov = _provider_by_name("local")
+            return bool(prov and prov.get("base_url"))
+        except Exception:
+            return False
+    return False
+
+
 @router.get("/api/onboarding")
 async def get_onboarding():
-    """현재 user_profile, 온보딩 여부, 프로바이더 카탈로그, 활성 프로바이더 반환."""
+    """현재 user_profile, 온보딩 여부, 프로바이더 카탈로그, 활성 프로바이더 반환.
+    각 프로바이더에는 configured(키/URL/OAuth 보유 여부) 플래그가 붙는다 — 키 값은 노출 안 함."""
     from pipeline.user_profile import load_profile, is_onboarded
     from pipeline import keychain
     profile = load_profile()
@@ -85,12 +112,39 @@ async def get_onboarding():
         "onboarded": is_onboarded(),
         "profile": profile,
         "providers": [
-            {k: v for k, v in p.items() if not k.startswith("verify")}
+            {
+                **{k: v for k, v in p.items() if not k.startswith("verify")},
+                "configured": _provider_configured(p),
+            }
             for p in PROVIDER_CATALOG
         ],
         "active_provider": active,
         "has_google": has_google,
     })
+
+
+# ── 키 출처 진단 ──────────────────────────────────────────────────────────────
+
+@router.get("/api/onboarding/key-source")
+async def key_source():
+    """각 프로바이더 키가 Keychain/.env/환경변수 중 어디서 오는지 진단(값은 마스킹).
+    배포본(.app)에서 '키가 왜 안 잡히나'를 추적하기 위한 용도."""
+    from pipeline import keychain
+    out = {}
+    for entry in PROVIDER_CATALOG:
+        key_env = entry.get("key_env")
+        if not key_env:
+            continue
+        out[entry["id"]] = {"key_env": key_env, **keychain.describe_source(key_env)}
+    # Google OAuth 클라이언트도 함께 진단
+    out["google"] = {"key_env": "GOOGLE_CLIENT_ID", **keychain.describe_source("GOOGLE_CLIENT_ID")}
+    # 탐색 중인 .env 경로(존재 여부 포함)
+    import os as _os
+    env_paths = [
+        {"path": str(p), "exists": _os.path.exists(p)}
+        for p in keychain._env_file_paths()
+    ]
+    return JSONResponse({"keys": out, "env_paths": env_paths})
 
 
 # ── 프로바이더 설정 (키/URL/PKCE) ─────────────────────────────────────────────

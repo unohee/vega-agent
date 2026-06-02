@@ -47,9 +47,24 @@ def delete_secret(key: str, service: str = _SERVICE) -> bool:
     return rc == 0
 
 
-def _load_env_file() -> dict[str, str]:
-    """Parse the project root .env file."""
-    env_file = Path(__file__).parent.parent / ".env"
+def _env_file_paths() -> list[Path]:
+    """탐색할 .env 경로(우선순위 순).
+
+    배포본(.app)에서 Path(__file__) 은 PyInstaller 번들 임시경로(_MEIPASS)를
+    가리켜 사용자가 .env 를 둘 수 없다. 따라서 영속 사용자 데이터 루트의 .env 를
+    먼저 본다. 레포 루트 .env 는 개발 환경 폴백.
+    """
+    paths: list[Path] = []
+    try:
+        from pipeline.data_paths import data_dir
+        paths.append(data_dir() / ".env")
+    except Exception:
+        pass
+    paths.append(Path(__file__).parent.parent / ".env")  # 개발용 레포 루트
+    return paths
+
+
+def _parse_env(env_file: Path) -> dict[str, str]:
     result: dict[str, str] = {}
     if not env_file.exists():
         return result
@@ -60,6 +75,14 @@ def _load_env_file() -> dict[str, str]:
         k, _, v = line.partition("=")
         result[k.strip()] = v.strip().strip('"').strip("'")
     return result
+
+
+def _load_env_file() -> dict[str, str]:
+    """모든 후보 .env 를 병합해 반환(앞 경로 우선)."""
+    merged: dict[str, str] = {}
+    for path in reversed(_env_file_paths()):  # 뒤(낮은 우선순위)부터 채우고 앞이 덮어쓰게
+        merged.update(_parse_env(path))
+    return merged
 
 
 _ENV_CACHE: dict[str, str] | None = None
@@ -86,6 +109,34 @@ def get(key: str, default: str = "") -> str:
     # 3. Environment variable
     import os
     return os.environ.get(key, default)
+
+
+def describe_source(key: str) -> dict:
+    """키가 어디서 오는지 진단(값은 마스킹). get() 과 같은 우선순위로 판정.
+
+    반환: {"source": "keychain"|"dotenv"|"env"|"none", "masked": "sk-a…", "env_path": <.env 경로 or None>}
+    """
+    import os
+
+    def _mask(v: str) -> str:
+        if not v:
+            return ""
+        return (v[:4] + "…") if len(v) > 4 else "…"
+
+    val = get_secret(key)
+    if val:
+        return {"source": "keychain", "masked": _mask(val), "env_path": None}
+
+    for path in _env_file_paths():
+        env = _parse_env(path)
+        if env.get(key):
+            return {"source": "dotenv", "masked": _mask(env[key]), "env_path": str(path)}
+
+    val = os.environ.get(key, "")
+    if val:
+        return {"source": "env", "masked": _mask(val), "env_path": None}
+
+    return {"source": "none", "masked": "", "env_path": None}
 
 
 def migrate_env_to_keychain(keys: list[str] | None = None) -> dict[str, bool]:

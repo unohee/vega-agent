@@ -26,6 +26,43 @@ use tauri::{
     WindowEvent,
 };
 
+// ── 셸 로깅 ───────────────────────────────────────────────────────────────────
+// 배포본 .app 은 콘솔이 없어 eprintln! 출력이 사라진다. Rust 셸 측 진단을
+// Python 백엔드와 같은 ~/Library/Logs/VEGA/ 디렉터리의 파일에 남긴다.
+// (번들 내부가 아니라 macOS 표준 사용자 로그 위치 — 코드서명/자동업데이트 안전)
+
+/// 로그 디렉터리(~/Library/Logs/VEGA). 없으면 생성한다.
+fn log_dir() -> std::path::PathBuf {
+    let dir = dirs_next::home_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("/tmp"))
+        .join("Library/Logs/VEGA");
+    let _ = std::fs::create_dir_all(&dir);
+    dir
+}
+
+/// 셸 로그 파일 경로(~/Library/Logs/VEGA/vega-shell.log).
+fn shell_log_path() -> std::path::PathBuf {
+    log_dir().join("vega-shell.log")
+}
+
+/// 한 줄을 셸 로그 파일에 append 하고 stderr 로도 보낸다. 실패는 무시.
+fn shell_log(msg: &str) {
+    use std::io::Write;
+    eprintln!("{msg}");
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(shell_log_path())
+    {
+        let _ = writeln!(f, "{msg}");
+    }
+}
+
+/// eprintln! 대체 — 포맷 인자를 받아 셸 로그 파일+stderr 양쪽에 남긴다.
+macro_rules! vlog {
+    ($($arg:tt)*) => { crate::shell_log(&format!($($arg)*)) };
+}
+
 fn backend_is_listening() -> bool {
     std::net::TcpStream::connect("127.0.0.1:8100").is_ok()
 }
@@ -96,7 +133,7 @@ fn wait_and_navigate(win: tauri::WebviewWindow, url: String) {
         }
         // 120초 후에도 안 뜨면 오류 페이지
         let _ = win.eval(&format!(
-            "document.body.innerHTML = '<div style=\"font-family:sans-serif;padding:40px;color:#e6edf3;background:#0d1117\"><h2>백엔드 연결 실패</h2><p>VEGA 서버({})에 접속할 수 없습니다.</p><p style=\"color:#9aa4b2\">/tmp/vega-backend.stderr.log 를 확인하세요.</p></div>'",
+            "document.body.innerHTML = '<div style=\"font-family:sans-serif;padding:40px;color:#e6edf3;background:#0d1117\"><h2>백엔드 연결 실패</h2><p>VEGA 서버({})에 접속할 수 없습니다.</p><p style=\"color:#9aa4b2\">~/Library/Logs/VEGA/ 의 로그를 확인하세요.</p></div>'",
             health
         ));
     });
@@ -120,7 +157,7 @@ fn spawn_update_check(app: tauri::AppHandle) {
         let updater = match app.updater() {
             Ok(u) => u,
             Err(e) => {
-                eprintln!("[VEGA] updater 초기화 skip: {e}");
+                vlog!("[VEGA] updater 초기화 skip: {e}");
                 return;
             }
         };
@@ -128,17 +165,17 @@ fn spawn_update_check(app: tauri::AppHandle) {
         match updater.check().await {
             Ok(Some(update)) => {
                 let version = update.version.clone();
-                eprintln!("[VEGA] 새 버전 발견: {version} — 다운로드 시작");
+                vlog!("[VEGA] 새 버전 발견: {version} — 다운로드 시작");
                 match update.download_and_install(|_chunk, _total| {}, || {}).await {
                     Ok(_) => {
-                        eprintln!("[VEGA] 업데이트 설치 완료 — 재시작");
+                        vlog!("[VEGA] 업데이트 설치 완료 — 재시작");
                         app.restart();
                     }
-                    Err(e) => eprintln!("[VEGA] 업데이트 설치 실패: {e}"),
+                    Err(e) => vlog!("[VEGA] 업데이트 설치 실패: {e}"),
                 }
             }
-            Ok(None) => eprintln!("[VEGA] 최신 버전 — 업데이트 없음"),
-            Err(e) => eprintln!("[VEGA] 업데이트 체크 실패(무시): {e}"),
+            Ok(None) => vlog!("[VEGA] 최신 버전 — 업데이트 없음"),
+            Err(e) => vlog!("[VEGA] 업데이트 체크 실패(무시): {e}"),
         }
     });
 }
@@ -214,25 +251,26 @@ fn spawn_backend_directly(app: &tauri::AppHandle) {
         return;
     }
     let Some(backend) = bundled_backend_path(app) else {
-        eprintln!("[VEGA] 백엔드 실행 파일 경로 확인 실패");
+        vlog!("[VEGA] 백엔드 실행 파일 경로 확인 실패");
         return;
     };
     if !backend.exists() {
-        eprintln!("[VEGA] 백엔드 실행 파일 없음: {}", backend.display());
+        vlog!("[VEGA] 백엔드 실행 파일 없음: {}", backend.display());
         return;
     }
 
+    let log = log_dir();
     let stdout = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open("/tmp/vega-backend.stdout.log")
+        .open(log.join("vega-backend.stdout.log"))
         .ok()
         .map(std::process::Stdio::from)
         .unwrap_or_else(std::process::Stdio::null);
     let stderr = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open("/tmp/vega-backend.stderr.log")
+        .open(log.join("vega-backend.stderr.log"))
         .ok()
         .map(std::process::Stdio::from)
         .unwrap_or_else(std::process::Stdio::null);
@@ -242,8 +280,8 @@ fn spawn_backend_directly(app: &tauri::AppHandle) {
         .stderr(stderr)
         .spawn()
     {
-        Ok(child) => eprintln!("[VEGA] 백엔드 직접 실행 fallback: pid={}", child.id()),
-        Err(e) => eprintln!("[VEGA] 백엔드 직접 실행 실패: {e}"),
+        Ok(child) => vlog!("[VEGA] 백엔드 직접 실행 fallback: pid={}", child.id()),
+        Err(e) => vlog!("[VEGA] 백엔드 직접 실행 실패: {e}"),
     }
 }
 
@@ -252,6 +290,10 @@ fn spawn_backend_directly(app: &tauri::AppHandle) {
 /// bootout/bootstrap/kickstart로 현재 /Applications/VEGA.app의 백엔드를 강제로 반영한다.
 #[cfg(all(feature = "daemon", not(mobile)))]
 fn ensure_launchagent(app: &tauri::AppHandle) -> bool {
+    // launchd 는 StandardOutPath/StandardErrorPath 의 상위 디렉터리를 자동 생성하지 않는다.
+    // plist 등록 전에 로그 디렉터리를 만들어두지 않으면 백엔드 출력이 어디에도 안 남는다.
+    let _ = log_dir();
+
     let plist_dst = launchagent_plist_path();
 
     if let Some(res) = resources_dir(app) {
@@ -267,17 +309,17 @@ fn ensure_launchagent(app: &tauri::AppHandle) -> bool {
                         .unwrap_or_else(|| "/tmp".to_string());
                     let replaced = content.replace("__HOME__", &home);
                     if let Err(e) = std::fs::write(&plist_dst, replaced) {
-                        eprintln!("[VEGA] LaunchAgent plist 쓰기 실패: {e}");
+                        vlog!("[VEGA] LaunchAgent plist 쓰기 실패: {e}");
                         return false;
                     }
                 }
                 Err(e) => {
-                    eprintln!("[VEGA] LaunchAgent plist 읽기 실패: {e}");
+                    vlog!("[VEGA] LaunchAgent plist 읽기 실패: {e}");
                     return false;
                 }
             }
         } else {
-            eprintln!("[VEGA] LaunchAgent plist 소스 없음: {}", plist_src.display());
+            vlog!("[VEGA] LaunchAgent plist 소스 없음: {}", plist_src.display());
             return false;
         }
     }
@@ -300,13 +342,13 @@ fn ensure_launchagent(app: &tauri::AppHandle) -> bool {
         .status();
 
     match bootstrap {
-        Ok(s) if s.success() => eprintln!("[VEGA] LaunchAgent 등록 완료"),
+        Ok(s) if s.success() => vlog!("[VEGA] LaunchAgent 등록 완료"),
         Ok(s) => {
-            eprintln!("[VEGA] LaunchAgent 등록 실패: {s}");
+            vlog!("[VEGA] LaunchAgent 등록 실패: {s}");
             return false;
         }
         Err(e) => {
-            eprintln!("[VEGA] launchctl 실행 실패: {e}");
+            vlog!("[VEGA] launchctl 실행 실패: {e}");
             return false;
         }
     }
@@ -317,11 +359,11 @@ fn ensure_launchagent(app: &tauri::AppHandle) -> bool {
     match kickstart {
         Ok(s) if s.success() => true,
         Ok(s) => {
-            eprintln!("[VEGA] LaunchAgent kickstart 실패: {s}");
+            vlog!("[VEGA] LaunchAgent kickstart 실패: {s}");
             false
         }
         Err(e) => {
-            eprintln!("[VEGA] launchctl kickstart 실행 실패: {e}");
+            vlog!("[VEGA] launchctl kickstart 실행 실패: {e}");
             false
         }
     }

@@ -84,6 +84,33 @@
     <div class="sep"></div>
 
     <div class="section">
+      <h2>AI 프로바이더</h2>
+      <div class="field-label">프로바이더</div>
+      <div class="row">
+        <select id="prov-select" style="flex:1"></select>
+      </div>
+      <div id="prov-key-row" style="margin-top:8px">
+        <div class="field-label">API 키</div>
+        <div class="row">
+          <input type="text" id="prov-key" placeholder="sk-..." autocomplete="off" />
+        </div>
+        <div class="field-hint" id="key-source-hint">—</div>
+      </div>
+      <div id="prov-url-row" style="margin-top:8px; display:none">
+        <div class="field-label">서버 URL</div>
+        <div class="row">
+          <input type="text" id="prov-url" placeholder="http://localhost:1234/v1" />
+        </div>
+      </div>
+      <div class="row spaced" style="margin-top:10px">
+        <span class="conn-status" id="prov-status" style="margin-top:0">—</span>
+        <button class="btn" id="prov-apply">적용</button>
+      </div>
+    </div>
+
+    <div class="sep"></div>
+
+    <div class="section">
       <h2 id="t-sec-app">App</h2>
       <div class="row spaced">
         <span id="t-shortcut">Global shortcut — toggle window</span>
@@ -205,6 +232,119 @@ document.getElementById('lang-select').addEventListener('change', async (e) => {
   applyLang(lang);
   await tauriCall('set_lang', { lang }).catch(() => {});
 });
+
+// ── AI 프로바이더 관리 ────────────────────────────────────────────────────────
+// client 모드: 원격 서버 URL(설정 입력칸)의 백엔드를 호출한다.
+function provBase() {
+  return document.getElementById('server-url').value.trim().replace(/\/$/, '');
+}
+let PROVIDERS = [];
+let KEY_SOURCE = {};
+
+async function loadProviders() {
+  const base = provBase();
+  const status = document.getElementById('prov-status');
+  if (!base) { status.textContent = '먼저 서버 URL을 입력하세요'; return; }
+  try {
+    const [ob, ks] = await Promise.all([
+      fetch(base + '/api/onboarding', { signal: AbortSignal.timeout(6000) }).then(r => r.json()),
+      fetch(base + '/api/onboarding/key-source', { signal: AbortSignal.timeout(6000) }).then(r => r.json()).catch(() => ({ keys: {} })),
+    ]);
+    PROVIDERS = ob.providers || [];
+    KEY_SOURCE = ks.keys || {};
+    const sel = document.getElementById('prov-select');
+    sel.innerHTML = '';
+    for (const p of PROVIDERS) {
+      const opt = document.createElement('option');
+      const badge = p.id === ob.active_provider ? ' ●' : (p.configured ? ' ✓' : '');
+      opt.value = p.id; opt.textContent = p.label + badge;
+      sel.appendChild(opt);
+    }
+    sel.value = ob.active_provider || (PROVIDERS[0] && PROVIDERS[0].id) || '';
+    onProvChange();
+  } catch (e) {
+    status.textContent = '백엔드에 연결할 수 없습니다';
+    status.style.color = 'var(--error)';
+  }
+}
+
+function currentProv() { return PROVIDERS.find(p => p.id === document.getElementById('prov-select').value); }
+
+function onProvChange() {
+  const p = currentProv();
+  if (!p) return;
+  const keyRow = document.getElementById('prov-key-row');
+  const urlRow = document.getElementById('prov-url-row');
+  const keyInput = document.getElementById('prov-key');
+  const srcHint = document.getElementById('key-source-hint');
+  const status = document.getElementById('prov-status');
+  status.textContent = p.configured ? '설정됨' : '미설정';
+  status.style.color = p.configured ? 'var(--ok)' : 'var(--muted)';
+  keyInput.value = '';
+  if (p.auth === 'key') {
+    keyRow.style.display = ''; urlRow.style.display = 'none';
+    keyInput.placeholder = p.key_hint || 'sk-...';
+    const ks = KEY_SOURCE[p.id];
+    srcHint.textContent = ks && ks.source !== 'none'
+      ? `현재: ${ks.masked} (출처: ${ks.source})`
+      : '저장된 키 없음 — 새 키를 입력하세요';
+  } else if (p.auth === 'local') {
+    keyRow.style.display = 'none'; urlRow.style.display = '';
+    document.getElementById('prov-url').value = p.default_url || '';
+  } else if (p.auth === 'pkce') {
+    keyRow.style.display = 'none'; urlRow.style.display = 'none';
+  }
+  document.getElementById('prov-apply').textContent = p.auth === 'pkce'
+    ? (p.configured ? '다시 로그인' : '브라우저로 로그인')
+    : '적용';
+}
+document.getElementById('prov-select').addEventListener('change', onProvChange);
+
+document.getElementById('prov-apply').addEventListener('click', async () => {
+  const p = currentProv();
+  if (!p) return;
+  const base = provBase();
+  const status = document.getElementById('prov-status');
+  const btn = document.getElementById('prov-apply');
+  btn.disabled = true;
+  status.textContent = '처리 중…'; status.style.color = 'var(--muted)';
+  try {
+    let endpoint, body;
+    if (p.auth === 'pkce') {
+      endpoint = '/api/onboarding/pkce'; body = { provider: p.id };
+    } else if (p.auth === 'local') {
+      endpoint = '/api/onboarding/provider';
+      body = { provider: p.id, base_url: document.getElementById('prov-url').value.trim() };
+    } else {
+      const key = document.getElementById('prov-key').value.trim();
+      if (!key) { status.textContent = 'API 키를 입력하세요'; status.style.color = 'var(--error)'; btn.disabled = false; return; }
+      endpoint = '/api/onboarding/provider'; body = { provider: p.id, api_key: key };
+    }
+    const r = await fetch(base + endpoint, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body), signal: AbortSignal.timeout(130000),
+    });
+    const d = await r.json();
+    if (d.ok) {
+      status.textContent = '✓ 적용됨 (활성: ' + (d.active || p.id) + ')';
+      status.style.color = 'var(--ok)';
+      await loadProviders();
+      document.getElementById('prov-select').value = d.active || p.id;
+      onProvChange();
+    } else {
+      status.textContent = d.error || '실패';
+      status.style.color = 'var(--error)';
+    }
+  } catch (e) {
+    status.textContent = (e.name === 'TimeoutError') ? '시간 초과(로그인 미완료?)' : ('오류: ' + (e.message || e));
+    status.style.color = 'var(--error)';
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// 서버 URL 확정 후 프로바이더 로드. 초기 URL 채워진 다음 한 번 시도.
+setTimeout(loadProviders, 300);
 
 // 연결 테스트
 document.getElementById('test-btn').addEventListener('click', async () => {

@@ -36,6 +36,28 @@ def repo_data_dir() -> Path:
     return _REPO_DATA
 
 
+@lru_cache(maxsize=1)
+def log_dir() -> Path:
+    """User log root. Resolution order:
+    1. VEGA_LOG_DIR environment variable
+    2. macOS: ~/Library/Logs/VEGA
+    3. Linux/other: <data_dir>/logs
+    Created automatically if it does not exist.
+
+    NOTE: 로그는 .app 번들 안에 두지 않는다 — 코드서명 검증/자동업데이트가
+    번들 내부 쓰기를 깨고 재설치 시 사라지기 때문. macOS 표준 사용자 로그 위치를 쓴다.
+    """
+    env = os.environ.get("VEGA_LOG_DIR", "").strip()
+    if env:
+        p = Path(env).expanduser()
+    elif os.name == "posix" and Path("/Library").exists():
+        p = Path.home() / "Library" / "Logs" / "VEGA"
+    else:
+        p = data_dir() / "logs"
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
 def db_path() -> Path:
     # NOTE: vega-core 는 자체 agent.db 를 쓴다. 메인(개인) VEGA 의 vega.db 와
     # 데이터 디렉터리를 공유하더라도 파일을 분리해 스키마 충돌을 피한다.
