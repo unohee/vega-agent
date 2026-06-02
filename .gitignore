@@ -47,6 +47,11 @@ venv/
 # Logs
 logs/
 *.log
+# Claude Code 세션 로그 (YYYY-MM-DD*.txt) — 커밋 노이즈
+20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]*.txt
+
+# 삭제 경유 디렉터리 (CLAUDE.md 규칙 — rm 대신 trash/로 이동)
+trash/
 
 # Desktop app build artifacts
 desktop/target/
