@@ -144,10 +144,11 @@ def save_command(name: str, description: str, body: str,
 def delete_command(name: str) -> dict:
     """Delete a custom command (routed through trash directory)."""
     name = (name or "").strip().lower().lstrip("/")
-    dest = COMMANDS_DIR / f"{name}.md"
+    from pipeline.data_paths import user_commands_dir, data_dir
+    dest = user_commands_dir() / f"{name}.md"
     if not dest.exists():
         return {"ok": False, "error": f"'/{name}' 없음"}
-    trash = COMMANDS_DIR.parent / ".commands_trash"
+    trash = data_dir() / ".commands_trash"
     trash.mkdir(exist_ok=True)
     dest.rename(trash / f"{name}.md")
     return {"ok": True, "name": name}

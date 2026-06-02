@@ -1625,6 +1625,10 @@ button.status-item:hover { background: var(--surface2); color: var(--text); }
     </span>
   </div>
   <div class="status-right">
+    <button class="status-item" id="status-mcp" title="MCP 서버 관리">
+      <svg viewBox="0 0 16 16" width="11" height="11" fill="currentColor"><path d="M8 1a7 7 0 100 14A7 7 0 008 1zm0 1.5a5.5 5.5 0 110 11 5.5 5.5 0 010-11zM7 5v2H5v2h2v2h2V9h2V7H9V5H7z"/></svg>
+      <span>MCP</span>
+    </button>
     <button class="status-item" id="status-profile" title="내 프로필 (이름·역할·소속) 수정">
       <svg viewBox="0 0 16 16" width="11" height="11" fill="currentColor"><path d="M8 8a3 3 0 100-6 3 3 0 000 6zm0 1.5c-2.7 0-5 1.4-5 3.2V14h10v-1.3c0-1.8-2.3-3.2-5-3.2z"/></svg>
       <span id="status-profile-label">프로필</span>
@@ -5300,6 +5304,9 @@ function _fillProfileForm(p) {
   (p.email_accounts || []).forEach(a => _obAddEmailRow(a.key || '', a.email || ''));
   if ((p.email_accounts || []).length === 0) _obAddEmailRow('personal', '');
 }
+
+// 상태바 'MCP' 버튼 — MCP 서버 관리 모달을 바로 엽니다.
+document.getElementById('status-mcp').addEventListener('click', () => openMcpModal());
 
 // 상태바 '프로필' 버튼 — 온보딩 완료 여부와 무관하게 언제든 프로필 모달을 연다.
 document.getElementById('status-profile').addEventListener('click', async () => {
