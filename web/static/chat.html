@@ -2484,13 +2484,14 @@ function hideThinking(bub) {
 }
 
 // ── 도구 배지 ──
+// 인터리빙: 도구 배지를 버블 끝에 시간순으로 배치. 버블의 마지막 자식이 이미
+// 도구 컨테이너면(연속 도구 호출) 거기에 묶고, 아니면(텍스트가 끼었으면) 새 컨테이너를 끝에 연다.
 function getOrCreateBadgeContainer(bub) {
-  let c = bub.querySelector('.tool-badges');
-  if (!c) {
-    c = document.createElement('div');
-    c.className = 'tool-badges';
-    bub.insertBefore(c, bub.firstChild);
-  }
+  const last = bub.lastElementChild;
+  if (last && last.classList.contains('tool-badges')) return last;
+  const c = document.createElement('div');
+  c.className = 'tool-badges';
+  bub.appendChild(c);
   return c;
 }
 function addToolBadge(bub, name, label, callId, step, args) {
@@ -3070,14 +3071,28 @@ function appendChart(bub, chartType, chartUrl) {
 
 // ── raw text 표시 (스트리밍 중) ──
 // ── 마크다운 렌더링 ──
+// 인터리빙: 버블의 마지막 자식이 활성 텍스트 세그먼트면 그걸 쓰고,
+// 아니면(도구 배지 등이 끼어든 뒤면) 새 세그먼트를 버블 끝에 연다.
+// → 텍스트와 도구 배지가 시간 순서대로 교차 배치된다 (Claude Code 스타일).
 function getStreamContent(bub) {
-  let el = bub.querySelector('.stream-content');
-  if (!el) {
-    el = document.createElement('div');
-    el.className = 'stream-content';
-    bub.appendChild(el);
+  const last = bub.lastElementChild;
+  if (last && last.classList.contains('stream-content') && last.dataset.closed !== '1') {
+    return last;
   }
+  const el = document.createElement('div');
+  el.className = 'stream-content';
+  bub.appendChild(el);
   return el;
+}
+// 현재 활성 텍스트 세그먼트를 닫는다 — 이후 토큰은 새 세그먼트에서 시작.
+// 도구 배지가 끼어들기 직전에 호출된다.
+function closeStreamSegment(bub) {
+  const last = bub.lastElementChild;
+  if (last && last.classList.contains('stream-content')) {
+    // 내용 유무는 innerHTML로 판정 (renderMarkdown이 innerHTML만 설정하므로).
+    if (!last.innerHTML.trim()) last.remove();  // 빈 세그먼트는 제거
+    else last.dataset.closed = '1';
+  }
 }
 
 function renderMarkdown(bub, text) {
@@ -3092,7 +3107,7 @@ const TYPING_SPEED = 18;   // ms per tick
 const CHUNK_SIZE   = 3;    // 한 tick에 표시할 최대 글자 수
 
 function makeTyper(bub) {
-  let displayed = '';
+  let displayed = '';      // 현재 세그먼트에 표시된 텍스트
   let charQueue  = '';
   let networkDone = false;
   let timer = null;
@@ -3100,8 +3115,8 @@ function makeTyper(bub) {
   function tick() {
     if (!charQueue) {
       if (networkDone) {
-        // 큐 소진 + 네트워크 완료 → 최종 확정 렌더링
-        renderMarkdown(bub, displayed);
+        // 표시할 텍스트가 있을 때만 최종 확정 — 빈 세그먼트 생성 방지.
+        if (displayed) renderMarkdown(bub, displayed);
         timer = null;
         return;
       }
@@ -3120,9 +3135,21 @@ function makeTyper(bub) {
       charQueue += text;
       if (!timer) timer = setTimeout(tick, TYPING_SPEED);
     },
+    // 도구 배지가 끼어들기 직전 호출 — 큐에 남은 텍스트를 즉시 현재 세그먼트로 확정하고,
+    // 세그먼트를 닫아 다음 텍스트가 새 세그먼트(도구 배지 아래)에서 시작되게 한다.
+    breakSegment() {
+      // 진행 중인 타이핑 타이머를 멈춰 옛 세그먼트 컨텍스트로 깨어나지 않게.
+      if (timer) { clearTimeout(timer); timer = null; }
+      if (charQueue) { displayed += charQueue; charQueue = ''; }
+      // displayed가 비어있지 않을 때만 세그먼트를 확정(빈 호출은 no-op).
+      if (displayed.trim()) {
+        renderMarkdown(bub, displayed);
+        closeStreamSegment(bub);
+      }
+      displayed = '';
+    },
     flush() {
       networkDone = true;
-      // 큐에 남은 게 있으면 타이핑 루프가 알아서 처리
       if (!timer) tick();
     },
   };
@@ -3192,6 +3219,7 @@ function _handleSseEvent(event, payload, bub, typer, tokenBufRef) {
     showThinking(bub);
   } else if (event === 'tool_start') {
     hideThinking(bub);
+    typer.breakSegment();  // 인터리빙: 도구 직전까지의 텍스트를 확정하고 세그먼트 분리
     addToolBadge(bub, payload.name, payload.label, payload.call_id || '', payload.step, payload.args);
   } else if (event === 'improvement') {
     hideThinking(bub);
