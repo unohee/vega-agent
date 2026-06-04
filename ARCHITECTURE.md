@@ -126,6 +126,8 @@ event_entities(event_id, entity_id, match_text)
 ## 확장 지점
 
 - **새 도구**: `tools_*.py`에 함수 + `tools.py` TOOL_SCHEMAS/TOOL_FUNCTIONS 등록
+- **STT 프로바이더 추가**: `pipeline/stt_gateway.py`의 `_WELL_KNOWN_ENDPOINTS`에 엔드포인트 등록, `data/llm_providers.json`의 `stt` 섹션에서 `provider`·`model`·`language` 설정
+- **새 UI 언어**: `web/static/chat.html`과 `dashboard.html`의 `VEGA_STRINGS` 객체에 언어 코드+번역 쌍 추가, 언어 토글 버튼 드롭다운 전환(Phase 3 예정)
 - **새 프로바이더**: `data/llm_providers.json`에 추가 (또는 user data dir 사본)
 - **새 MCP 서버**: **user data dir의 `mcp.json`** 에 등록 (repo `data/mcp.json` 아님 — 아래 지뢰 참조)
 - **새 채널**: `channels/`에 어댑터 작성 → `channels.core.run_agent_turn`을 호출하고 자기 SDK로 점진 렌더만 구현

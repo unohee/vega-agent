@@ -792,6 +792,58 @@ async def upload_image_base64(request: Request):
     return JSONResponse({"path": str(dest), "filename": safe_name})
 
 
+@app.post("/api/stt")
+async def stt_transcribe(request: Request):
+    """
+    Speech-to-Text transcription endpoint.
+    Accepts multipart/form-data with a 'file' field (audio: webm/mp4/wav/ogg/mp3/flac).
+    Optional 'language' field overrides the config language (e.g. 'ko', 'en').
+    Returns: {"text": str}
+    """
+    MAX_AUDIO_SIZE = 25 * 1024 * 1024  # 25 MB (Whisper API limit)
+
+    form = await request.form()
+    upload = form.get("file")
+    if upload is None:
+        return JSONResponse({"error": "file 필드가 없습니다"}, status_code=400)
+
+    raw = await upload.read()
+    if len(raw) > MAX_AUDIO_SIZE:
+        return JSONResponse({"error": f"오디오 파일이 너무 큽니다 ({len(raw)//1024//1024}MB, 최대 25MB)"}, status_code=413)
+
+    filename = getattr(upload, "filename", None) or "audio.webm"
+    language_override = (form.get("language") or "").strip() or None
+
+    try:
+        from pipeline.stt_gateway import transcribe as _transcribe, LocalSTTUnavailable
+        text = _transcribe(raw, filename=filename, language_override=language_override)
+        return JSONResponse({"text": text})
+    except LocalSTTUnavailable as e:
+        return JSONResponse({"error": str(e), "code": "local_stt_unavailable"}, status_code=503)
+    except RuntimeError as e:
+        return JSONResponse({"error": str(e)}, status_code=502)
+    except Exception as e:
+        return JSONResponse({"error": f"STT 처리 실패: {e}"}, status_code=500)
+
+
+@app.get("/api/stt/config")
+async def stt_get_config():
+    """Returns current STT configuration."""
+    from pipeline.stt_gateway import get_stt_config
+    return JSONResponse(get_stt_config())
+
+
+@app.post("/api/stt/config")
+async def stt_set_config(request: Request):
+    """Updates STT configuration. Body: {provider, model, language, response_format, endpoint?}"""
+    from pipeline.stt_gateway import set_stt_config
+    body = await request.json()
+    allowed = {"provider", "model", "language", "response_format", "endpoint", "api_key_env"}
+    cleaned = {k: v for k, v in body.items() if k in allowed}
+    set_stt_config(cleaned)
+    return JSONResponse({"ok": True})
+
+
 @app.get("/api/health")
 async def health():
     # 인증 상태는 *현재 active 프로바이더의 auth_type 에 맞춰* 판정한다.

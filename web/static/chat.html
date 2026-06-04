@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="ko" id="html-root">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -768,6 +768,15 @@ header button, header button *, header a, header a * { -webkit-app-region: no-dr
 .llm-model-row-meta .pill.price-mid { color: #ffa657; }
 .llm-model-row-meta .pill.price-high { color: var(--error); }
 .model-sort-btn.active { background: var(--accent) !important; color: #fff !important; border-color: var(--accent) !important; }
+.model-fav-btn {
+  background: none; border: none; cursor: pointer; padding: 2px 4px;
+  font-size: 14px; line-height: 1; color: var(--border);
+  transition: color .1s, transform .1s;
+  flex-shrink: 0;
+}
+.model-fav-btn:hover { color: #f0c040; }
+.model-fav-btn.starred { color: #f0c040; }
+.model-fav-btn.starred:hover { transform: scale(1.2); }
 
 /* 도구 그룹 토글 */
 .tg-chip {
@@ -1260,15 +1269,33 @@ header button, header button *, header a, header a * { -webkit-app-region: no-dr
 .file-thumb-remove:hover { color: var(--text); }
 .file-thumb.loading { opacity: 0.6; }
 #input-form { display: flex; gap: 6px; align-items: flex-end; }
-#plus-btn, #attach-btn {
+#plus-btn, #attach-btn, #mic-btn {
   background: none; border: 1px solid var(--border);
   border-radius: 8px; color: var(--muted);
   padding: 0 10px; cursor: pointer;
   height: 42px; align-self: flex-end; flex-shrink: 0;
   display: inline-flex; align-items: center; justify-content: center;
 }
-#plus-btn:hover, #attach-btn:hover { background: var(--surface); color: var(--text); }
+#plus-btn:hover, #attach-btn:hover, #mic-btn:hover { background: var(--surface); color: var(--text); }
 #plus-btn.active { color: var(--accent); border-color: rgba(88,166,255,.4); }
+#mic-btn.recording {
+  color: #f85149; border-color: rgba(248,81,73,.5);
+  animation: mic-pulse .9s ease-in-out infinite;
+}
+@keyframes mic-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(248,81,73,.4); }
+  50% { box-shadow: 0 0 0 5px rgba(248,81,73,0); }
+}
+#mic-btn.processing { color: var(--accent); border-color: rgba(88,166,255,.4); cursor: default; }
+/* STT 진행 표시 */
+#stt-status {
+  position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%);
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 6px; padding: 4px 10px; font-size: 11px; color: var(--muted);
+  white-space: nowrap; pointer-events: none; opacity: 0;
+  transition: opacity .15s; margin-bottom: 4px; z-index: 50;
+}
+#stt-status.show { opacity: 1; }
 
 /* ── + 버튼 팝오버 메뉴 ── */
 .plus-menu {
@@ -1483,21 +1510,21 @@ button.status-item:hover { background: var(--surface2); color: var(--text); }
     <span id="yoloModeBadge" title="YOLO 모드 — host_exec 자동 승인. 하드 차단·시크릿 검사는 그대로." style="display:none; margin-left:6px; font-size:10px; padding:2px 8px; border-radius:10px; background:rgba(237,69,69,.18); color:#ff7b72; font-weight:600;">⚡ YOLO</span>
   </div>
   <div id="panel-toggles" role="toolbar" aria-label="패널 토글">
-    <button class="panel-btn active" id="toggle-sidebar" title="세션 목록 (⌘B)" aria-label="세션 목록 토글">
+    <button class="panel-btn active" id="toggle-sidebar" data-i18n-title="sidebar_toggle" title="세션 목록 (⌘B)" aria-label="세션 목록 토글">
       <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.4">
         <rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/>
         <line x1="5.5" y1="2.5" x2="5.5" y2="13.5"/>
         <rect x="2.5" y="3.5" width="2" height="9" fill="currentColor" stroke="none" opacity=".25"/>
       </svg>
     </button>
-    <button class="panel-btn" id="toggle-terminal" title="터미널 (⌘J)" aria-label="터미널 토글">
+    <button class="panel-btn" id="toggle-terminal" data-i18n-title="terminal_toggle" title="터미널 (⌘J)" aria-label="터미널 토글">
       <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.4">
         <rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/>
         <line x1="1.5" y1="10" x2="14.5" y2="10"/>
         <rect x="2.5" y="10.5" width="11" height="2.5" fill="currentColor" stroke="none" opacity=".25"/>
       </svg>
     </button>
-    <button class="panel-btn" id="toggle-dir" title="파일 탐색기 (⌘⌥B)" aria-label="파일 탐색기 토글">
+    <button class="panel-btn" id="toggle-dir" data-i18n-title="dir_toggle" title="파일 탐색기 (⌘⌥B)" aria-label="파일 탐색기 토글">
       <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.4">
         <rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/>
         <line x1="10.5" y1="2.5" x2="10.5" y2="13.5"/>
@@ -1505,20 +1532,21 @@ button.status-item:hover { background: var(--surface2); color: var(--text); }
       </svg>
     </button>
   </div>
+  <button id="lang-toggle-btn" title="언어 / Language" aria-label="언어 전환" style="margin-left:6px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--muted);font-size:11px;font-weight:600;padding:2px 7px;cursor:pointer;height:26px;transition:border-color .15s,color .15s;-webkit-app-region:no-drag;">KO</button>
 </header>
 
 <div id="sidebar-overlay"></div>
 <div id="layout">
   <div id="sidebar">
     <div id="sidebar-header">
-      <span>대화 세션</span>
-      <button id="btn-new">+ 새 대화</button>
+      <span data-i18n="sessions_title">대화 세션</span>
+      <button id="btn-new" data-i18n="new_chat">+ 새 대화</button>
     </div>
     <div id="sessions-list"></div>
     <div id="sidebar-footer">
       <label class="archived-toggle">
         <input type="checkbox" id="show-archived-cb">
-        <span>아카이브된 세션 보기</span>
+        <span data-i18n="show_archived">아카이브된 세션 보기</span>
       </label>
     </div>
   </div>
@@ -1554,9 +1582,15 @@ button.status-item:hover { background: var(--surface2); color: var(--text); }
         <button type="button" id="attach-btn" title="파일 첨부" aria-label="파일 첨부">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 17.93 8.8l-8.59 8.57a2 2 0 1 1-2.83-2.83l8.49-8.48"/></svg>
         </button>
+        <div style="position:relative;">
+          <button type="button" id="mic-btn" title="음성 입력 (STT)" aria-label="음성 녹음 시작/중지">
+            <svg id="mic-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+          </button>
+          <div id="stt-status"></div>
+        </div>
         <input type="file" id="file-input" accept="image/*,.pdf,.xlsx,.xls,.xlsm,.xlsb,.txt,.md,.py,.js,.ts,.json,.csv,.yaml,.yml,.toml,.sh,.html,.css,.xml,.log" multiple>
-        <textarea id="input" rows="1" placeholder="메시지 입력… (Shift+Enter 줄바꿈, Enter 전송)"></textarea>
-        <button id="send" type="submit">전송</button>
+        <textarea id="input" rows="1" data-i18n-placeholder="input_placeholder" placeholder="메시지 입력… (Shift+Enter 줄바꿈, Enter 전송)"></textarea>
+        <button id="send" type="submit" data-i18n="send_btn">전송</button>
       </form>
     </div>
     </div><!-- /#chat-main -->
@@ -1651,33 +1685,33 @@ button.status-item:hover { background: var(--surface2); color: var(--text); }
   <div class="modal-backdrop"></div>
   <div class="modal-window" style="width:500px; max-width:96vw">
     <div class="modal-header">
-      <h2 id="ob-title">VEGA 시작하기</h2>
+      <h2 id="ob-title" data-i18n="ob_title">VEGA 시작하기</h2>
     </div>
     <div class="modal-body" style="padding:20px 22px 24px">
-      <p style="font-size:12px;color:var(--muted);margin:0 0 18px">기본 정보를 입력하면 VEGA가 더 잘 도와드릴 수 있어요. 나중에 설정에서 변경 가능합니다.</p>
+      <p style="font-size:12px;color:var(--muted);margin:0 0 18px" data-i18n="ob_subtitle">기본 정보를 입력하면 VEGA가 더 잘 도와드릴 수 있어요. 나중에 설정에서 변경 가능합니다.</p>
       <form id="ob-form" autocomplete="off">
         <div class="ob-field">
-          <label for="ob-name">이름 <span class="ob-req">*</span></label>
-          <input id="ob-name" type="text" placeholder="홍길동" maxlength="60" required />
+          <label for="ob-name" data-i18n="ob_name_label">이름 <span class="ob-req">*</span></label>
+          <input id="ob-name" type="text" data-i18n-placeholder="ob_name_ph" placeholder="홍길동" maxlength="60" required />
         </div>
         <div class="ob-field">
-          <label for="ob-role">역할 / 직책</label>
-          <input id="ob-role" type="text" placeholder="기획팀 PM, 데이터 엔지니어, 대표 …" maxlength="100" />
+          <label for="ob-role" data-i18n="ob_role_label">역할 / 직책</label>
+          <input id="ob-role" type="text" data-i18n-placeholder="ob_role_ph" placeholder="기획팀 PM, 데이터 엔지니어, 대표 …" maxlength="100" />
         </div>
         <div class="ob-field">
-          <label for="ob-company">회사 / 소속</label>
+          <label for="ob-company" data-i18n="ob_company_label">회사 / 소속</label>
           <input id="ob-company" type="text" placeholder="ACME Inc." maxlength="80" />
         </div>
         <div class="ob-field">
-          <label>이메일 계정</label>
+          <label data-i18n="ob_email_label">이메일 계정</label>
           <div id="ob-email-list"></div>
-          <button type="button" id="ob-add-email" class="ob-add-btn">+ 계정 추가</button>
+          <button type="button" id="ob-add-email" class="ob-add-btn" data-i18n="ob_add_email">+ 계정 추가</button>
         </div>
       </form>
       <div id="ob-error" style="display:none;color:#f44;font-size:11px;margin-top:10px"></div>
       <div style="margin-top:22px;display:flex;justify-content:flex-end;gap:8px">
-        <button id="ob-skip" class="ob-btn ob-btn-ghost">나중에</button>
-        <button id="ob-submit" class="ob-btn ob-btn-primary">시작하기</button>
+        <button id="ob-skip" class="ob-btn ob-btn-ghost" data-i18n="ob_skip">나중에</button>
+        <button id="ob-submit" class="ob-btn ob-btn-primary" data-i18n="ob_submit">시작하기</button>
       </div>
     </div>
   </div>
@@ -1722,6 +1756,7 @@ button.status-item:hover { background: var(--surface2); color: var(--text); }
           <button class="model-sort-btn active" data-sort="default" style="font-size:10px;padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer">기본</button>
           <button class="model-sort-btn" data-sort="price" style="font-size:10px;padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer">가격순</button>
           <button class="model-sort-btn" data-sort="params" style="font-size:10px;padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer">파라미터순</button>
+          <button class="model-sort-btn" data-sort="favorites" style="font-size:10px;padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer">★ 즐겨찾기</button>
         </div>
         <div id="llm-model-list" style="max-height:400px;overflow-y:auto"></div>
       </div>
@@ -3876,6 +3911,10 @@ function showPlusMenu() {
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 17.93 8.8l-8.59 8.57a2 2 0 1 1-2.83-2.83l8.49-8.48"/></svg>
       <span>파일·사진 추가</span>
     </div>
+    <div class="plus-item" data-action="record">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+      <span>음성 입력 (STT)</span>
+    </div>
     <div class="plus-item" data-action="pick-workdir">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h4l2 2h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2z"/></svg>
       <span>작업 폴더 변경</span>
@@ -3927,6 +3966,9 @@ function handlePlusAction(action) {
   switch (action) {
     case 'attach':
       document.getElementById('attach-btn').click();
+      break;
+    case 'record':
+      document.getElementById('mic-btn').click();
       break;
     case 'pick-workdir':
       document.getElementById('status-workdir').click();
@@ -4424,6 +4466,16 @@ let _modelPickerProvider = null;
 let _allModels = [];
 let _currentModelId = null;
 let _modelSortKey = 'default';
+let _favorites = new Set(JSON.parse(localStorage.getItem('vega_model_favorites') || '[]'));
+
+function _saveFavorites() {
+  localStorage.setItem('vega_model_favorites', JSON.stringify([..._favorites]));
+}
+function _toggleFavorite(modelId) {
+  if (_favorites.has(modelId)) _favorites.delete(modelId);
+  else _favorites.add(modelId);
+  _saveFavorites();
+}
 
 async function editLlmModel(name) {
   _modelPickerProvider = name;
@@ -4499,7 +4551,9 @@ function renderModelList() {
       });
     });
   }
-  if (_modelSortKey === 'price') {
+  if (_modelSortKey === 'favorites') {
+    filtered = filtered.filter(m => _favorites.has(m.id));
+  } else if (_modelSortKey === 'price') {
     filtered = [...filtered].sort((a, b) => {
       const pa = a.price_in_per_mtok ?? Infinity;
       const pb = b.price_in_per_mtok ?? Infinity;
@@ -4509,20 +4563,32 @@ function renderModelList() {
     filtered = [...filtered].sort((a, b) => {
       const pa = a.num_params_b ?? -1;
       const pb = b.num_params_b ?? -1;
-      return pb - pa;  // 큰 모델 먼저
+      return pb - pa;
+    });
+  } else {
+    // 기본 정렬: 즐겨찾기를 맨 위로
+    filtered = [...filtered].sort((a, b) => {
+      const fa = _favorites.has(a.id) ? 0 : 1;
+      const fb = _favorites.has(b.id) ? 0 : 1;
+      return fa - fb;
     });
   }
   llmModelPickerCount.textContent = `${filtered.length} / ${_allModels.length}`;
   if (!filtered.length) {
-    llmModelList.innerHTML = '<div class="dir-empty" style="padding:18px;text-align:center;font-size:11px">일치하는 모델 없음</div>';
+    const emptyMsg = _modelSortKey === 'favorites'
+      ? '즐겨찾기한 모델 없음 — ☆ 버튼으로 추가해보세요'
+      : '일치하는 모델 없음';
+    llmModelList.innerHTML = `<div class="dir-empty" style="padding:18px;text-align:center;font-size:11px">${emptyMsg}</div>`;
     return;
   }
   llmModelList.innerHTML = filtered.slice(0, 200).map(m => {
     const mods = (m.modalities || []).filter(x => x !== 'text');
     const pin = m.price_in_per_mtok;
     const isCur = m.id === _currentModelId;
+    const isFav = _favorites.has(m.id);
     return `
       <div class="llm-model-row${isCur ? ' current' : ''}" data-id="${esc(m.id)}">
+        <button class="model-fav-btn${isFav ? ' starred' : ''}" data-fav-id="${esc(m.id)}" title="${isFav ? '즐겨찾기 해제' : '즐겨찾기 추가'}" aria-label="${isFav ? '즐겨찾기 해제' : '즐겨찾기 추가'}">${isFav ? '★' : '☆'}</button>
         <div class="llm-model-row-info">
           <div class="llm-model-row-id">${esc(m.id)}</div>
           <div class="llm-model-row-name">${esc(m.name || '')}</div>
@@ -4535,8 +4601,29 @@ function renderModelList() {
       </div>`;
   }).join('') + (filtered.length > 200 ? `<div class="mcp-hint" style="text-align:center;padding:8px">${filtered.length - 200}개 더 — 검색으로 좁혀줘</div>` : '');
   llmModelList.querySelectorAll('.llm-model-row').forEach(row => {
-    row.addEventListener('click', async () => {
+    row.addEventListener('click', async (e) => {
+      if (e.target.closest('.model-fav-btn')) return;
       await _selectModel(row.dataset.id);
+    });
+  });
+  llmModelList.querySelectorAll('.model-fav-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const modelId = btn.dataset.favId;
+      _toggleFavorite(modelId);
+      const isFav = _favorites.has(modelId);
+      btn.textContent = isFav ? '★' : '☆';
+      btn.classList.toggle('starred', isFav);
+      btn.title = isFav ? '즐겨찾기 해제' : '즐겨찾기 추가';
+      // 즐겨찾기 탭 활성 중이면 해제 시 해당 row 제거
+      if (_modelSortKey === 'favorites' && !isFav) {
+        btn.closest('.llm-model-row').remove();
+        const remaining = llmModelList.querySelectorAll('.llm-model-row').length;
+        if (!remaining) {
+          llmModelList.innerHTML = '<div class="dir-empty" style="padding:18px;text-align:center;font-size:11px">즐겨찾기한 모델 없음 — ☆ 버튼으로 추가해보세요</div>';
+        }
+        llmModelPickerCount.textContent = `${remaining} / ${_allModels.length}`;
+      }
     });
   });
 }
@@ -5394,6 +5481,259 @@ init().then(() => {
   // 첫 컨텍스트 토큰 표시
   try { window.dispatchEvent(new Event('vega:context-changed')); } catch {}
 });
+
+// ── STT (Speech-to-Text) ──────────────────────────────────────────────────
+(function initSTT() {
+  const micBtn = document.getElementById('mic-btn');
+  const sttStatus = document.getElementById('stt-status');
+  if (!micBtn) return;
+
+  let _recorder = null;
+  let _chunks = [];
+  let _stream = null;
+
+  function setStatus(msg) {
+    if (!msg) { sttStatus.textContent = ''; sttStatus.classList.remove('show'); return; }
+    sttStatus.textContent = msg;
+    sttStatus.classList.add('show');
+  }
+
+  async function startRecording() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setStatus('마이크 미지원');
+      setTimeout(() => setStatus(''), 2000);
+      return;
+    }
+    try {
+      _stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) {
+      setStatus('마이크 접근 거부됨');
+      setTimeout(() => setStatus(''), 2500);
+      return;
+    }
+    _chunks = [];
+    // Prefer webm/opus for best cross-platform coverage; fall back to whatever is supported
+    const mimeType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4']
+      .find(m => MediaRecorder.isTypeSupported(m)) || '';
+    _recorder = new MediaRecorder(_stream, mimeType ? { mimeType } : {});
+    _recorder.ondataavailable = (e) => { if (e.data.size > 0) _chunks.push(e.data); };
+    _recorder.onstop = onRecordingStop;
+    _recorder.start(250);  // collect chunks every 250ms
+    micBtn.classList.add('recording');
+    setStatus('● 녹음 중 — 다시 클릭해서 완료');
+  }
+
+  function stopRecording() {
+    if (_recorder && _recorder.state !== 'inactive') _recorder.stop();
+    if (_stream) { _stream.getTracks().forEach(t => t.stop()); _stream = null; }
+    micBtn.classList.remove('recording');
+    micBtn.classList.add('processing');
+    setStatus('⏳ 텍스트 변환 중…');
+  }
+
+  async function onRecordingStop() {
+    const mimeType = (_recorder && _recorder.mimeType) || 'audio/webm';
+    const extMap = {
+      'audio/webm': 'webm', 'audio/ogg': 'ogg', 'audio/mp4': 'mp4',
+    };
+    const ext = extMap[mimeType.split(';')[0]] || 'webm';
+    const blob = new Blob(_chunks, { type: mimeType });
+    _chunks = [];
+    _recorder = null;
+
+    if (blob.size < 1000) {
+      micBtn.classList.remove('processing');
+      setStatus('녹음이 너무 짧습니다');
+      setTimeout(() => setStatus(''), 2000);
+      return;
+    }
+
+    const fd = new FormData();
+    fd.append('file', blob, `recording.${ext}`);
+    try {
+      const resp = await fetch('/api/stt', { method: 'POST', body: fd });
+      const data = await resp.json();
+      if (!resp.ok || data.error) {
+        if (data.code === 'local_stt_unavailable') {
+          setStatus('로컬 STT 미실행');
+          setTimeout(() => setStatus(''), 2500);
+        } else {
+          setStatus(`오류: ${data.error || resp.status}`);
+          setTimeout(() => setStatus(''), 3000);
+        }
+        return;
+      }
+      const text = (data.text || '').trim();
+      if (text) {
+        // 입력창 커서 위치에 삽입 (기존 텍스트 보존)
+        const el = document.getElementById('input');
+        if (el) {
+          const start = el.selectionStart ?? el.value.length;
+          const end = el.selectionEnd ?? el.value.length;
+          const before = el.value.slice(0, start);
+          const after = el.value.slice(end);
+          el.value = before + (before && !before.endsWith(' ') ? ' ' : '') + text + (after ? ' ' + after : '');
+          el.dispatchEvent(new Event('input'));
+          el.focus();
+          const pos = before.length + (before && !before.endsWith(' ') ? 1 : 0) + text.length;
+          el.setSelectionRange(pos, pos);
+        }
+        setStatus('✓ 완료');
+        setTimeout(() => setStatus(''), 1500);
+      } else {
+        setStatus('텍스트를 인식하지 못했습니다');
+        setTimeout(() => setStatus(''), 2500);
+      }
+    } catch (e) {
+      setStatus('전송 실패: ' + e.message);
+      setTimeout(() => setStatus(''), 3000);
+    } finally {
+      micBtn.classList.remove('processing');
+    }
+  }
+
+  micBtn.addEventListener('click', () => {
+    if (micBtn.classList.contains('processing')) return;
+    if (micBtn.classList.contains('recording')) {
+      stopRecording();
+    } else {
+      startRecording();
+    }
+  });
+})();
+
+// ── i18n ──────────────────────────────────────────────────────────────────
+const VEGA_STRINGS = {
+  ko: {
+    // 헤더
+    sidebar_toggle: '세션 목록 (⌘B)',
+    terminal_toggle: '터미널 (⌘J)',
+    dir_toggle: '파일 탐색기 (⌘⌥B)',
+    home_title: '대시보드로',
+    // 사이드바
+    sessions_title: '대화 세션',
+    new_chat: '+ 새 대화',
+    show_archived: '아카이브된 세션 보기',
+    // 입력창
+    input_placeholder: '메시지 입력… (Shift+Enter 줄바꿈, Enter 전송)',
+    send_btn: '전송',
+    // 온보딩 모달
+    ob_title: 'VEGA 시작하기',
+    ob_subtitle: '기본 정보를 입력하면 VEGA가 더 잘 도와드릴 수 있어요. 나중에 설정에서 변경 가능합니다.',
+    ob_name_label: '이름 <span class="ob-req">*</span>',
+    ob_name_ph: '홍길동',
+    ob_role_label: '역할 / 직책',
+    ob_role_ph: '기획팀 PM, 데이터 엔지니어, 대표 …',
+    ob_company_label: '회사 / 소속',
+    ob_email_label: '이메일 계정',
+    ob_add_email: '+ 계정 추가',
+    ob_skip: '나중에',
+    ob_submit: '시작하기',
+    // 상태바
+    status_workdir_title: '작업 폴더 변경',
+    status_mcp_title: 'MCP 서버 관리',
+    status_profile_title: '내 프로필 수정',
+    status_llm_title: 'LLM 프로바이더 선택',
+    status_tokens_title: '다음 메시지의 예상 컨텍스트 토큰',
+    // 터미널
+    terminal_clear: '⌫ 지우기',
+    terminal_close: '✕',
+    // 언어 버튼
+    lang_btn: 'KO',
+  },
+  en: {
+    // header
+    sidebar_toggle: 'Session list (⌘B)',
+    terminal_toggle: 'Terminal (⌘J)',
+    dir_toggle: 'File explorer (⌘⌥B)',
+    home_title: 'Go to dashboard',
+    // sidebar
+    sessions_title: 'Conversations',
+    new_chat: '+ New chat',
+    show_archived: 'Show archived sessions',
+    // input
+    input_placeholder: 'Type a message… (Shift+Enter newline, Enter send)',
+    send_btn: 'Send',
+    // onboarding modal
+    ob_title: 'Get started with VEGA',
+    ob_subtitle: 'Enter some basic info so VEGA can help you better. You can change this later in settings.',
+    ob_name_label: 'Name <span class="ob-req">*</span>',
+    ob_name_ph: 'Jane Smith',
+    ob_role_label: 'Role / Title',
+    ob_role_ph: 'Product Manager, Data Engineer, Founder …',
+    ob_company_label: 'Company / Organization',
+    ob_email_label: 'Email account',
+    ob_add_email: '+ Add account',
+    ob_skip: 'Later',
+    ob_submit: 'Get started',
+    // statusbar
+    status_workdir_title: 'Change working folder',
+    status_mcp_title: 'Manage MCP servers',
+    status_profile_title: 'Edit my profile',
+    status_llm_title: 'Select LLM provider',
+    status_tokens_title: 'Estimated context tokens for next message',
+    // terminal
+    terminal_clear: '⌫ Clear',
+    terminal_close: '✕',
+    // lang button
+    lang_btn: 'EN',
+  },
+};
+
+function applyLang(lang) {
+  const strings = VEGA_STRINGS[lang] || VEGA_STRINGS.ko;
+  // <html lang> 속성 업데이트
+  document.getElementById('html-root').lang = lang;
+  // textContent 교체 (data-i18n)
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const key = el.dataset.i18n;
+    if (key in strings) el.innerHTML = strings[key];
+  });
+  // title 속성 교체 (data-i18n-title)
+  document.querySelectorAll('[data-i18n-title]').forEach(el => {
+    const key = el.dataset.i18nTitle;
+    if (key in strings) el.title = strings[key];
+  });
+  // placeholder 교체 (data-i18n-placeholder)
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+    const key = el.dataset.i18nPlaceholder;
+    if (key in strings) el.placeholder = strings[key];
+  });
+  // 언어 토글 버튼 레이블 업데이트
+  const langBtn = document.getElementById('lang-toggle-btn');
+  if (langBtn) langBtn.textContent = strings.lang_btn;
+  // 홈 버튼 title
+  const homeBtn = document.getElementById('home-btn');
+  if (homeBtn) homeBtn.title = strings.home_title;
+  // 상태바 titles
+  const statusMap = {
+    'status-workdir': 'status_workdir_title',
+    'status-mcp': 'status_mcp_title',
+    'status-profile': 'status_profile_title',
+    'status-llm': 'status_llm_title',
+    'status-tokens': 'status_tokens_title',
+  };
+  Object.entries(statusMap).forEach(([id, key]) => {
+    const el = document.getElementById(id);
+    if (el && key in strings) el.title = strings[key];
+  });
+  // 터미널 버튼
+  const clearBtn = document.getElementById('terminal-clear-btn');
+  if (clearBtn) clearBtn.textContent = strings.terminal_clear;
+}
+
+(function initLang() {
+  const saved = localStorage.getItem('vega_lang') || 'ko';
+  applyLang(saved);
+  const btn = document.getElementById('lang-toggle-btn');
+  if (!btn) return;
+  btn.addEventListener('click', () => {
+    const current = localStorage.getItem('vega_lang') || 'ko';
+    const next = current === 'ko' ? 'en' : 'ko';
+    localStorage.setItem('vega_lang', next);
+    applyLang(next);
+  });
+})();
 </script>
 </body>
 </html>

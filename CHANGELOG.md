@@ -7,6 +7,13 @@
 ## [Unreleased]
 
 ### Added
+- **STT(음성→텍스트) 지원** (`pipeline/stt_gateway.py`) — OpenAI Whisper API 호환 엔드포인트 공통 게이트웨이. 지원 프로바이더: OpenAI (`whisper-1`), Groq, 로컬 faster-whisper-server, LM Studio. `LocalSTTUnavailable` 예외로 사이드카 미실행 시 503 조용히 반환. `data/llm_providers.json`에 `stt` 섹션 추가 (`provider`, `model`, `language`, `response_format`). `/api/stt`, `/api/stt/config` 엔드포인트 추가.
+- **채팅 UI 마이크 버튼** (`chat.html`) — 입력창에 🎙 버튼 추가. MediaRecorder로 브라우저 내 녹음 → `/api/stt` 전송 → 텍스트를 커서 위치에 삽입. `+` 팝오버 메뉴에도 "음성 입력" 항목 추가. 로컬 STT 미실행 시 "로컬 STT 미실행" 토스트 표시.
+- **UI 언어 선택 (한국어/English)** (`chat.html`, `dashboard.html`) — 헤더에 `KO`/`EN` 토글 버튼 추가. `VEGA_STRINGS` i18n 객체 + `applyLang()` + `data-i18n` 속성 패턴으로 정적 UI 텍스트 교체. `localStorage['vega_lang']`으로 선택 언어 지속화.
+- **다국어 지원 로드맵** (`docs/I18N_ROADMAP.md`) — Phase 1(문자열 완전 번역) → Phase 2(외부 JSON 외부화) → Phase 3(일본어·중국어 추가) → Phase 4(에이전트 응답 언어 연동) 4단계 로드맵 문서화.
+- **비전공자용 사용자 설명서** (`README.md`) — 전면 재작성. 설치부터 음성 입력·파일 첨부·슬래시 명령어·MCP까지 스크린샷 없이도 따라할 수 있는 위키 수준 설명서.
+
+### Added (이전 미기록)
 - **멀티 프로바이더 설치 마법사 + Anthropic 네이티브 어댑터** — 설치 마법사가 OpenRouter 전용에서 프로바이더 목록(Anthropic·OpenAI·OpenRouter API 키 / ChatGPT PKCE 로그인 / 로컬·온프레미스 URL) → 선택 → 해당 인증 흐름으로 확장. 키는 라이브 검증(`/models` 200) 후 Keychain 저장 + `llm_providers.json`에 `upsert_provider`로 등록 후 활성화. 추론 백엔드도 동일하게 멀티 프로바이더 지원:
   - **Anthropic 네이티브 어댑터** (`llm_gateway` `kind=anthropic`) — OpenAI 호환이 아닌 `/v1/messages`를 직접 호출. `x-api-key`+`anthropic-version` 헤더, system을 cache_control 블록으로, Responses↔Anthropic 메시지/tool 스키마(`input_schema`) 변환, `max_tokens` 필수. `streaming._stream_sse`에 Anthropic SSE 파싱(`message_start`/`content_block_delta` text_delta·input_json_delta/`message_delta` usage/`message_stop`) 추가. `auth_type`: `anthropic_key`(콘솔 키) / `claude_oauth`(보류 — client_id 비공개, import 가드).
   - **OpenAI 직접 API** 프로바이더(`api.openai.com`, bearer) 추가.
