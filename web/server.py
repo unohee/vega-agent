@@ -441,7 +441,16 @@ def _tool_summary(name: str, result: str, command: str = "") -> tuple[str, dict 
     try:
         parsed = json.loads(result)
     except Exception:
-        return ("✓ 완료", None)
+        # 문자열을 직접 반환하는 도구(web_fetch/drive_read/file_read 등) — 이름 기반 요약.
+        str_summaries = {
+            "web_fetch":  "🌐 페이지 읽음",
+            "drive_read": "📂 Drive 파일 읽음",
+            "file_read":  "📄 파일 읽음",
+            "file_edit":  "✏️ 파일 편집됨",
+        }
+        if isinstance(result, str) and result.lstrip().startswith(("실패", "fetch 실패", "오류", "error")):
+            return (f"✗ {result.strip()[:80]}", None)
+        return (f"✓ {str_summaries.get(name, name + ' 완료')}", None)
 
     if isinstance(parsed, dict) and parsed.get("__type") == "image":
         path = parsed.get("path", "")
@@ -473,10 +482,66 @@ def _tool_summary(name: str, result: str, command: str = "") -> tuple[str, dict 
             summary = "⚠️ " + " | ".join(parsed["warnings"][:2]) + " · " + summary
         return (summary, None)
 
+    # 도구별 의미있는 완료 요약 — "무엇을 했고 결과가 뭔지" (rc=0 도배 방지).
+    summary = _named_tool_summary(name, parsed)
+    if summary:
+        return (summary, None)
+
     if isinstance(parsed, list):
         return (f"✓ {len(parsed)}건", None)
 
     return ("✓ 완료", None)
+
+
+# 도구 이름별 완료 요약 — result(파싱된 dict/list)에서 정량 정보를 뽑아 한 줄로.
+# host_exec/bash_exec(stdout 분기)·차트·에러는 위에서 이미 처리되므로 여기선 나머지.
+def _named_tool_summary(name: str, parsed) -> str | None:
+    n = len(parsed) if isinstance(parsed, list) else None
+    def pick(*keys):
+        if isinstance(parsed, dict):
+            for k in keys:
+                if parsed.get(k) is not None:
+                    return parsed[k]
+        return None
+    table = {
+        "web_search":            lambda: f"🔍 검색 결과 {n}건" if n is not None else "🔍 검색 완료",
+        "gmail_search":          lambda: f"📧 메일 {n}건" if n is not None else "📧 메일 검색 완료",
+        "gmail_read":            lambda: f"📧 메일 읽음: {str(pick('subject') or '').strip()[:40]}",
+        "gmail_send":            lambda: "📤 메일 전송됨",
+        "gmail_draft":           lambda: "📝 초안 저장됨",
+        "gmail_batch_modify":    lambda: f"🏷️ 메일 {pick('modified') or '?'}건 라벨 변경",
+        "calendar_list_events":  lambda: f"📅 일정 {n}건" if n is not None else "📅 일정 확인 완료",
+        "calendar_create_event": lambda: f"📅 일정 추가됨: {str(pick('summary') or '').strip()[:30]}",
+        "calendar_delete_event": lambda: "📅 일정 삭제됨",
+        "drive_search":          lambda: f"📂 Drive {n}건" if n is not None else "📂 Drive 검색 완료",
+        "memory_persona_update": lambda: f"🧠 페르소나 저장 (v{pick('version') or '?'})",
+        "memory_event_add":      lambda: f"📝 이벤트 기록됨 (#{pick('id') or '?'})",
+        "memory_entity_upsert":  lambda: f"🗂️ 엔티티 {('생성' if pick('action')=='created' else '갱신')}됨",
+        "skill_save":            lambda: f"🧩 skill 저장됨: /{str(pick('name') or '').strip()}",
+        "skill_delete":          lambda: "🗑️ skill 삭제됨",
+        "widget_save":           lambda: "📊 위젯 저장됨",
+        "widget_delete":         lambda: "🗑️ 위젯 삭제됨",
+        "xlsx_read":             lambda: f"📊 엑셀 읽음 ({pick('total_rows') or '?'}행)",
+        "xlsx_create":           lambda: f"📊 엑셀 생성됨 ({pick('rows_written') or '?'}행)",
+        "docx_read":             lambda: "📄 문서 읽음",
+        "docx_create":           lambda: "📄 문서 생성됨",
+        "pptx_read":             lambda: f"📑 슬라이드 {pick('slide_count') or '?'}장",
+        "self_edit_file":        lambda: f"✏️ 파일 {('작성' if pick('action')=='write' else '편집')}됨",
+        "system_info":           lambda: "💻 시스템 상태 확인됨",
+        "session_list":          lambda: "📋 세션 목록 조회됨",
+    }
+    fn = table.get(name)
+    if fn:
+        try:
+            return "✓ " + fn()
+        except Exception:
+            pass
+    # 매핑 없는 도구: ok 키나 list 길이로 최소한의 정보 제공
+    if isinstance(parsed, dict) and parsed.get("ok") is True:
+        return f"✓ {name} 완료"
+    if n is not None:
+        return f"✓ {name}: {n}건"
+    return None
 
 
 def _format_db_context(hits: list[dict]) -> str:
@@ -1354,12 +1419,23 @@ async def _run_gpt_task(sid: str, history: list[dict], images: list[dict]) -> No
     """
     reg = _TASK_REGISTRY[sid]
     partial: list[str] = []
+    # 인터리빙 events — 텍스트 세그먼트와 도구 호출을 시간순으로 누적.
+    # 콜백 호출 순서 = 라이브 SSE 순서이므로 재방문 복원이 라이브와 일치.
+    events: list[dict] = []
+
+    def _append_text_event(tok: str):
+        """마지막 event가 텍스트면 이어붙이고, 아니면(도구 뒤면) 새 텍스트 세그먼트를 연다."""
+        if events and events[-1].get("type") == "text":
+            events[-1]["data"] += tok
+        else:
+            events.append({"type": "text", "data": tok})
 
     async def on_waiting():
         _push_event(reg, {"event": "thinking", "data": {"label": "생각 중…"}})
 
     async def on_token(tok: str):
         partial.append(tok)
+        _append_text_event(tok)
         _push_event(reg, {"event": "token", "data": {"token": tok}})
 
     async def on_tool_start(name: str, args: dict, call_id: str = ""):
@@ -1384,7 +1460,13 @@ async def _run_gpt_task(sid: str, history: list[dict], images: list[dict]) -> No
             "name": name, "label": label, "call_id": call_id,
             "step": reg["tool_count"], "args": args_preview,
         }})
-        # Register real-time output streaming callback for host_exec
+        # 인터리빙 events에 도구 항목 추가 (on_tool_done에서 summary/status 채움)
+        events.append({
+            "type": "tool", "name": name, "label": label,
+            "call_id": call_id, "step": reg["tool_count"],
+            "args": args_preview, "status": "started",
+        })
+        # host_exec 실시간 출력 스트리밍 콜백 등록
         if name == "host_exec":
             loop = asyncio.get_event_loop()
             def _host_line_cb(tag: str, line: str):
@@ -1581,6 +1663,19 @@ async def _run_gpt_task(sid: str, history: list[dict], images: list[dict]) -> No
             pass
         # 중단 시 부분 응답 복원용 — 완료된 도구 요약을 누적
         reg.setdefault("_tool_trace", []).append(summary)
+        # 인터리빙 events의 해당 도구 항목을 완료 상태로 업데이트 (call_id 매칭).
+        # 재방문 시 도구 배지가 완료 모습(요약·터미널·차트)으로 복원되도록.
+        for _ev in reversed(events):
+            if _ev.get("type") == "tool" and _ev.get("call_id") == call_id:
+                _ev["summary"] = summary
+                _ev["status"] = "error" if summary.startswith("✗") else "done"
+                if done_data.get("terminal") is not None:
+                    _ev["terminal"] = done_data["terminal"]
+                    _ev["returncode"] = done_data.get("returncode")
+                if chart:
+                    _ev["chart_type"] = chart["type"]
+                    _ev["chart_url"] = chart["url"]
+                break
         _push_event(reg, {"event": "tool_done", "data": done_data})
         # Deregister host_exec callback
         try:
@@ -1647,8 +1742,15 @@ async def _run_gpt_task(sid: str, history: list[dict], images: list[dict]) -> No
         # Cost calculation + model identification — must finish before DB save so it's persisted in usage_meta
         _llm_router.enrich_usage_stats(usage_stats)
         if full_text:
-            append_message(sid, "assistant", full_text, usage_meta=dict(usage_stats) if usage_stats else None)
-            # Auto-generate title on first round-trip completion (background)
+            # 도구가 하나라도 쓰였으면 인터리빙 events 저장 → 재방문 시 시간순 복원.
+            # 순수 텍스트 응답은 events 불필요(텍스트 폴백이 더 가벼움).
+            has_tool = any(e.get("type") == "tool" for e in events)
+            append_message(
+                sid, "assistant", full_text,
+                usage_meta=dict(usage_stats) if usage_stats else None,
+                events=events if has_tool else None,
+            )
+            # 첫 왕복 완료 시 제목 자동 생성 (백그라운드)
             session_meta = get_session(sid)
             if session_meta and session_meta.get("msg_count", 0) == 2:
                 asyncio.create_task(_auto_title_session(sid))
@@ -1670,7 +1772,10 @@ async def _run_gpt_task(sid: str, history: list[dict], images: list[dict]) -> No
         saved = _build_aborted_message("".join(partial), reg.get("_tool_trace", []))
         if saved:
             history.append({"role": "assistant", "content": saved})
-            append_message(sid, "assistant", saved)
+            # 도구가 쓰였으면 events도 저장 — 중단 마커를 끝에 붙여 재방문 시 ⏹ 복원.
+            has_tool = any(e.get("type") == "tool" for e in events)
+            saved_events = (events + [{"type": "aborted"}]) if has_tool else None
+            append_message(sid, "assistant", saved, events=saved_events)
         elif history and history[-1]["role"] == "user":
             history.pop()
         _push_event(reg, {"event": "error", "data": {"message": "응답이 취소됐어."}})

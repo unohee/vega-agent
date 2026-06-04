@@ -57,8 +57,43 @@ from pipeline.session_store import (
     get_session,
     list_sessions,
     load_history,
+    load_history_with_meta,
     rename_session,
 )
+
+
+class TestEventsPersistence:
+    """인터리빙 events 영속화 — 재방문 시 텍스트↔도구 시간순 복원의 전제."""
+
+    def test_events_roundtrip(self):
+        sid = create_session("evt")
+        events = [
+            {"type": "text", "data": "실행할게."},
+            {"type": "tool", "name": "bash_exec", "label": "실행 중",
+             "call_id": "c1", "status": "done", "summary": "✓ echo hello"},
+            {"type": "text", "data": "hello"},
+        ]
+        append_message(sid, "assistant", "실행할게.\nhello", events=events)
+        hist = load_history_with_meta(sid)
+        assert len(hist) == 1
+        assert hist[0]["events"] == events  # 순서·내용 그대로 복원
+
+    def test_events_none_when_omitted(self):
+        """events 없이 저장한 (순수 텍스트) 메시지는 events=None."""
+        sid = create_session("evt2")
+        append_message(sid, "assistant", "그냥 텍스트 답변")
+        hist = load_history_with_meta(sid)
+        assert hist[0]["events"] is None
+
+    def test_events_and_usage_independent(self):
+        """events와 usage_meta가 서로 간섭 없이 함께 저장된다."""
+        sid = create_session("evt3")
+        usage = {"model": "x", "output_tokens": 10}
+        events = [{"type": "tool", "name": "t", "status": "done", "summary": "✓ t"}]
+        append_message(sid, "assistant", "응답", usage_meta=usage, events=events)
+        hist = load_history_with_meta(sid)
+        assert hist[0]["usage"] == usage
+        assert hist[0]["events"] == events
 
 
 class TestCreateSession:

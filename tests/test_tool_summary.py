@@ -89,8 +89,10 @@ class TestToolSummary:
         assert "4건" in summary
 
     def test_unparseable_result(self):
+        # 문자열 반환 도구는 이름 기반 요약("✓ x 완료") — rc=0 도배 방지 개선.
         summary, chart = _tool_summary("x", "not json")
-        assert summary == "✓ 완료"
+        assert summary.startswith("✓")
+        assert "x" in summary
         assert chart is None
 
 
@@ -125,3 +127,54 @@ class TestAbortedMessage:
         msg = _build_aborted_message("", ["✓ a", "✓ b"])
         assert "- ✓ a" in msg
         assert "- ✓ b" in msg
+
+
+# ── 도구별 의미있는 완료 요약 (rc=0 도배 방지) ────────────────────────────────
+# 피드백: 완료 배지가 전부 "✓ 완료 (rc=0)"로 보여 무슨 도구를 썼는지 알 수 없던 문제.
+class TestNamedToolSummary:
+    def test_gmail_search_count(self):
+        s, _ = _tool_summary("gmail_search", json.dumps([{"id": 1}, {"id": 2}, {"id": 3}]))
+        assert "메일" in s and "3" in s
+        assert "rc=0" not in s
+
+    def test_calendar_list_count(self):
+        s, _ = _tool_summary("calendar_list_events", json.dumps([{"id": 1}, {"id": 2}]))
+        assert "일정" in s and "2" in s
+
+    def test_persona_update_version(self):
+        s, _ = _tool_summary("memory_persona_update", json.dumps({"section_key": "x", "version": 3, "ok": True}))
+        assert "페르소나" in s and "3" in s
+
+    def test_entity_action(self):
+        s, _ = _tool_summary("memory_entity_upsert", json.dumps({"id": 5, "action": "created", "ok": True}))
+        assert "생성" in s
+
+    def test_string_returning_tool(self):
+        """문자열 반환 도구(file_read 등)도 '완료' 대신 무엇을 했는지."""
+        s, _ = _tool_summary("file_read", "파일 내용 텍스트...")
+        assert "파일" in s
+        assert s != "✓ 완료"
+
+    def test_web_fetch_string(self):
+        s, _ = _tool_summary("web_fetch", "[외부 URL]\n내용")
+        assert "페이지" in s
+
+    def test_unknown_tool_with_ok(self):
+        s, _ = _tool_summary("some_new_tool", json.dumps({"ok": True}))
+        assert "some_new_tool" in s
+
+    def test_skill_save_name(self):
+        s, _ = _tool_summary("skill_save", json.dumps({"ok": True, "name": "git-clean"}))
+        assert "git-clean" in s
+
+    def test_no_rc_dabae(self):
+        """주요 비-exec 도구들이 'rc=0' 폴백으로 떨어지지 않아야 한다."""
+        for name, res in [
+            ("gmail_search", json.dumps([{"id": 1}])),
+            ("memory_event_add", json.dumps({"id": 1, "ok": True})),
+            ("widget_save", json.dumps({"ok": True, "id": "w1"})),
+            ("drive_search", json.dumps([{"id": "f1"}])),
+        ]:
+            s, _ = _tool_summary(name, res)
+            assert "rc=0" not in s, f"{name} → {s}"
+            assert s != "✓ 완료", f"{name} → {s}"

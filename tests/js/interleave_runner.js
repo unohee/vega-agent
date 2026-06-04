@@ -19,7 +19,7 @@ function extract(name) {
   if (!m) { console.error('함수 추출 실패: ' + name); process.exit(2); }
   return m[0];
 }
-const SRC = ['esc', 'getStreamContent', 'closeStreamSegment', 'getOrCreateBadgeContainer', 'renderMarkdown', 'makeTyper']
+const SRC = ['esc', 'getStreamContent', 'closeStreamSegment', 'getOrCreateBadgeContainer', 'renderMarkdown', 'makeTyper', 'renderEventsInto']
   .map(extract).join('\n');
 
 // ── jsdom-lite: innerHTML 설정 시 textContent 반영 (브라우저 동작 모방) ──
@@ -44,6 +44,23 @@ const document = { createElement: (t) => new El(t) };
 function scrollBottom() {}
 const marked = { parse: (t) => '<p>' + t + '</p>' };
 const TYPING_SPEED = 0, CHUNK_SIZE = 9999;
+
+// renderEventsInto가 호출하는 도구 배지 함수들의 stub — 버블 끝에 컨테이너만 만들어
+// 순서 검증이 가능하게 (실제 배지 내부 DOM은 라이브 인터리빙 테스트가 이미 커버).
+function addToolBadge(bub, name, label) {
+  const c = getOrCreateBadgeContainer(bub);
+  const x = new El('div'); x.className = 'tool-item'; x._text = label || name;
+  c.appendChild(x);
+}
+function updateToolBadge(bub, name, summary) {
+  const c = bub.lastElementChild;
+  if (c && c.classList.contains('tool-badges')) {
+    const last = c.children[c.children.length - 1];
+    if (last) last._text = summary;
+  }
+}
+function appendTerminal() {}
+function appendChart() {}
 
 eval(SRC);  // 추출한 chat.html 함수들을 현재 스코프에 정의
 
@@ -91,6 +108,26 @@ async function run() {
     typer.push('안녕'); typer.push(' 반가워'); typer.flush();
     await new Promise(r => setTimeout(r, 30));
     check('텍스트만 단일세그먼트', sig(bub), ['TEXT[안녕 반가워]']);
+  }
+  // 5. 재방문 복원: renderEventsInto가 저장된 events를 시간순 DOM으로 (라이브와 동일).
+  {
+    const bub = new El('div');
+    renderEventsInto(bub, [
+      { type: 'text', data: '실행할게.' },
+      { type: 'tool', name: 'bash_exec', label: '실행 중', call_id: 'c1', status: 'done', summary: '✓ echo hello' },
+      { type: 'text', data: 'hello' },
+    ]);
+    check('재방문 events 복원', sig(bub), ['TEXT[실행할게.]', 'TOOLS(1)', 'TEXT[hello]']);
+  }
+  // 6. 재방문 중단: aborted 마커가 ⏹로 복원.
+  {
+    const bub = new El('div');
+    renderEventsInto(bub, [
+      { type: 'tool', name: 'x', label: 't', call_id: 'c', status: 'done', summary: '✓ x' },
+      { type: 'aborted' },
+    ]);
+    const hasStopped = bub.children.some(c => c.classList.contains('stopped-mark'));
+    check('재방문 중단마커', hasStopped, true);
   }
 
   process.exit(results.every(Boolean) ? 0 : 1);

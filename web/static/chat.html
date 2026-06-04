@@ -841,19 +841,43 @@ header button, header button *, header a, header a * { -webkit-app-region: no-dr
 }
 .msg-row.user { justify-content: flex-end; }
 
-/* 유저 메시지 재생성 버튼 */
+/* 유저 메시지 액션 바 (재생성 + 편집) */
 .msg-row.user { position: relative; }
-.msg-row.user .resend-btn {
+.msg-actions {
   display: none;
   position: absolute;
-  left: 0; bottom: 50%; transform: translateY(50%);
+  right: 0; top: 100%; margin-top: 2px;
+  gap: 2px; z-index: 2;
+}
+.msg-row.user:hover .msg-actions,
+.msg-row.user:focus-within .msg-actions { display: flex; }
+.msg-actions .resend-btn {
+  display: inline-flex; align-items: center; gap: 4px;
   background: none; border: none; cursor: pointer;
-  color: var(--muted); font-size: 13px; padding: 4px 6px;
+  color: var(--muted); font-size: 12px; padding: 3px 7px;
   border-radius: 6px; line-height: 1;
   transition: color .15s, background .15s;
 }
-.msg-row.user:hover .resend-btn { display: flex; align-items: center; gap: 4px; }
-.msg-row.user .resend-btn:hover { color: var(--text); background: var(--surface2); }
+.msg-actions .resend-btn:hover { color: var(--text); background: var(--surface2); }
+
+/* 유저 메시지 인라인 편집 */
+.msg-edit-box { width: 100%; max-width: 720px; margin-left: auto; display: flex; flex-direction: column; gap: 6px; }
+.msg-edit-area {
+  width: 100%; box-sizing: border-box;
+  background: var(--surface2); color: var(--text);
+  border: 1px solid var(--accent); border-radius: 10px;
+  padding: 10px 14px; font: inherit; font-size: 14px; line-height: 22px;
+  resize: vertical; min-height: 44px; max-height: 320px; outline: none;
+}
+.msg-edit-bar { display: flex; justify-content: flex-end; gap: 6px; }
+.msg-edit-btn {
+  font-size: 12px; padding: 5px 12px; border-radius: 7px;
+  border: 1px solid var(--border); background: var(--surface);
+  color: var(--muted); cursor: pointer; transition: all .12s;
+}
+.msg-edit-btn:hover { color: var(--text); border-color: var(--accent); }
+.msg-edit-btn.save { background: var(--accent); border-color: var(--accent); color: #000; font-weight: 600; }
+.msg-edit-btn.save:hover { opacity: .88; }
 
 .bubble {
   max-width: 720px;
@@ -2328,25 +2352,41 @@ document.addEventListener('paste', (e) => {
 });
 
 // ── 메시지 DOM 생성 ──
+// 이 row 이후 모든 메시지 DOM을 제거하고 주어진 텍스트로 재전송.
+// 재생성·편집 공통 — 그 지점부터 대화를 다시 시작한다.
+function _resubmitFrom(row, text) {
+  if (streaming) return;
+  inputEl.value = text;
+  const rows = [...messagesEl.querySelectorAll('.msg-row')];
+  const idx = rows.indexOf(row);
+  if (idx >= 0) rows.slice(idx).forEach(r => r.remove());
+  updateShellMode();
+  document.getElementById('input-form').dispatchEvent(new Event('submit'));
+}
+
 function addUserMessage(text, images) {
   const row = document.createElement('div');
   row.className = 'msg-row user';
 
-  // 재생성 버튼 (호버 시 표시)
+  // 메시지 액션 바 (호버 시 표시) — 재생성 + 편집
+  const actions = document.createElement('div');
+  actions.className = 'msg-actions';
+
   const resendBtn = document.createElement('button');
   resendBtn.className = 'resend-btn';
   resendBtn.title = '다시 보내기';
   resendBtn.innerHTML = `<svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M1.5 8A6.5 6.5 0 1 1 8 14.5v-1.6a4.9 4.9 0 1 0-4.9-4.9H4.7L2.4 10.3 0 7.9h1.5V8z"/></svg> 재생성`;
-  resendBtn.addEventListener('click', () => {
-    if (streaming) return;
-    inputEl.value = text;
-    // 이 메시지 이후 DOM 제거 (이 row + 다음 assistant row)
-    const rows = [...messagesEl.querySelectorAll('.msg-row')];
-    const idx = rows.indexOf(row);
-    rows.slice(idx).forEach(r => r.remove());
-    document.getElementById('input-form').dispatchEvent(new Event('submit'));
-  });
-  row.appendChild(resendBtn);
+  resendBtn.addEventListener('click', () => _resubmitFrom(row, text));
+
+  const editBtn = document.createElement('button');
+  editBtn.className = 'resend-btn';
+  editBtn.title = '메시지 편집 후 여기서부터 재생성';
+  editBtn.innerHTML = `<svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25c.081-.286.235-.547.445-.758l8.61-8.61Z"/></svg> 편집`;
+  editBtn.addEventListener('click', () => startEditUserMessage(row, bub, text, images));
+
+  actions.appendChild(resendBtn);
+  actions.appendChild(editBtn);
+  row.appendChild(actions);
 
   const bub = document.createElement('div');
   bub.className = 'bubble';
@@ -2370,6 +2410,49 @@ function addUserMessage(text, images) {
   return row;
 }
 
+// 사용자 메시지 인라인 편집 — 버블을 textarea로 바꿔 수정 후 그 지점부터 재생성.
+function startEditUserMessage(row, bub, origText, images) {
+  if (streaming) return;
+  if (row.querySelector('.msg-edit-box')) return;  // 이미 편집 중
+  const box = document.createElement('div');
+  box.className = 'msg-edit-box';
+  const ta = document.createElement('textarea');
+  ta.className = 'msg-edit-area';
+  ta.value = origText;
+  const bar = document.createElement('div');
+  bar.className = 'msg-edit-bar';
+  const save = document.createElement('button');
+  save.className = 'msg-edit-btn save';
+  save.textContent = '저장 후 재생성';
+  const cancel = document.createElement('button');
+  cancel.className = 'msg-edit-btn';
+  cancel.textContent = '취소';
+  bar.appendChild(cancel);
+  bar.appendChild(save);
+  box.appendChild(ta);
+  box.appendChild(bar);
+
+  bub.style.display = 'none';
+  row.appendChild(box);
+  ta.focus();
+  ta.style.height = ta.scrollHeight + 'px';
+  ta.setSelectionRange(ta.value.length, ta.value.length);
+
+  const restore = () => { box.remove(); bub.style.display = ''; };
+  cancel.addEventListener('click', restore);
+  const commit = () => {
+    const newText = ta.value.trim();
+    if (!newText) { restore(); return; }
+    restore();
+    _resubmitFrom(row, newText);
+  };
+  save.addEventListener('click', commit);
+  ta.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commit(); }
+    else if (e.key === 'Escape') { e.preventDefault(); restore(); }
+  });
+}
+
 function addAssistantBubble() {
   const row = document.createElement('div');
   row.className = 'msg-row assistant';
@@ -2381,13 +2464,45 @@ function addAssistantBubble() {
   return bub;
 }
 
-function addAssistantMessage(text, usage) {
+function addAssistantMessage(text, usage, events) {
   const bub = addAssistantBubble();
-  bub.innerHTML = marked.parse(text);
+  if (Array.isArray(events) && events.length) {
+    // 인터리빙 복원 — 라이브와 동일한 헬퍼로 텍스트 세그먼트↔도구 배지를 시간순 배치.
+    renderEventsInto(bub, events);
+  } else {
+    // 폴백: events 없는 (구) 메시지는 텍스트 통째 렌더.
+    bub.innerHTML = marked.parse(text);
+  }
   if (usage && typeof usage === 'object' && Object.keys(usage).length > 0) {
     _renderUsageMeta(bub, usage);
   }
   return bub;
+}
+
+// 저장된 events 배열을 버블에 순차 렌더 (재방문 시 인터리빙 복원).
+// 라이브 스트리밍의 getStreamContent/addToolBadge/updateToolBadge를 재사용.
+function renderEventsInto(bub, events) {
+  for (const ev of events) {
+    if (ev.type === 'text') {
+      if (!ev.data || !ev.data.trim()) continue;
+      // 새 텍스트 세그먼트를 버블 끝에 만들어 마크다운 렌더.
+      const seg = getStreamContent(bub);
+      seg.innerHTML = marked.parse(ev.data);
+      closeStreamSegment(bub);  // 다음 도구/텍스트가 새 세그먼트에서 시작되게 닫음
+    } else if (ev.type === 'tool') {
+      addToolBadge(bub, ev.name, ev.label, ev.call_id || '', ev.step, ev.args);
+      if (ev.status && ev.status !== 'started' && ev.summary) {
+        updateToolBadge(bub, ev.name, ev.summary, ev.call_id || '');
+      }
+      if (ev.terminal) appendTerminal(bub, ev.terminal, ev.returncode);
+      if (ev.chart_url) appendChart(bub, ev.chart_type, ev.chart_url);
+    } else if (ev.type === 'aborted') {
+      const mark = document.createElement('div');
+      mark.className = 'stopped-mark';
+      mark.textContent = '⏹ 중단됨';
+      bub.appendChild(mark);
+    }
+  }
 }
 
 function _fmtCost(usd) {
@@ -3547,7 +3662,7 @@ async function loadSession(sid, name, opts) {
     messagesEl.innerHTML = '';
     for (const m of data.messages) {
       if (m.role === 'human') addUserMessage(m.content);
-      else addAssistantMessage(m.content, m.usage);
+      else addAssistantMessage(m.content, m.usage, m.events);
     }
     currentSid = sid;
     headerSid.textContent = sid.slice(0, 8) + '…';

@@ -28,5 +28,5 @@ def test_chat_interleave_dom_sequence():
     )
     # 실패 시 러너의 stdout(어떤 시나리오가 깨졌는지)을 그대로 노출
     assert r.returncode == 0, f"인터리빙 시나리오 실패:\n{r.stdout}\n{r.stderr}"
-    # 4개 시나리오가 모두 ✓ 인지 확인
-    assert r.stdout.count("✓") == 4, f"통과 시나리오 부족:\n{r.stdout}"
+    # 모든 시나리오가 ✓ 인지 확인 (라이브 인터리빙 + 재방문 events 복원)
+    assert r.stdout.count("✓") == 6, f"통과 시나리오 부족:\n{r.stdout}"
