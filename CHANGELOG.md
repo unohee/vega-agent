@@ -6,6 +6,17 @@
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-06-04
+
+### Added (VEGA 백포트 — 채팅/대시보드 UX)
+- **재방문 인터리빙 복원** (`web/server.py`, `pipeline/session_store.py`, `chat.html`) — 어시스턴트 메시지에 텍스트↔도구 실행을 시간순으로 기록하는 `events` 구조 도입. `messages` 테이블에 `events TEXT` 컬럼 추가(마이그레이션), 도구가 쓰인 응답은 events를 영속화해 세션 재방문 시 라이브와 동일한 순서로 복원. 순수 텍스트 응답은 텍스트 폴백.
+- **도구별 완료 요약 + 명령어 중심 배지** (`web/server.py`) — `_exec_summary`로 host_exec/bash_exec 결과를 '무엇을 했는지'(명령어+rc) 한 줄로 요약, `_tool_summary`가 call_id별 실행 명령어를 배지에 반영. 출력은 터미널 블럭에서 분리 표시.
+- **중단 응답 영속화** (`web/server.py`) — `_build_aborted_message`로 응답이 중단돼도 도구 실행 흔적을 보존, 재방문 시 사라지지 않음.
+- **메시지 편집** (`chat.html`) — 사용자 메시지를 편집해 재전송.
+- **작업 과정 투명성 (Claude Code 스타일)** (`data/agents/_default.md`) — 도구를 쓰며 진행 과정을 본문 텍스트로 자연스럽게 보여주는 에이전트 지침 추가.
+- **대시보드 메모리 생태계 뷰** (`dashboard.html`, `web/routers/memory_inspector.py`) — 홈을 히어로(VEGA가 기억하는 것) + 탭(최근 기억·인물/엔티티·타임라인·페르소나·규칙/스킬·오늘) 구조로 전면 재설계.
+- **파일 뷰어 드래그 인용 + 외부 에디터로 열기** (`web/routers/fs.py`, `chat.html`) — 파일 뷰어에서 텍스트를 드래그해 채팅에 인용, 외부 에디터로 바로 열기.
+
 ### Added
 - **STT(음성→텍스트) 지원** (`pipeline/stt_gateway.py`) — OpenAI Whisper API 호환 엔드포인트 공통 게이트웨이. 지원 프로바이더: OpenAI (`whisper-1`), Groq, 로컬 faster-whisper-server, LM Studio. `LocalSTTUnavailable` 예외로 사이드카 미실행 시 503 조용히 반환. `data/llm_providers.json`에 `stt` 섹션 추가 (`provider`, `model`, `language`, `response_format`). `/api/stt`, `/api/stt/config` 엔드포인트 추가.
 - **채팅 UI 마이크 버튼** (`chat.html`) — 입력창에 🎙 버튼 추가. MediaRecorder로 브라우저 내 녹음 → `/api/stt` 전송 → 텍스트를 커서 위치에 삽입. `+` 팝오버 메뉴에도 "음성 입력" 항목 추가. 로컬 STT 미실행 시 "로컬 STT 미실행" 토스트 표시.
