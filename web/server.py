@@ -512,9 +512,43 @@ def _get_history(sid: str) -> list[dict]:
 
 # ── Tool status labels ────────────────────────────────────────────────────────
 
+def _core_command(command: str) -> str:
+    """Extract the actual core program name from a shell command.
+    'cd X && find . -name ...' → 'find', 'FOO=1 python3 - <<PY' → 'python3'.
+    Skips prep tokens (cd/export/pure env assignments) and returns the first real
+    command's basename. Pipelines use the first real command. Full command stays in
+    the UI accordion (args)."""
+    import re as _re
+    if not command:
+        return ""
+    segments = _re.split(r"\s*(?:&&|\|\||;|\|)\s*", command.strip())
+    seg_skip = {"cd", "export", "set", "source", "."}          # whole segment is prep → next segment
+    wrap_skip = {"sudo", "env", "time", "nohup", "exec", "command", "xargs", "nice"}  # wrapper → next token
+    for seg in segments:
+        toks = seg.strip().split()
+        i = 0
+        while i < len(toks):
+            if _re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", toks[i]):  # env assignment prefix
+                i += 1
+                continue
+            base = toks[i].rsplit("/", 1)[-1]
+            if base in wrap_skip:
+                i += 1
+                while i < len(toks) and toks[i].startswith("-"):
+                    i += 1
+                    if i < len(toks) and toks[i].isdigit():
+                        i += 1
+                continue
+            if base in seg_skip:
+                break
+            return base
+    first = segments[0].strip().split()
+    return (first[0].rsplit("/", 1)[-1] if first else "")
+
+
 def _tool_label(name: str, args: dict) -> str:
     query = args.get("query", "")
-    cmd = args.get("command", "")[:80]
+    core = _core_command(args.get("command", ""))
     return {
         "web_search":            f"🔍 검색 중: {query}",
         "web_fetch":             f"🌐 페이지 읽는 중: {args.get('url', '')[:60]}",
@@ -525,8 +559,8 @@ def _tool_label(name: str, args: dict) -> str:
         "calendar_create_event": f"📅 일정 추가 중: {args.get('summary', '')}",
         "drive_search":          f"📂 Drive 검색 중: {query}",
         "drive_read":            f"📂 Drive 파일 읽는 중…",
-        "host_exec":             f"🖥️  호스트 실행 중: `{cmd}`",
-        "bash_exec":             f"⚙️  실행 중: `{cmd}`",
+        "host_exec":             f"🖥️  실행 중: `{core}`" if core else "🖥️  호스트 실행 중…",
+        "bash_exec":             f"⚙️  실행 중: `{core}`" if core else "⚙️  실행 중…",
         "python_exec":           f"🐍 Python 실행 중…",
         "chart_matplotlib":      f"📊 차트 그리는 중…",
         "chart_plotly":          f"📊 인터랙티브 차트 그리는 중…",
