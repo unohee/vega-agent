@@ -1198,6 +1198,24 @@ header button, header button *, header a, header a * { -webkit-app-region: no-dr
   background: var(--bg);
   position: relative;
 }
+/* 인라인 모드 칩 — 입력창 위, 클릭으로 on/off */
+#mode-chips {
+  display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap;
+}
+.mode-chip {
+  font-size: 11px; font-weight: 600; line-height: 1;
+  padding: 5px 10px; border-radius: 12px;
+  border: 1px solid var(--border);
+  background: transparent; color: var(--muted, #8b949e);
+  cursor: pointer; transition: all .12s ease;
+  user-select: none;
+}
+.mode-chip:hover { border-color: var(--muted, #8b949e); color: var(--fg, #c9d1d9); }
+.mode-chip.active { color: #fff; }
+.mode-chip[data-mode="plan"].active     { background: rgba(210,153,34,.22);  border-color: #e3b341; color: #e3b341; }
+.mode-chip[data-mode="research"].active { background: rgba(88,166,255,.18);  border-color: #79c0ff; color: #79c0ff; }
+.mode-chip[data-mode="yolo"].active     { background: rgba(237,69,69,.20);   border-color: #ff7b72; color: #ff7b72; }
+.mode-chip.pending { opacity: .5; pointer-events: none; }
 /* ! 셸 모드 — 입력창 강조 */
 #input-area.shell-mode { border-top-color: #7ee787; }
 #input-area.shell-mode #input {
@@ -1646,6 +1664,12 @@ button.status-item:hover { background: var(--surface2); color: var(--text); }
 
     <div id="input-area">
       <div id="cmd-menu" class="hidden"></div>
+      <!-- 인라인 모드 칩 — 클릭으로 on/off (슬래시 커맨드 대체) -->
+      <div id="mode-chips">
+        <button type="button" class="mode-chip" data-mode="plan" title="Plan 모드 — 실행 도구 차단, 계획만">📋 Plan</button>
+        <button type="button" class="mode-chip" data-mode="research" title="Research 모드 — 웹검색 우선, 가설→근거→결론, 출처 명시">🔬 Research</button>
+        <button type="button" class="mode-chip" data-mode="yolo" title="YOLO 모드 — host_exec 자동 승인 + 멈춤 시 자동 재개. 하드 차단·시크릿 검사는 그대로">⚡ YOLO</button>
+      </div>
       <div id="image-preview-bar"></div>
       <form id="input-form">
         <button type="button" id="plus-btn" title="추가" aria-label="추가 메뉴">
@@ -3014,11 +3038,17 @@ async function handlePlanDecision(btn, approved) {
   }
 }
 
+// 헤더 배지 + 입력창 칩을 함께 갱신 — 두 표시가 항상 일치하도록.
+function _syncModeChip(mode, active) {
+  const chip = document.querySelector(`.mode-chip[data-mode="${mode}"]`);
+  if (chip) { chip.classList.toggle('active', !!active); chip.classList.remove('pending'); }
+}
+
 function updatePlanModeIndicator(active) {
   // 헤더에 plan 모드 표시 (있으면 갱신, 없으면 무시)
   const el = document.getElementById('planModeBadge');
-  if (!el) return;
-  el.style.display = active ? 'inline-block' : 'none';
+  if (el) el.style.display = active ? 'inline-block' : 'none';
+  _syncModeChip('plan', active);
 }
 
 async function refreshPlanMode() {
@@ -3032,8 +3062,8 @@ async function refreshPlanMode() {
 
 function updateResearchModeIndicator(active) {
   const el = document.getElementById('researchModeBadge');
-  if (!el) return;
-  el.style.display = active ? 'inline-block' : 'none';
+  if (el) el.style.display = active ? 'inline-block' : 'none';
+  _syncModeChip('research', active);
 }
 
 async function refreshResearchMode() {
@@ -3047,9 +3077,61 @@ async function refreshResearchMode() {
 
 function updateYoloModeIndicator(active) {
   const el = document.getElementById('yoloModeBadge');
-  if (!el) return;
-  el.style.display = active ? 'inline-block' : 'none';
+  if (el) el.style.display = active ? 'inline-block' : 'none';
+  _syncModeChip('yolo', active);
 }
+
+// ── 모드 칩 클릭 토글 ──
+// 슬래시 커맨드 없이 입력창 칩으로 직접 on/off. 낙관적 UI(즉시 반영) + 서버 동기화.
+const _MODE_EP = { plan: 'plan-mode', research: 'research-mode', yolo: 'yolo-mode' };
+const _MODE_KEY = { plan: 'plan_mode', research: 'research_mode', yolo: 'yolo_mode' };
+const _MODE_INDICATOR = {
+  plan: updatePlanModeIndicator, research: updateResearchModeIndicator, yolo: updateYoloModeIndicator,
+};
+
+async function toggleMode(mode) {
+  if (!currentSid) {
+    // 세션이 없으면 먼저 만들고 토글 — 빈 채팅에서도 모드 설정 가능.
+    currentSid = await ensureSession();
+    if (!currentSid) return;
+  }
+  const chip = document.querySelector(`.mode-chip[data-mode="${mode}"]`);
+  const willEnable = !(chip && chip.classList.contains('active'));
+  if (chip) { chip.classList.add('pending'); }
+  try {
+    const res = await fetch(`/api/sessions/${currentSid}/${_MODE_EP[mode]}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: willEnable }),
+    });
+    const data = await res.json();
+    _MODE_INDICATOR[mode](!!data[_MODE_KEY[mode]]);  // 서버 확정값으로 갱신
+  } catch {
+    if (chip) chip.classList.remove('pending');
+  }
+}
+
+// currentSid가 없을 때 빈 세션 생성 — 모드 칩이 첫 메시지 전에도 작동하게.
+async function ensureSession() {
+  if (currentSid) return currentSid;
+  try {
+    const r = await fetch('/api/sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    const d = await r.json();
+    const sid = d.uuid || d.session_id || null;
+    if (sid) {
+      currentSid = sid;
+      if (headerSid) headerSid.textContent = sid.slice(0, 8) + '…';
+      refreshSessions();
+    }
+    return sid;
+  } catch { return null; }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.mode-chip').forEach(chip => {
+    chip.addEventListener('click', () => toggleMode(chip.dataset.mode));
+  });
+});
 
 async function refreshYoloMode() {
   if (!currentSid) { updateYoloModeIndicator(false); return; }
