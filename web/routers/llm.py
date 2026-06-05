@@ -100,6 +100,50 @@ async def llm_test_provider(request: Request):
     return JSONResponse(result)
 
 
+# ── GPT OAuth 상태 / 재로그인 ────────────────────────────────────────────────
+
+@router.get("/api/llm/gpt-auth")
+async def gpt_auth_status():
+    """ChatGPT OAuth 프로파일 상태 — UI 재로그인 버튼 표시 판단용.
+    {ok: bool, remaining_min: int, account_id: str|None}"""
+    import time as _t
+    try:
+        from pipeline.auth.chatgpt import _load_profile
+        profile = _load_profile()
+        if not profile:
+            return JSONResponse({"ok": False, "reason": "프로파일 없음"})
+        remains = profile.get("expires_at", 0) - int(_t.time())
+        return JSONResponse({
+            "ok": True,
+            "remaining_min": max(0, remains // 60),
+            "account_id": profile.get("account_id"),
+            "has_refresh": bool(profile.get("refresh_token")),
+        })
+    except Exception as e:
+        return JSONResponse({"ok": False, "reason": str(e).split(chr(10))[0]})
+
+
+@router.post("/api/llm/gpt-relogin")
+async def gpt_relogin():
+    """ChatGPT OAuth 재로그인 — 시스템 브라우저로 OpenAI 로그인 흐름을 띄운다.
+    login()이 브라우저를 열고 로컬 콜백(포트 1455)으로 토큰을 받아 저장한다(블로킹).
+    사용자가 브라우저에서 로그인을 마칠 때까지 대기(최대 ~120초)."""
+    loop = asyncio.get_event_loop()
+    try:
+        from pipeline.auth.chatgpt import login
+        profile = await loop.run_in_executor(None, login)
+        return JSONResponse({
+            "ok": True,
+            "account_id": profile.get("account_id"),
+            "message": "GPT OAuth 재로그인 완료",
+        })
+    except Exception as e:
+        return JSONResponse(
+            {"ok": False, "error": str(e).split(chr(10))[0]},
+            status_code=500,
+        )
+
+
 # ── Model catalog ────────────────────────────────────────────────────────────
 
 def _fetch_models(provider_name: str) -> list[dict]:

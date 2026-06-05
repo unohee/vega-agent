@@ -4629,6 +4629,12 @@ async function loadLlmProviders() {
         await openAgentEditor(btn.dataset.editAgent);
       });
     });
+    llmList.querySelectorAll('[data-gpt-relogin]').forEach(btn => {
+      btn.addEventListener('click', async (ev) => {
+        ev.stopPropagation();
+        await gptRelogin(btn.dataset.gptRelogin, btn);
+      });
+    });
   } catch (e) {
     llmList.innerHTML = `<div class="dir-empty" style="padding:12px;color:var(--error)">${esc(e.message)}</div>`;
   }
@@ -4657,11 +4663,32 @@ function renderLlmRow(p, active) {
         <div class="llm-test-result" data-result-for="${esc(p.name)}"></div>
       </div>
       <div class="llm-row-actions">
+        ${p.auth_type === 'chatgpt_oauth' ? `<button data-gpt-relogin="${esc(p.name)}" title="OpenAI 계정으로 다시 로그인">재로그인</button>` : ''}
         <button data-edit-model="${esc(p.name)}">모델</button>
         <button data-edit-agent="${esc(p.name)}">에이전트</button>
         <button data-test="${esc(p.name)}">테스트</button>
       </div>
     </div>`;
+}
+
+async function gptRelogin(name, btn) {
+  const orig = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '브라우저 확인…'; }
+  showToast('브라우저에서 OpenAI 로그인을 진행하세요');
+  try {
+    const r = await fetch('/api/llm/gpt-relogin', { method: 'POST' });
+    const data = await r.json();
+    if (data.ok) {
+      showToast('GPT 재로그인 완료');
+      await loadLlmProviders();
+    } else {
+      showToast('재로그인 실패: ' + (data.error || '알 수 없음'));
+    }
+  } catch (e) {
+    showToast('재로그인 실패: ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = orig; }
+  }
 }
 
 async function setActiveLlm(name) {

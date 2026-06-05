@@ -42,6 +42,8 @@ REFRESH_BUFFER_S  = 300  # refresh 5 minutes before expiry
 from pipeline.data_paths import data_dir
 
 TOKEN_PATH = data_dir() / "openai_oauth.json"
+# 레거시(repo/data) 위치 — 구버전에서 업그레이드 시 _load_profile에서 자동 마이그레이션.
+_LEGACY_TOKEN_PATH = Path(__file__).parent.parent.parent / "data" / "openai_oauth.json"
 
 
 def _generate_code_verifier() -> str:
@@ -204,6 +206,14 @@ def _exchange_code(
 
 
 def _load_profile() -> Optional[dict]:
+    # 레거시 위치(repo/data)에만 있으면 새 위치(VEGA_DATA_DIR)로 1회 마이그레이션.
+    if not TOKEN_PATH.exists() and _LEGACY_TOKEN_PATH != TOKEN_PATH and _LEGACY_TOKEN_PATH.exists():
+        try:
+            TOKEN_PATH.parent.mkdir(parents=True, exist_ok=True)
+            TOKEN_PATH.write_text(_LEGACY_TOKEN_PATH.read_text())
+            TOKEN_PATH.chmod(0o600)
+        except Exception:
+            pass
     if not TOKEN_PATH.exists():
         return None
     try:
