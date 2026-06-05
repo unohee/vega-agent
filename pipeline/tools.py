@@ -284,7 +284,7 @@ TOOL_SCHEMAS: list[dict] = [
             "properties": {
                 "message_id": {"type": "string", "description": "메시지 ID"},
                 "attachment_id": {"type": "string", "description": "attachment_id (gmail_list_attachments 결과의 attachment_id)"},
-                "save_path": {"type": "string", "description": "저장할 절대경로 (예: /Users/unohee/Downloads/kb_card_2026_05.xlsx)"},
+                "save_path": {"type": "string", "description": "저장할 절대경로 (예: ~/Downloads/report.xlsx)"},
                 "account": {"type": "string", "enum": ["personal", "intrect"], "default": "personal"},
             },
             "required": ["message_id", "attachment_id", "save_path"],
