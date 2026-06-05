@@ -2598,6 +2598,47 @@ function hideThinking(bub) {
   if (badge) { if (badge._timer) clearInterval(badge._timer); badge.remove(); }
 }
 
+// ── 진행 표시 워치독 ──
+// 불변식: streaming 중에는 "회전 중 도구 배지" 또는 "thinking 배지" 또는 "흐르는 토큰"
+// 중 하나가 항상 살아있어야 한다. 이벤트 사이 idle 구간(도구 끝~다음 토큰, 토큰 끊김,
+// 긴 도구 실행 직전, 재접속 직후)에 표시가 사라져 "멈춘 듯" 보이는 것을 막는다.
+let _progressWatch = { bub: null, lastAt: 0, timer: null };
+const _PROGRESS_IDLE_MS = 900;   // 이 시간 이상 이벤트 없으면 thinking 자동 복원
+
+function _hasSpinningTool(bub) {
+  // done/error가 아닌(=아직 회전 중인) 도구 배지가 하나라도 있으면 true.
+  const badges = bub.querySelectorAll('.tool-badge');
+  for (const b of badges) {
+    if (b.classList.contains('done') || b.classList.contains('error')) continue;
+    if (b.querySelector('.spin-icon')) return true;
+  }
+  return false;
+}
+
+// 이벤트가 들어올 때마다 호출 — idle 타이머를 리셋한다.
+function markProgress() {
+  _progressWatch.lastAt = Date.now();
+}
+
+function startProgressWatch(bub) {
+  stopProgressWatch();
+  _progressWatch.bub = bub;
+  _progressWatch.lastAt = Date.now();
+  _progressWatch.timer = setInterval(() => {
+    if (!streaming || !bub || !bub.isConnected) { stopProgressWatch(); return; }
+    if (window._awaitingApproval === true) return;       // 승인/질문 대기 — 별도 카드가 표시 역할
+    if (_hasSpinningTool(bub)) return;                    // 도구 실행 중 — spin-icon이 진행 표시
+    if (Date.now() - _progressWatch.lastAt < _PROGRESS_IDLE_MS) return;
+    showThinking(bub);                                   // idle → "생각 중" 복원
+  }, 250);
+}
+
+function stopProgressWatch() {
+  if (_progressWatch.timer) clearInterval(_progressWatch.timer);
+  _progressWatch.timer = null;
+  _progressWatch.bub = null;
+}
+
 // ── 도구 배지 ──
 // 인터리빙: 도구 배지를 버블 끝에 시간순으로 배치. 버블의 마지막 자식이 이미
 // 도구 컨테이너면(연속 도구 호출) 거기에 묶고, 아니면(텍스트가 끼었으면) 새 컨테이너를 끝에 연다.
@@ -3330,6 +3371,7 @@ function setSendMode(stop) {
 
 // SSE 이벤트 한 묶음을 처리. 반환값: 'done' | 'error' | 'continue'
 function _handleSseEvent(event, payload, bub, typer, tokenBufRef) {
+  markProgress();  // 어떤 이벤트든 진행 신호 — idle 워치독 타이머 리셋
   if (event === 'thinking') {
     showThinking(bub);
   } else if (event === 'tool_start') {
@@ -3429,6 +3471,9 @@ async function streamChat(msg, opts) {
       bub = addAssistantBubble();
     }
     typer = makeTyper(bub);
+    // 재접속 직후엔 SSE 버퍼의 다음 이벤트가 한참 뒤에 올 수 있다(도구 실행 중 등).
+    // 미완료 도구 배지가 회전 중이 아니면 즉시 "생각 중"을 띄워 무표시 갭을 없앤다.
+    if (!_hasSpinningTool(bub)) showThinking(bub);
   } else {
     sendImages = [...pendingImages];
     sendFiles  = [...pendingFiles];
@@ -3446,6 +3491,8 @@ async function streamChat(msg, opts) {
     bub = addAssistantBubble();
     typer = makeTyper(bub);
   }
+
+  startProgressWatch(bub);  // 버블 내부 진행 표시 연속성 보장 (idle 갭 메우기)
 
   const MAX_RETRIES = 4;
   const RETRY_DELAYS = [1000, 2000, 4000, 8000];  // 지수 백오프
@@ -3586,6 +3633,7 @@ async function streamChat(msg, opts) {
     }
   }
 
+  stopProgressWatch();      // 진행 워치독 정지 (종료 후 thinking 재생성 방지)
   hideThinking(bub);        // 안전망 — 어떤 경로로 끝나든 생각 중 스피너 제거
   clearSpinningBadges(bub); // 안전망 — 미완료 도구 배지를 멈춤 상태로 마감
   streaming = false;
