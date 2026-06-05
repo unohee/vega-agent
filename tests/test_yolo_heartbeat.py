@@ -19,9 +19,13 @@ STALL = server.HEARTBEAT_STALL_SEC
 
 @pytest.fixture(autouse=True)
 def _clean():
+    # 전역 YOLO 플래그가 디스크/이전 테스트에서 새지 않도록 강제 off
+    _prev_global = server._YOLO_GLOBAL
+    server._YOLO_GLOBAL = False
     server._YOLO_MODE.pop(SID, None)
     server._heartbeat_resumes.pop(SID, None)
     yield
+    server._YOLO_GLOBAL = _prev_global
     server._YOLO_MODE.pop(SID, None)
     server._heartbeat_resumes.pop(SID, None)
 

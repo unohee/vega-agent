@@ -248,12 +248,52 @@ _PLAN_MODE: dict[str, bool] = {}
 # Volatile: cleared on session end.
 _RESEARCH_MODE: dict[str, bool] = {}
 
-# /yolo mode toggle — sid → bool. When True, auto-reruns host_exec with ask="off"
-# immediately upon receiving a __needs_approval__ response.
-# Hard-block list (_HOST_HARD_BLOCKED) and secret checks apply regardless of yolo.
-# AskUserQuestion, exit_plan_mode, improvement_pending still require user approval.
-# Volatile: cleared on session end.
+# YOLO mode — auto-reruns host_exec with ask="off" on a __needs_approval__ response.
+# Hard-block list + secret checks apply regardless. AskUserQuestion/exit_plan_mode/
+# improvement_pending still require user approval.
+#
+# YOLO is global (_YOLO_GLOBAL) — desktop is 1 machine = 1 user, so "auto-approve is on for
+# this machine" is natural. Once on, it persists across all sessions (new chat, switch) and
+# across restarts (flag file). plan/research stay per-session; yolo is machine-global.
+# _YOLO_MODE (per-session) is also honored for back-compat.
 _YOLO_MODE: dict[str, bool] = {}
+
+
+def _yolo_flag_path():
+    """YOLO global flag persistence file — survives restart (unattended long-running)."""
+    try:
+        from pipeline.data_paths import data_dir
+        return data_dir() / "yolo_global.flag"
+    except Exception:
+        from pathlib import Path
+        return Path(__file__).parent.parent / "data" / "yolo_global.flag"
+
+
+def _load_yolo_global() -> bool:
+    try:
+        return _yolo_flag_path().exists()
+    except Exception:
+        return False
+
+
+def _save_yolo_global(on: bool) -> None:
+    try:
+        p = _yolo_flag_path()
+        if on:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text("1")
+        elif p.exists():
+            p.unlink()
+    except Exception:
+        pass
+
+
+_YOLO_GLOBAL: bool = _load_yolo_global()  # restored from disk on restart
+
+
+def _yolo_on(sid: str) -> bool:
+    """Is YOLO auto-approval on for this session — global OR per-session."""
+    return _YOLO_GLOBAL or bool(_YOLO_MODE.get(sid))
 
 # /goal long-running mode — sid → bool. Enabled on /goal. Multi-turn long work has
 # legitimately long tool chains, so the hang watchdog threshold is extended. Volatile.
@@ -268,7 +308,7 @@ WATCHDOG_IDLE_LONG = 300.0      # yolo/goal/research — matches host_exec's own
 
 def _watchdog_idle_for(sid: str) -> float:
     """Hang watchdog threshold (seconds) for the session's current mode."""
-    if _YOLO_MODE.get(sid) or _GOAL_MODE.get(sid) or _RESEARCH_MODE.get(sid):
+    if _yolo_on(sid) or _GOAL_MODE.get(sid) or _RESEARCH_MODE.get(sid):
         return WATCHDOG_IDLE_LONG
     return WATCHDOG_IDLE_DEFAULT
 
@@ -279,13 +319,62 @@ def _watchdog_idle_for(sid: str) -> float:
 # _TASK_REGISTRY matters. A per-session resume cap prevents infinite re-resume.
 HEARTBEAT_INTERVAL = 120.0       # scan period (seconds)
 HEARTBEAT_STALL_SEC = 300.0      # idle longer than this → treated as stalled (seconds)
-HEARTBEAT_MAX_RESUMES = 3        # per-session auto-resume cap
+HEARTBEAT_MAX_RESUMES = 3        # memory-reg stall — per-session auto-resume cap
+HEARTBEAT_DB_MAX_RESUMES = 20    # autopilot tracked session — cumulative cap (prevents infinite revive)
 _heartbeat_resumes: dict[str, int] = {}   # sid → number of heartbeat resumes
+
+
+# ── Autopilot tracked sessions — explicitly registered "push to completion" sessions ──
+# Heartbeat revives them by DB even after a restart wipes the memory reg (unattended long-run).
+# Persisted to file. Tracking ends when the work completes or the user unregisters.
+def _autopilot_path():
+    try:
+        from pipeline.data_paths import data_dir
+        return data_dir() / "autopilot_sessions.json"
+    except Exception:
+        from pathlib import Path
+        return Path(__file__).parent.parent / "data" / "autopilot_sessions.json"
+
+
+def _load_autopilot() -> dict:
+    """{sid: {"resumes": int}} form."""
+    try:
+        import json as _json
+        p = _autopilot_path()
+        if p.exists():
+            return _json.loads(p.read_text())
+    except Exception:
+        pass
+    return {}
+
+
+def _save_autopilot(data: dict) -> None:
+    try:
+        import json as _json
+        p = _autopilot_path()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(_json.dumps(data, ensure_ascii=False))
+    except Exception:
+        pass
+
+
+def _autopilot_register(sid: str) -> None:
+    data = _load_autopilot()
+    if sid not in data:
+        data[sid] = {"resumes": 0}
+        _save_autopilot(data)
+
+
+def _autopilot_unregister(sid: str) -> None:
+    data = _load_autopilot()
+    if sid in data:
+        data.pop(sid, None)
+        _save_autopilot(data)
 
 
 def _is_stalled_yolo(sid: str, reg: dict, now_monotonic: float) -> bool:
     """Is this a heartbeat resume target — YOLO + not done + idle over threshold + not awaiting + under cap."""
-    if not _YOLO_MODE.get(sid):
+    if not _yolo_on(sid):
         return False
     if reg.get("done"):
         return False
@@ -636,6 +725,7 @@ def _format_db_context(hits: list[dict]) -> str:
 
 def handle_slash(user_text: str, sid: str) -> dict | None:
     """Handle slash command → {"text": str} or {"text": str, "switch_session": sid} or None."""
+    global _YOLO_GLOBAL  # /yolo, /yolo-off toggle global
     parts = user_text.split(None, 1)
     cmd = parts[0].lower()
     args = parts[1].strip() if len(parts) > 1 else ""
@@ -810,16 +900,21 @@ def handle_slash(user_text: str, sid: str) -> dict | None:
         return {"text": "🔬 Research 모드 " + ("해제됨." if was else "이미 꺼져있었음.")}
 
     if cmd == "/yolo":
-        _YOLO_MODE[sid] = True
+        _YOLO_GLOBAL = True
+        _save_yolo_global(True)
         return {"text": (
-            "⚡ **YOLO 모드 켜짐.** 이제 host_exec의 allowlist 외 명령도 사용자 승인 없이 "
-            "자동 실행한다. 단, 하드 차단(rm -rf /, mkfs, > /dev/ 등)과 시크릿 검사는 그대로 적용.\n\n"
+            "⚡ **YOLO 모드 켜짐 (전역).** 이제 모든 세션에서 host_exec의 allowlist 외 명령도 "
+            "사용자 승인 없이 자동 실행한다. 단, 하드 차단(rm -rf /, mkfs, > /dev/ 등)과 시크릿 "
+            "검사는 그대로 적용.\n\n"
             "AskUserQuestion(선택지), exit_plan_mode, self_improve 패치는 여전히 사용자 승인 필요.\n\n"
             "`/yolo-off`로 해제."
         )}
 
     if cmd == "/yolo-off":
-        was = _YOLO_MODE.pop(sid, False)
+        was = _YOLO_GLOBAL or bool(_YOLO_MODE)
+        _YOLO_GLOBAL = False
+        _YOLO_MODE.clear()
+        _save_yolo_global(False)
         return {"text": "⚡ YOLO 모드 " + ("해제됨." if was else "이미 꺼져있었음.")}
 
     if cmd == "/help":
@@ -1282,8 +1377,8 @@ async def get_research_mode(sid: str):
 
 @app.get("/api/sessions/{sid}/yolo-mode")
 async def get_yolo_mode(sid: str):
-    """Query current session YOLO mode state — for header badge update."""
-    return JSONResponse({"yolo_mode": bool(_YOLO_MODE.get(sid, False))})
+    """Query YOLO mode — global. Any session's query sees the global state."""
+    return JSONResponse({"yolo_mode": _yolo_on(sid)})
 
 
 # ── Mode toggles (called from inline input chips) ──
@@ -1317,7 +1412,52 @@ async def set_research_mode_ep(sid: str, request: Request):
 
 @app.post("/api/sessions/{sid}/yolo-mode")
 async def set_yolo_mode_ep(sid: str, request: Request):
-    return await _toggle_mode(request, sid, _YOLO_MODE, "yolo_mode")
+    """YOLO toggle — global. sid is path-compat only; flips the global flag."""
+    global _YOLO_GLOBAL
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    if "enabled" in body:
+        _YOLO_GLOBAL = bool(body["enabled"])
+    else:
+        _YOLO_GLOBAL = not _YOLO_GLOBAL
+    if not _YOLO_GLOBAL:
+        _YOLO_MODE.clear()
+    _save_yolo_global(_YOLO_GLOBAL)  # survive restart
+    return JSONResponse({"yolo_mode": _YOLO_GLOBAL})
+
+
+@app.post("/api/sessions/{sid}/resume")
+async def resume_session_ep(sid: str, request: Request):
+    """Resume a stalled session with 'continue' — manual trigger (autopilot bootstrap/debug).
+    Skips if a task is already live (not done + recent activity).
+    body {"autopilot": true} registers it for autopilot — heartbeat keeps pushing across restarts."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    if body.get("autopilot"):
+        _autopilot_register(sid)
+    reg = _TASK_REGISTRY.get(sid)
+    if reg and not reg.get("done"):
+        idle = time.monotonic() - reg.get("last_activity", time.monotonic())
+        if idle < HEARTBEAT_STALL_SEC:
+            return JSONResponse({"resumed": False, "reason": f"already running (idle {int(idle)}s)",
+                                 "autopilot": bool(body.get("autopilot"))})
+    try:
+        _resume_stalled_session(sid)
+        return JSONResponse({"resumed": True, "resume_count": _heartbeat_resumes.get(sid, 0),
+                             "autopilot": bool(body.get("autopilot"))})
+    except Exception as e:
+        return JSONResponse({"resumed": False, "reason": str(e)}, status_code=500)
+
+
+@app.post("/api/sessions/{sid}/autopilot-off")
+async def autopilot_off_ep(sid: str):
+    """Stop autopilot tracking — heartbeat no longer auto-resumes this session."""
+    _autopilot_unregister(sid)
+    return JSONResponse({"autopilot": False})
 
 
 # Grace timeout for approval wait (seconds). Sessions exceeding this without response are treated as zombies.
@@ -1589,14 +1729,57 @@ def _resume_stalled_session(sid: str) -> None:
           f"(resume {_heartbeat_resumes[sid]}/{HEARTBEAT_MAX_RESUMES})")
 
 
+def _autopilot_looks_done(sid: str) -> bool:
+    """If the autopilot session's last assistant message states completion, treat it as done.
+    A heuristic to stop infinite revive — unregister when a completion signal appears."""
+    try:
+        from pipeline.session_store import load_history
+        hist = load_history(sid)
+    except Exception:
+        return False
+    for m in reversed(hist):
+        if m.get("role") == "assistant":
+            text = (m.get("content") or "")[-400:]
+            markers = ["완료.", "완료됐", "모두 끝", "작업 끝", "전부 끝냈", "done.",
+                       "다 끝났", "최종 완료", "✅ 완료", "작업을 마쳤"]
+            return any(mk in text for mk in markers)
+    return False
+
+
+def _resume_autopilot_db(sid: str) -> bool:
+    """Revive an autopilot session by DB without a memory reg. Core of restart-surviving autonomy.
+    Returns True if actually resumed."""
+    data = _load_autopilot()
+    info = data.get(sid)
+    if info is None:
+        return False
+    if info.get("resumes", 0) >= HEARTBEAT_DB_MAX_RESUMES:
+        _autopilot_unregister(sid)
+        print(f"[heartbeat] autopilot {sid[:8]} hit resume cap → untracked")
+        return False
+    if _autopilot_looks_done(sid):
+        _autopilot_unregister(sid)
+        print(f"[heartbeat] autopilot {sid[:8]} looks done → untracked")
+        return False
+    _resume_stalled_session(sid)
+    info["resumes"] = info.get("resumes", 0) + 1
+    data[sid] = info
+    _save_autopilot(data)
+    print(f"[heartbeat] autopilot DB revive: {sid[:8]} (cumulative {info['resumes']}/{HEARTBEAT_DB_MAX_RESUMES})")
+    return True
+
+
 async def _yolo_heartbeat() -> None:
     """Periodically find stalled YOLO sessions and auto-resume. Started once from lifespan.
     self-wake refreshes last_activity inside the live task, so it won't hit the 5min idle
-    condition → heartbeat only catches dead or truly stalled sessions (no double resume)."""
+    condition → heartbeat only catches dead or truly stalled sessions (no double resume).
+    Two layers: (1) memory-reg stalled YOLO sessions (2) autopilot sessions revive by DB
+    even without a reg (survives restart)."""
     while True:
         try:
             await asyncio.sleep(HEARTBEAT_INTERVAL)
             now = time.monotonic()
+            # (1) memory-reg based — live-then-stalled YOLO sessions
             stalled = [
                 sid for sid, reg in list(_TASK_REGISTRY.items())
                 if _is_stalled_yolo(sid, reg, now)
@@ -1606,6 +1789,17 @@ async def _yolo_heartbeat() -> None:
                     _resume_stalled_session(sid)
                 except Exception as e:
                     print(f"[heartbeat] resume failed {sid[:8]}: {e}")
+            # (2) autopilot sessions — revive by DB if not running in memory (survives restart)
+            for sid in list(_load_autopilot().keys()):
+                reg = _TASK_REGISTRY.get(sid)
+                live = reg and not reg.get("done") and \
+                    (now - reg.get("last_activity", now)) < HEARTBEAT_STALL_SEC
+                if live:
+                    continue
+                try:
+                    _resume_autopilot_db(sid)
+                except Exception as e:
+                    print(f"[heartbeat] autopilot revive failed {sid[:8]}: {e}")
         except asyncio.CancelledError:
             raise
         except Exception as e:
@@ -1698,7 +1892,7 @@ async def _run_gpt_task(sid: str, history: list[dict], images: list[dict]) -> No
                 command = parsed.get("command", "")
                 # YOLO mode: skip approval wait and re-run immediately with ask="off".
                 # Hard-block and secret checks apply inside host_exec regardless of ask mode — safe.
-                if _YOLO_MODE.get(sid):
+                if _yolo_on(sid):
                     from pipeline.tools_code import host_exec as _host_exec
                     _push_event(reg, {"event": "tool_start", "data": {
                         "call_id": f"{call_id}-yolo", "name": "host_exec",
@@ -1903,7 +2097,7 @@ async def _run_gpt_task(sid: str, history: list[dict], images: list[dict]) -> No
     # don't end with error immediately — self-wake once to auto-resume and let it tell whether
     # it was a transient delay or a real stuck. If it hangs again after resume, then end.
     WATCHDOG_IDLE = _watchdog_idle_for(sid)
-    SELF_WAKE_MAX = 1 if _YOLO_MODE.get(sid) else 0  # only yolo allows auto-resume
+    SELF_WAKE_MAX = 1 if _yolo_on(sid) else 0  # only yolo allows auto-resume
 
     async def _watchdog(target_task: asyncio.Task):
         while not target_task.done():
