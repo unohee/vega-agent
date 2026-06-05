@@ -153,6 +153,9 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(_warmup_local_llm())
 
+    # YOLO heartbeat — find stalled YOLO sessions in the background and auto-resume
+    _hb_task = asyncio.create_task(_yolo_heartbeat())
+
     # Docker 코드 샌드박스 자동 확보 (백그라운드) — 기동 시 컨테이너를 띄워두어
     # 첫 bash_exec/python_exec 호출 시 빌드/기동 지연을 없앤다. Docker 없으면 조용히 skip.
     async def _warmup_sandbox():
@@ -189,6 +192,9 @@ async def lifespan(app: FastAPI):
         print(f"[ProjectState] table init warning: {e}")
 
     yield
+
+    # Cancel heartbeat task on shutdown
+    _hb_task.cancel()
 
 
 app = FastAPI(title="VEGA", lifespan=lifespan)
@@ -265,6 +271,30 @@ def _watchdog_idle_for(sid: str) -> float:
     if _YOLO_MODE.get(sid) or _GOAL_MODE.get(sid) or _RESEARCH_MODE.get(sid):
         return WATCHDOG_IDLE_LONG
     return WATCHDOG_IDLE_DEFAULT
+
+
+# ── YOLO heartbeat — find stalled YOLO sessions in the background and auto-resume ──
+# Covers cases self-wake (one in-task resume) misses — disconnected, fully terminated, or
+# genuinely stalled >5min sessions. Desktop is 1 machine = 1 user, so only this machine's
+# _TASK_REGISTRY matters. A per-session resume cap prevents infinite re-resume.
+HEARTBEAT_INTERVAL = 120.0       # scan period (seconds)
+HEARTBEAT_STALL_SEC = 300.0      # idle longer than this → treated as stalled (seconds)
+HEARTBEAT_MAX_RESUMES = 3        # per-session auto-resume cap
+_heartbeat_resumes: dict[str, int] = {}   # sid → number of heartbeat resumes
+
+
+def _is_stalled_yolo(sid: str, reg: dict, now_monotonic: float) -> bool:
+    """Is this a heartbeat resume target — YOLO + not done + idle over threshold + not awaiting + under cap."""
+    if not _YOLO_MODE.get(sid):
+        return False
+    if reg.get("done"):
+        return False
+    if reg.get("awaiting_approval"):        # awaiting user input is normal — not stalled
+        return False
+    if _heartbeat_resumes.get(sid, 0) >= HEARTBEAT_MAX_RESUMES:
+        return False
+    idle = now_monotonic - reg.get("last_activity", now_monotonic)
+    return idle > HEARTBEAT_STALL_SEC
 
 
 _RESEARCH_MODE_GUIDE = """## 연구 모드 (Research Mode) 활성화
@@ -1534,6 +1564,54 @@ def _push_event(reg: dict, event: dict) -> None:
     reg["consumer"].set()
 
 
+def _resume_stalled_session(sid: str) -> None:
+    """Resume a stalled YOLO session with a 'continue' turn on a fresh task.
+    Discard the old reg and replace — cleanly replaces a dead/disconnected task."""
+    history = _get_history(sid)
+    resume_msg = ("(시스템: 이 작업이 한동안 멈춰 있었다. 중단 지점부터 이어서 계속 진행해. "
+                  "이미 끝난 작업을 반복하지 말고 남은 것만 마저 하고, 다 끝나면 완료를 명시해.)")
+    if not (history and history[-1].get("role") == "user" and history[-1].get("content") == resume_msg):
+        history.append({"role": "user", "content": resume_msg})
+    _heartbeat_resumes[sid] = _heartbeat_resumes.get(sid, 0) + 1
+    reg = {
+        "task": None,
+        "buf": [],
+        "done": False,
+        "consumer": asyncio.Event(),
+        "approval_queue": asyncio.Queue(),
+        "last_activity": time.monotonic(),
+        "awaiting_approval": False,
+        "_heartbeat_resumed": True,
+    }
+    _TASK_REGISTRY[sid] = reg
+    reg["task"] = asyncio.create_task(_run_gpt_task(sid, history, []))
+    print(f"[heartbeat] resumed stalled YOLO session: {sid[:8]} "
+          f"(resume {_heartbeat_resumes[sid]}/{HEARTBEAT_MAX_RESUMES})")
+
+
+async def _yolo_heartbeat() -> None:
+    """Periodically find stalled YOLO sessions and auto-resume. Started once from lifespan.
+    self-wake refreshes last_activity inside the live task, so it won't hit the 5min idle
+    condition → heartbeat only catches dead or truly stalled sessions (no double resume)."""
+    while True:
+        try:
+            await asyncio.sleep(HEARTBEAT_INTERVAL)
+            now = time.monotonic()
+            stalled = [
+                sid for sid, reg in list(_TASK_REGISTRY.items())
+                if _is_stalled_yolo(sid, reg, now)
+            ]
+            for sid in stalled:
+                try:
+                    _resume_stalled_session(sid)
+                except Exception as e:
+                    print(f"[heartbeat] resume failed {sid[:8]}: {e}")
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            print(f"[heartbeat] scan error: {e}")
+
+
 async def _run_gpt_task(sid: str, history: list[dict], images: list[dict]) -> None:
     """
     Background GPT task fully decoupled from the connection.
@@ -2056,6 +2134,7 @@ async def chat_stream(request: Request):
         history = _get_history(sid)
         history.append({"role": "user", "content": augmented})
         append_message(sid, "human", display_text)
+        _heartbeat_resumes.pop(sid, None)  # user sent a new message → reset heartbeat resume count
 
         reg = {
             "task": None,
