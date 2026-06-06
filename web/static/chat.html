@@ -986,6 +986,9 @@ header button, header button *, header a, header a * { -webkit-app-region: no-dr
 }
 .tool-caret { font-size: 9px; opacity: .4; margin-left: 4px; transition: opacity .15s; }
 .tool-badge:hover .tool-caret { opacity: .7; }
+/* 완료 배지의 시작 라벨(무엇을 했는지) — 결과 요약 앞에 흐리게 유지 */
+.tool-start { opacity: .72; }
+.tool-sep { opacity: .35; }
 .tool-args {
   margin: 0; padding: 8px 10px;
   font-family: monospace; font-size: 11px; line-height: 1.5;
@@ -2683,6 +2686,9 @@ function addToolBadge(bub, name, label, callId, step, args) {
   const badge = document.createElement('div');
   badge.className = 'tool-badge';
   badge.dataset.toolName = name;
+  // 시작 라벨(무엇을 왜 하는지: "🔍 검색 중: 삼성전자 종가")을 보존 —
+  // 완료 시 결과 요약으로 덮이지 않게 updateToolBadge에서 앞에 다시 붙인다.
+  badge.dataset.startLabel = label || '';
   if (callId) badge.dataset.callId = callId;
   const stepLabel = step ? `<span class="tool-step">#${step}</span>` : '';
   const caret = args ? `<span class="tool-caret">▸</span>` : '';
@@ -2754,7 +2760,25 @@ function updateToolBadge(bub, name, summary, callId) {
   const wrap = badge.closest('.tool-item');
   const hasArgs = wrap && wrap.querySelector('.tool-args');
   const caret = hasArgs ? `<span class="tool-caret">▸</span>` : '';
-  badge.innerHTML = `<span>${isError ? '✗' : '✓'}</span><span class="tool-label">${esc(summary.replace(/^[✓✗]\s*/,''))}</span>${caret}`;
+  // 시작 라벨(무엇을 했는지)을 보존해 결과 요약과 함께 표시 — "검색만 한다"는
+  // 답답함의 원인은 무슨 검색이었는지가 완료 시 사라지기 때문. "시작 · 결과" 형태로 합친다.
+  let cleanSummary = summary.replace(/^[✓✗]\s*/, '').trim();
+  const rawStart = (badge.dataset.startLabel || '').trim();
+  // 시작 라벨에서 진행형("…중", "중…", "중: X")을 정리해 '의도'만 남긴다.
+  //   "🔍 검색 중: 삼성전자 종가" → "🔍 검색: 삼성전자 종가"
+  //   "📧 메일 읽는 중…"          → "📧 메일 읽기"
+  let startTrim = rawStart
+    .replace(/\s*중[…\.]*\s*:\s*/, ': ')   // "검색 중: X" → "검색: X"
+    .replace(/(읽는|하는|그리는)\s*중[…\.]*\s*$/, m => m.replace(/는?\s*중[…\.]*\s*$/, '기'))
+    .replace(/\s*중[…\.]*\s*$/, '')         // 남은 후행 "중…" 제거
+    .trim();
+  // 시작·결과가 같은 선두 이모지로 중복되면 결과 쪽 이모지를 제거(시각 중복 방지).
+  const emoji = startTrim.match(/^(\p{Emoji_Presentation}|\p{Extended_Pictographic})/u);
+  if (emoji && cleanSummary.startsWith(emoji[1])) {
+    cleanSummary = cleanSummary.slice(emoji[1].length).trim();
+  }
+  const startHtml = startTrim ? `<span class="tool-start">${esc(startTrim)}</span><span class="tool-sep"> · </span>` : '';
+  badge.innerHTML = `<span>${isError ? '✗' : '✓'}</span>${startHtml}<span class="tool-label">${esc(cleanSummary)}</span>${caret}`;
   if (hasArgs) {
     const argsBox = wrap.querySelector('.tool-args');
     badge.style.cursor = 'pointer';
