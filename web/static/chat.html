@@ -1622,7 +1622,6 @@ button.status-item:hover { background: var(--surface2); color: var(--text); }
       </svg>
     </button>
   </div>
-  <button id="lang-toggle-btn" title="언어 / Language" aria-label="언어 전환" style="margin-left:6px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--muted);font-size:11px;font-weight:600;padding:2px 7px;cursor:pointer;height:26px;transition:border-color .15s,color .15s;-webkit-app-region:no-drag;">KO</button>
 </header>
 
 <div id="sidebar-overlay"></div>
@@ -6246,9 +6245,6 @@ function applyLang(lang) {
     const key = el.dataset.i18nPlaceholder;
     if (key in strings) el.placeholder = strings[key];
   });
-  // 언어 토글 버튼 레이블 업데이트
-  const langBtn = document.getElementById('lang-toggle-btn');
-  if (langBtn) langBtn.textContent = strings.lang_btn;
   // 홈 버튼 title
   const homeBtn = document.getElementById('home-btn');
   if (homeBtn) homeBtn.title = strings.home_title;
@@ -6270,16 +6266,10 @@ function applyLang(lang) {
 }
 
 (function initLang() {
+  // 언어 토글 버튼은 제거됨(헤더 정리). 저장된 언어만 적용한다.
+  // 언어 전환이 필요하면 localStorage.vega_lang 을 'en'/'ko'로 설정 후 새로고침.
   const saved = localStorage.getItem('vega_lang') || 'ko';
   applyLang(saved);
-  const btn = document.getElementById('lang-toggle-btn');
-  if (!btn) return;
-  btn.addEventListener('click', () => {
-    const current = localStorage.getItem('vega_lang') || 'ko';
-    const next = current === 'ko' ? 'en' : 'ko';
-    localStorage.setItem('vega_lang', next);
-    applyLang(next);
-  });
 })();
 </script>
 </body>
