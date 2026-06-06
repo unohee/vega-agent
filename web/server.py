@@ -1763,9 +1763,27 @@ def _resume_stalled_session(sid: str) -> None:
           f"(resume {_heartbeat_resumes[sid]}/{HEARTBEAT_MAX_RESUMES})")
 
 
+# Whole-task done signals — the work itself is finished. Plain '완료.' is excluded
+# (prevents reading a partial-completion report as full completion).
+_DONE_MARKERS = [
+    "모든 작업 완료", "모든 작업을 완료", "작업 전체 완료", "전체 작업 완료",
+    "모든 chunk 완료", "전부 완료했", "전부 끝냈", "모두 끝냈", "모두 완료했",
+    "최종 완료", "작업을 마쳤", "작업 종료", "더 할 일 없", "더 이상 할 일",
+    "남은 작업 없", "남은 게 없", "all done", "all complete", "fully complete",
+    "✅ 전체", "🎉 완료",
+]
+# Progress signals — if present, it's partial/in-progress, not finished.
+_PROGRESS_MARKERS = [
+    "남은", "남았", "다음", "이어서", "계속", "아직", "진행 중", "진행중",
+    "todo", "to-do", "chunk0", "chunk 0", "part0", "next:", "남겨", "마저",
+    "이제", "재개", "중단 지점", "checkpoint", "체크포인트",
+]
+
+
 def _autopilot_looks_done(sid: str) -> bool:
-    """If the autopilot session's last assistant message states completion, treat it as done.
-    A heuristic to stop infinite revive — unregister when a completion signal appears."""
+    """True if the autopilot session finished the WHOLE task. Prevents infinite revive.
+    Avoids false positives: a 'chunk01/02 done, rest remaining' report is NOT full completion.
+    → done only when an explicit whole-task signal is present AND no progress signal."""
     try:
         from pipeline.session_store import load_history
         hist = load_history(sid)
@@ -1773,10 +1791,12 @@ def _autopilot_looks_done(sid: str) -> bool:
         return False
     for m in reversed(hist):
         if m.get("role") == "assistant":
-            text = (m.get("content") or "")[-400:]
-            markers = ["완료.", "완료됐", "모두 끝", "작업 끝", "전부 끝냈", "done.",
-                       "다 끝났", "최종 완료", "✅ 완료", "작업을 마쳤"]
-            return any(mk in text for mk in markers)
+            text = (m.get("content") or "")[-500:].lower()
+            has_done = any(mk.lower() in text for mk in _DONE_MARKERS)
+            if not has_done:
+                return False
+            has_progress = any(mk.lower() in text for mk in _PROGRESS_MARKERS)
+            return not has_progress
     return False
 
 

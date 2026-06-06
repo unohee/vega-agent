@@ -66,7 +66,7 @@ def test_autopilot_done_detection(monkeypatch):
     """마지막 assistant 메시지가 완료를 명시하면 done으로 본다."""
     def fake_hist(sid):
         return [{"role": "user", "content": "해줘"},
-                {"role": "assistant", "content": "다 처리했어. 작업 완료."}]
+                {"role": "assistant", "content": "모든 작업 완료. 산출물 저장하고 검증까지 끝냈다."}]
     import pipeline.session_store as ss
     monkeypatch.setattr(ss, "load_history", fake_hist)
     assert server._autopilot_looks_done("x") is True
@@ -76,6 +76,26 @@ def test_autopilot_not_done(monkeypatch):
     """완료 신호가 없으면 계속 진행 대상."""
     def fake_hist(sid):
         return [{"role": "assistant", "content": "다음 chunk 실행 중… 계속 진행할게."}]
+    import pipeline.session_store as ss
+    monkeypatch.setattr(ss, "load_history", fake_hist)
+    assert server._autopilot_looks_done("x") is False
+
+
+def test_autopilot_partial_done_not_finished(monkeypatch):
+    """회귀: 부분 완료('chunk01/02 완료, 나머지 남음')를 전체 완료로 오판하지 않는다.
+    실제로 이 오판 때문에 자율 세션이 60% 남았는데 추적 해제됐다."""
+    def fake_hist(sid):
+        return [{"role": "assistant",
+                 "content": "chunk01, chunk02는 manifest까지 완료. 남은 건 chunk03~09. 이어서 진행할게."}]
+    import pipeline.session_store as ss
+    monkeypatch.setattr(ss, "load_history", fake_hist)
+    assert server._autopilot_looks_done("x") is False
+
+
+def test_autopilot_done_with_progress_marker_not_finished(monkeypatch):
+    """전체 완료 신호가 있어도 진행 신호가 섞이면 미완료."""
+    def fake_hist(sid):
+        return [{"role": "assistant", "content": "전부 완료했지만 아직 검증이 남았어."}]
     import pipeline.session_store as ss
     monkeypatch.setattr(ss, "load_history", fake_hist)
     assert server._autopilot_looks_done("x") is False
