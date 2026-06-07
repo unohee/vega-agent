@@ -205,13 +205,24 @@ fn show_main_window(app: &tauri::AppHandle) {
 
 #[cfg(desktop)]
 fn open_settings_window(app: &tauri::AppHandle) {
+    open_settings_window_at(app, "");
+}
+
+/// section이 비어있지 않으면 settings.html#<section>으로 열어 해당 탭부터 표시.
+#[cfg(desktop)]
+fn open_settings_window_at(app: &tauri::AppHandle, section: &str) {
     if let Some(win) = app.get_webview_window("settings") {
         let _ = win.show();
         let _ = win.set_focus();
+        // 이미 열려있으면 fragment를 갱신해 해당 탭으로 전환(settings.html의 hashchange 처리).
+        if !section.is_empty() {
+            let _ = win.eval(&format!("window.location.hash = {section:?}; window.dispatchEvent(new HashChangeEvent('hashchange'))"));
+        }
         return;
     }
 
-    let settings_html = if cfg!(feature = "client") { "client-settings.html" } else { "settings.html" };
+    let base = if cfg!(feature = "client") { "client-settings.html" } else { "settings.html" };
+    let settings_html = if section.is_empty() { base.to_string() } else { format!("{base}#{section}") };
     let title = strings().settings_title;
     let _ = WebviewWindowBuilder::new(app, "settings", WebviewUrl::App(settings_html.into()))
         .title(title)
@@ -222,6 +233,14 @@ fn open_settings_window(app: &tauri::AppHandle) {
         .title_bar_style(tauri::TitleBarStyle::Overlay)
         .hidden_title(true)
         .build();
+}
+
+/// 프론트(chat.html)에서 설정 창을 여는 invoke 커맨드.
+/// 톱니바퀴 버튼·우하단 모델 칩이 호출한다. section: "model"|"providers"|... (빈 문자열이면 기본 탭).
+#[cfg(desktop)]
+#[tauri::command]
+fn open_settings(app: tauri::AppHandle, section: Option<String>) {
+    open_settings_window_at(&app, section.as_deref().unwrap_or(""));
 }
 
 // ── LaunchAgent 관리 (daemon 전용) ────────────────────────────────────────────
@@ -391,12 +410,13 @@ pub fn run() {
             client_config::set_lang,
         ]);
     }
-    // 데스크탑 daemon 전용 (client/mobile이 아닐 때만): 언어 커맨드만.
+    // 데스크탑 daemon 전용 (client/mobile이 아닐 때만): 언어 + 설정창 커맨드.
     #[cfg(all(feature = "daemon", not(mobile), not(feature = "client")))]
     {
         builder = builder.invoke_handler(tauri::generate_handler![
             client_config::get_lang,
             client_config::set_lang,
+            open_settings,
         ]);
     }
 

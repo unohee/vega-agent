@@ -422,20 +422,25 @@ function applyLang(lang) {
 }
 
 // ── 사이드바 네비게이션 ──
+const PANE_LOADERS = { mcp: () => loadMcp(), model: () => loadModelPane(), tools: () => loadToolsPane(),
+  agent: () => loadAgentMd(), memory: () => loadMemoryPane(), voice: () => loadVoice(), advanced: () => loadScheduler() };
+function activatePane(name) {
+  const item = document.querySelector(`.nav-item[data-pane="${name}"]`);
+  if (!item) return;
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.querySelectorAll('.pane').forEach(p => p.classList.remove('active'));
+  item.classList.add('active');
+  $('pane-' + name).classList.add('active');
+  if (PANE_LOADERS[name]) PANE_LOADERS[name]();
+  if (location.hash.slice(1) !== name) { try { history.replaceState(null, '', '#' + name); } catch {} }
+}
 document.querySelectorAll('.nav-item').forEach(item => {
-  item.addEventListener('click', () => {
-    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-    document.querySelectorAll('.pane').forEach(p => p.classList.remove('active'));
-    item.classList.add('active');
-    $('pane-' + item.dataset.pane).classList.add('active');
-    if (item.dataset.pane === 'mcp') loadMcp();
-    if (item.dataset.pane === 'model') loadModelPane();
-    if (item.dataset.pane === 'tools') loadToolsPane();
-    if (item.dataset.pane === 'agent') loadAgentMd();
-    if (item.dataset.pane === 'memory') loadMemoryPane();
-    if (item.dataset.pane === 'voice') loadVoice();
-    if (item.dataset.pane === 'advanced') loadScheduler();
-  });
+  item.addEventListener('click', () => activatePane(item.dataset.pane));
+});
+// 외부(톱니바퀴·모델 칩)에서 #section으로 열거나 전환할 때 해당 탭으로 이동
+window.addEventListener('hashchange', () => {
+  const sec = location.hash.slice(1);
+  if (sec && document.getElementById('pane-' + sec)) activatePane(sec);
 });
 
 // ── 공통: 백엔드 base ──
@@ -800,8 +805,10 @@ $('sched-save').addEventListener('click', async () => {
   const state = loadLocal();
   $('server-url').value = state.serverUrl;
   $('close-to-tray').classList.toggle('on', state.closeToTray);
-  loadModelPane();    // 기본 진입 = Model
-  loadProviders();
+  loadProviders();    // Providers는 Model 패널 provider 목록과 별개로 미리 로드
+  // 초기 탭: URL #section(톱니바퀴/모델 칩이 지정) 우선, 없으면 Model
+  const initSec = location.hash.slice(1);
+  activatePane(initSec && document.getElementById('pane-' + initSec) ? initSec : 'model');
 })();
 </script>
 </body>
