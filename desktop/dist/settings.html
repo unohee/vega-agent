@@ -122,6 +122,10 @@
       <div class="nav-item active" data-pane="model"><span class="ico">◆</span><span id="t-nav-model">Model</span></div>
       <div class="nav-item" data-pane="providers"><span class="ico">⚡</span><span id="t-nav-prov">Providers</span></div>
       <div class="nav-item" data-pane="mcp"><span class="ico">⚙</span><span id="t-nav-mcp">MCP</span></div>
+      <div class="nav-item" data-pane="tools"><span class="ico">🧰</span><span id="t-nav-tools">Tools &amp; Keys</span></div>
+      <div class="nav-item" data-pane="agent"><span class="ico">📝</span><span id="t-nav-agent">Agent</span></div>
+      <div class="nav-item" data-pane="voice"><span class="ico">🎙</span><span id="t-nav-voice">Voice</span></div>
+      <div class="nav-item" data-pane="advanced"><span class="ico">⏱</span><span id="t-nav-adv">Advanced</span></div>
       <div class="nav-item" data-pane="app"><span class="ico">▦</span><span id="t-nav-app">App</span></div>
       <div class="nav-item" data-pane="lang"><span class="ico">⌘</span><span id="t-nav-lang">Language</span></div>
     </nav>
@@ -202,6 +206,89 @@
             <button class="btn" id="mcp-reload">Reload</button>
             <button class="btn primary" id="mcp-save">Save server</button>
           </div>
+        </div>
+      </div>
+
+      <!-- ── Tools & Keys ── -->
+      <div class="pane" id="pane-tools">
+        <h1 id="t-tools-h">Tools &amp; Keys</h1>
+        <p class="desc" id="t-tools-d">도구 그룹을 켜고 끕니다. 끄면 LLM 프롬프트에서 제외돼 토큰을 아낍니다.</p>
+        <div class="section">
+          <div class="row">
+            <div class="field"><label id="t-tools-sum-lbl">활성 도구</label><div class="hint" id="tools-summary">—</div></div>
+            <button class="btn" id="tools-save">적용</button>
+          </div>
+          <div id="tools-list"><div class="empty">불러오는 중…</div></div>
+          <div class="row"><span class="status" id="tools-status"></span></div>
+        </div>
+      </div>
+
+      <!-- ── Agent (지침 .md) ── -->
+      <div class="pane" id="pane-agent">
+        <h1 id="t-agent-h">Agent</h1>
+        <p class="desc" id="t-agent-d">에이전트 행동 지침. _default(불변 헌법)와 RULES(가변 규칙)를 직접 편집합니다.</p>
+        <div class="section">
+          <div class="row">
+            <div class="field"><label id="t-agent-sel-lbl">지침 파일</label><div class="hint" id="agent-md-hint">data/agents/{name}.md</div></div>
+            <select id="agent-md-select">
+              <option value="_default">_default (헌법)</option>
+              <option value="RULES">RULES (가변 규칙)</option>
+            </select>
+          </div>
+          <div class="field" style="margin:8px 0">
+            <textarea id="agent-md-text" spellcheck="false" style="min-height:260px">불러오는 중…</textarea>
+          </div>
+          <div class="actions"><span class="status" id="agent-md-status"></span><button class="btn primary" id="agent-md-save">저장</button></div>
+        </div>
+      </div>
+
+      <!-- ── Voice (STT) ── -->
+      <div class="pane" id="pane-voice">
+        <h1 id="t-voice-h">Voice</h1>
+        <p class="desc" id="t-voice-d">음성 입력(STT) 설정. 마이크 버튼이 사용합니다.</p>
+        <div class="section">
+          <div class="row">
+            <div class="field"><label>Provider</label><div class="hint">STT 프로바이더</div></div>
+            <select id="stt-provider"><option value="openai">OpenAI Whisper</option><option value="local">로컬</option></select>
+          </div>
+          <div class="row">
+            <div class="field"><label>Model</label><div class="hint">예: whisper-1</div></div>
+            <input type="text" id="stt-model" placeholder="whisper-1" />
+          </div>
+          <div class="row">
+            <div class="field"><label>Language</label><div class="hint">비우면 자동 감지</div></div>
+            <input type="text" id="stt-language" placeholder="(auto)" />
+          </div>
+          <div class="actions"><span class="status" id="stt-status"></span><button class="btn primary" id="stt-save">저장</button></div>
+        </div>
+      </div>
+
+      <!-- ── Advanced (Scheduler) ── -->
+      <div class="pane" id="pane-advanced">
+        <h1 id="t-adv-h">Advanced</h1>
+        <p class="desc" id="t-adv-d">자동 브리핑 스케줄러. LaunchAgent로 아침/저녁에 실행됩니다.</p>
+        <div class="section">
+          <h2>아침 브리핑</h2>
+          <div class="row">
+            <div class="field"><label>활성화</label><div class="hint" id="sched-morning-hint">—</div></div>
+            <div class="toggle" id="sched-morning-toggle"></div>
+          </div>
+          <div class="row">
+            <div class="field"><label>시각</label><div class="hint">HH:MM</div></div>
+            <input type="text" id="sched-morning-time" placeholder="08:00" style="width:90px" />
+          </div>
+        </div>
+        <div class="section">
+          <h2>저녁 리뷰</h2>
+          <div class="row">
+            <div class="field"><label>활성화</label><div class="hint" id="sched-evening-hint">—</div></div>
+            <div class="toggle" id="sched-evening-toggle"></div>
+          </div>
+          <div class="row">
+            <div class="field"><label>시각</label><div class="hint">HH:MM</div></div>
+            <input type="text" id="sched-evening-time" placeholder="20:00" style="width:90px" />
+          </div>
+          <div class="actions"><span class="status" id="sched-status"></span><button class="btn" id="sched-runnow">지금 실행</button><button class="btn primary" id="sched-save">저장</button></div>
         </div>
       </div>
 
@@ -313,6 +400,10 @@ document.querySelectorAll('.nav-item').forEach(item => {
     $('pane-' + item.dataset.pane).classList.add('active');
     if (item.dataset.pane === 'mcp') loadMcp();
     if (item.dataset.pane === 'model') loadModelPane();
+    if (item.dataset.pane === 'tools') loadToolsPane();
+    if (item.dataset.pane === 'agent') loadAgentMd();
+    if (item.dataset.pane === 'voice') loadVoice();
+    if (item.dataset.pane === 'advanced') loadScheduler();
   });
 });
 
@@ -528,6 +619,111 @@ function closeWin() { try { window.__TAURI__?.window?.getCurrentWindow?.().close
 $('cancel').addEventListener('click', closeWin);
 
 function esc(s) { return String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+// ── Tools & Keys 패널 ──
+let TOOL_GROUPS = [];
+async function loadToolsPane() {
+  const base = provBase(); const box = $('tools-list');
+  box.innerHTML = '<div class="empty">불러오는 중…</div>';
+  try {
+    const r = await fetch(base + '/api/llm/tool-groups', { signal: AbortSignal.timeout(5000) }).then(r => r.json());
+    TOOL_GROUPS = r.groups || [];
+    $('tools-summary').textContent = `${r.active_tools}/${r.total_tools}개 활성 · ~${r.active_tokens} 토큰`;
+    box.innerHTML = '';
+    for (const g of TOOL_GROUPS) {
+      const name = g.group || g.name;
+      const row = document.createElement('div'); row.className = 'row';
+      row.innerHTML = `<div class="field"><label>${esc(name)}</label><div class="hint">${g.count}개 도구 · ~${g.tokens||0} 토큰</div></div>`;
+      const tg = document.createElement('div'); tg.className = 'toggle' + (g.enabled ? ' on' : ''); tg.dataset.group = name;
+      tg.addEventListener('click', () => tg.classList.toggle('on'));
+      row.appendChild(tg); box.appendChild(row);
+    }
+  } catch (e) { box.innerHTML = '<div class="empty">도구 그룹 조회 실패</div>'; }
+}
+$('tools-save').addEventListener('click', async () => {
+  const enabled = Array.from(document.querySelectorAll('#tools-list .toggle.on')).map(t => t.dataset.group);
+  const st = $('tools-status'); st.textContent = '적용 중…'; st.style.color = 'var(--muted)';
+  try {
+    const r = await fetch(provBase() + '/api/llm/tool-groups', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({enabled}) }).then(r => r.json());
+    if (r.ok) { st.textContent = '✓ 적용됨'; st.style.color = 'var(--ok)'; loadToolsPane(); }
+    else { st.textContent = r.error || '실패'; st.style.color = 'var(--error)'; }
+  } catch (e) { st.textContent = '오류: ' + (e.message || e); st.style.color = 'var(--error)'; }
+});
+
+// ── Agent 지침 (.md) 패널 ──
+async function loadAgentMd() {
+  const base = provBase(); const name = $('agent-md-select').value;
+  $('agent-md-text').value = '불러오는 중…';
+  try {
+    const r = await fetch(base + `/api/llm/agent-md?name=${encodeURIComponent(name)}`, { signal: AbortSignal.timeout(5000) }).then(r => r.json());
+    $('agent-md-text').value = r.text || '';
+    $('agent-md-hint').textContent = r.exists ? `data/agents/${name}.md` : `(없음) 저장하면 생성됩니다 — ${name}.md`;
+  } catch (e) { $('agent-md-text').value = ''; $('agent-md-hint').textContent = '조회 실패'; }
+}
+$('agent-md-select').addEventListener('change', loadAgentMd);
+$('agent-md-save').addEventListener('click', async () => {
+  const base = provBase(); const name = $('agent-md-select').value; const text = $('agent-md-text').value;
+  const st = $('agent-md-status'); st.textContent = '저장 중…'; st.style.color = 'var(--muted)';
+  try {
+    const r = await fetch(base + '/api/llm/agent-md', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name, text}) }).then(r => r.json());
+    if (r.ok || r.error === undefined) { st.textContent = '✓ 저장됨'; st.style.color = 'var(--ok)'; }
+    else { st.textContent = r.error || '실패'; st.style.color = 'var(--error)'; }
+  } catch (e) { st.textContent = '오류: ' + (e.message || e); st.style.color = 'var(--error)'; }
+});
+
+// ── Voice (STT) 패널 ──
+async function loadVoice() {
+  try {
+    const r = await fetch(provBase() + '/api/stt/config', { signal: AbortSignal.timeout(5000) }).then(r => r.json());
+    $('stt-provider').value = r.provider || 'openai';
+    $('stt-model').value = r.model || '';
+    $('stt-language').value = r.language || '';
+  } catch {}
+}
+$('stt-save').addEventListener('click', async () => {
+  const st = $('stt-status'); st.textContent = '저장 중…'; st.style.color = 'var(--muted)';
+  const body = { provider: $('stt-provider').value, model: $('stt-model').value.trim(), language: $('stt-language').value.trim() || null };
+  try {
+    const r = await fetch(provBase() + '/api/stt/config', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) }).then(r => r.json());
+    if (r.ok || r.error === undefined) { st.textContent = '✓ 저장됨'; st.style.color = 'var(--ok)'; }
+    else { st.textContent = r.error || '실패'; st.style.color = 'var(--error)'; }
+  } catch (e) { st.textContent = '오류: ' + (e.message || e); st.style.color = 'var(--error)'; }
+});
+
+// ── Advanced (Scheduler) 패널 ──
+function fmtTime(s) { return s ? `${String(s.hour).padStart(2,'0')}:${String(s.minute).padStart(2,'0')}` : ''; }
+async function loadScheduler() {
+  try {
+    const r = await fetch(provBase() + '/api/scheduler/status', { signal: AbortSignal.timeout(5000) }).then(r => r.json());
+    const m = r.morning_brief || {}, e = r.evening_review || {};
+    $('sched-morning-toggle').classList.toggle('on', !!m.loaded);
+    $('sched-evening-toggle').classList.toggle('on', !!e.loaded);
+    $('sched-morning-time').value = fmtTime(m.schedule);
+    $('sched-evening-time').value = fmtTime(e.schedule);
+    $('sched-morning-hint').textContent = m.plist_exists ? (m.loaded ? '실행 예약됨' : '설치됨(미로드)') : '미설치';
+    $('sched-evening-hint').textContent = e.plist_exists ? (e.loaded ? '실행 예약됨' : '설치됨(미로드)') : '미설치';
+  } catch {}
+}
+$('sched-morning-toggle').addEventListener('click', e => e.currentTarget.classList.toggle('on'));
+$('sched-evening-toggle').addEventListener('click', e => e.currentTarget.classList.toggle('on'));
+$('sched-runnow').addEventListener('click', async () => {
+  const st = $('sched-status'); st.textContent = '실행 중…'; st.style.color = 'var(--muted)';
+  try { await fetch(provBase() + '/api/scheduler/run-now', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({job:'morning_brief', enable:true}) }); st.textContent = '✓ 실행 요청됨'; st.style.color = 'var(--ok)'; }
+  catch (e) { st.textContent = '오류: ' + (e.message || e); st.style.color = 'var(--error)'; }
+});
+$('sched-save').addEventListener('click', async () => {
+  const st = $('sched-status'); st.textContent = '저장 중…'; st.style.color = 'var(--muted)'; const base = provBase();
+  const parse = (v) => { const m = (v||'').match(/^(\d{1,2}):(\d{2})$/); return m ? {hour:+m[1], minute:+m[2]} : null; };
+  try {
+    for (const [job, toggleId, timeId] of [['morning_brief','sched-morning-toggle','sched-morning-time'],['evening_review','sched-evening-toggle','sched-evening-time']]) {
+      const on = $(toggleId).classList.contains('on');
+      const t = parse($(timeId).value);
+      await fetch(base + '/api/scheduler/toggle', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({job, enable:on}) });
+      if (t) await fetch(base + '/api/scheduler/set-time', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({job, ...t}) });
+    }
+    st.textContent = '✓ 저장됨'; st.style.color = 'var(--ok)'; loadScheduler();
+  } catch (e) { st.textContent = '오류: ' + (e.message || e); st.style.color = 'var(--error)'; }
+});
 
 // ── 초기화 ──
 (async () => {
