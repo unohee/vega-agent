@@ -1201,10 +1201,11 @@ header button, header button *, header a, header a * { -webkit-app-region: no-dr
   background: var(--bg);
   position: relative;
 }
-/* 인라인 모드 칩 — 입력창 위, 클릭으로 on/off */
-#mode-chips {
-  display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap;
+/* 모드 바 — 입력창 위. permission 드롭다운 + Research 칩 */
+#mode-bar {
+  display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; align-items: center;
 }
+/* Research 칩 (별도 토글) */
 .mode-chip {
   font-size: 11px; font-weight: 600; line-height: 1;
   padding: 5px 10px; border-radius: 12px;
@@ -1215,10 +1216,47 @@ header button, header button *, header a, header a * { -webkit-app-region: no-dr
 }
 .mode-chip:hover { border-color: var(--muted, #8b949e); color: var(--fg, #c9d1d9); }
 .mode-chip.active { color: #fff; }
-.mode-chip[data-mode="plan"].active     { background: rgba(210,153,34,.22);  border-color: #e3b341; color: #e3b341; }
-.mode-chip[data-mode="research"].active { background: rgba(88,166,255,.18);  border-color: #79c0ff; color: #79c0ff; }
-.mode-chip[data-mode="yolo"].active     { background: rgba(237,69,69,.20);   border-color: #ff7b72; color: #ff7b72; }
+.mode-chip[data-mode="research"].active { background: rgba(88,166,255,.18); border-color: #79c0ff; color: #79c0ff; }
 .mode-chip.pending { opacity: .5; pointer-events: none; }
+
+/* Permission 모드 드롭다운 */
+#perm-mode-wrap { position: relative; }
+#perm-mode-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11px; font-weight: 600; line-height: 1;
+  padding: 5px 9px; border-radius: 12px;
+  border: 1px solid var(--border);
+  background: transparent; color: var(--muted, #8b949e);
+  cursor: pointer; transition: all .12s ease; user-select: none;
+}
+#perm-mode-btn:hover { border-color: var(--muted, #8b949e); color: var(--fg, #c9d1d9); }
+#perm-mode-btn .perm-caret { font-size: 9px; opacity: .6; margin-left: 1px; }
+/* 모드별 색상 — 버튼의 data-perm 속성으로 */
+#perm-mode-btn[data-perm="plan"]   { background: rgba(210,153,34,.20); border-color: #e3b341; color: #e3b341; }
+#perm-mode-btn[data-perm="bypass"] { background: rgba(237,69,69,.20);  border-color: #ff7b72; color: #ff7b72; }
+/* 드롭다운 메뉴 (위로 펼침 — 입력창 위 공간) */
+#perm-mode-menu {
+  position: absolute; bottom: calc(100% + 6px); left: 0;
+  min-width: 280px; z-index: 60;
+  background: var(--surface, #1c2128); border: 1px solid var(--border);
+  border-radius: 8px; padding: 4px; box-shadow: 0 6px 24px rgba(0,0,0,.4);
+}
+#perm-mode-menu.hidden { display: none; }
+.perm-opt {
+  display: flex; align-items: flex-start; gap: 9px; width: 100%;
+  padding: 8px 9px; border: none; border-radius: 6px;
+  background: transparent; color: var(--fg, #c9d1d9);
+  cursor: pointer; text-align: left; transition: background .1s ease;
+}
+.perm-opt:hover { background: rgba(255,255,255,.05); }
+.perm-opt-icon { font-size: 13px; line-height: 1.3; flex-shrink: 0; width: 20px; }
+.perm-opt-text { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+.perm-opt-text b { font-size: 12px; font-weight: 600; }
+.perm-opt-text small { font-size: 10.5px; color: var(--muted, #8b949e); line-height: 1.35; }
+.perm-opt-check { color: #7ee787; font-weight: 700; opacity: 0; flex-shrink: 0; align-self: center; }
+.perm-opt.selected .perm-opt-check { opacity: 1; }
+.perm-opt[data-perm="plan"]:hover   { background: rgba(210,153,34,.12); }
+.perm-opt[data-perm="bypass"]:hover { background: rgba(237,69,69,.12); }
 /* ! 셸 모드 — 입력창 강조 */
 #input-area.shell-mode { border-top-color: #7ee787; }
 #input-area.shell-mode #input {
@@ -1599,7 +1637,7 @@ button.status-item:hover { background: var(--surface2); color: var(--text); }
     <span class="sep">·</span>
     <span id="header-session-name">새 세션</span>
     <span id="planModeBadge" title="Plan 모드 — 실행 도구 차단" style="display:none; margin-left:8px; font-size:10px; padding:2px 8px; border-radius:10px; background:rgba(210,153,34,.18); color:#e3b341; font-weight:600;">📋 PLAN</span>
-    <span id="researchModeBadge" title="Research 모드 — 웹검색 우선, 가설→근거→결론, 출처 명시" style="display:none; margin-left:6px; font-size:10px; padding:2px 8px; border-radius:10px; background:rgba(88,166,255,.15); color:#79c0ff; font-weight:600;">🔬 RESEARCH</span>
+    <span id="researchModeBadge" title="심층 사고 모드 — reasoning effort 최대" style="display:none; margin-left:6px; font-size:10px; padding:2px 8px; border-radius:10px; background:rgba(88,166,255,.15); color:#79c0ff; font-weight:600;">🔬 심층사고</span>
     <span id="yoloModeBadge" title="YOLO 모드 — host_exec 자동 승인. 하드 차단·시크릿 검사는 그대로." style="display:none; margin-left:6px; font-size:10px; padding:2px 8px; border-radius:10px; background:rgba(237,69,69,.18); color:#ff7b72; font-weight:600;">⚡ YOLO</span>
   </div>
   <div id="panel-toggles" role="toolbar" aria-label="패널 토글">
@@ -1673,10 +1711,32 @@ button.status-item:hover { background: var(--surface2); color: var(--text); }
     <div id="input-area">
       <div id="cmd-menu" class="hidden"></div>
       <!-- 인라인 모드 칩 — 클릭으로 on/off (슬래시 커맨드 대체) -->
-      <div id="mode-chips">
-        <button type="button" class="mode-chip" data-mode="plan" title="Plan 모드 — 실행 도구 차단, 계획만">📋 Plan</button>
-        <button type="button" class="mode-chip" data-mode="research" title="Research 모드 — 웹검색 우선, 가설→근거→결론, 출처 명시">🔬 Research</button>
-        <button type="button" class="mode-chip" data-mode="yolo" title="YOLO 모드 — host_exec 자동 승인 + 멈춤 시 자동 재개. 하드 차단·시크릿 검사는 그대로">⚡ YOLO</button>
+      <div id="mode-bar">
+        <!-- Permission 모드 — Claude Code 스타일 순환 (default → plan → bypass). 클릭=드롭다운, Shift+Tab=순환 -->
+        <div id="perm-mode-wrap">
+          <button type="button" id="perm-mode-btn" data-perm="default" title="permission 모드 (Shift+Tab으로 순환)">
+            <span id="perm-mode-icon">⏵</span><span id="perm-mode-label">Default</span><span class="perm-caret">▾</span>
+          </button>
+          <div id="perm-mode-menu" class="hidden">
+            <button type="button" class="perm-opt" data-perm="default">
+              <span class="perm-opt-icon">⏵</span>
+              <span class="perm-opt-text"><b>Default</b><small>실행 전 승인 — host_exec은 묻고, 파일편집은 자동</small></span>
+              <span class="perm-opt-check">✓</span>
+            </button>
+            <button type="button" class="perm-opt" data-perm="plan">
+              <span class="perm-opt-icon">📋</span>
+              <span class="perm-opt-text"><b>Plan mode</b><small>계획만 — 쓰기·실행 도구 차단, 탐색·조회만</small></span>
+              <span class="perm-opt-check">✓</span>
+            </button>
+            <button type="button" class="perm-opt" data-perm="bypass">
+              <span class="perm-opt-icon">⏵⏵</span>
+              <span class="perm-opt-text"><b>Bypass permissions</b><small>묻지 않고 실행 — host_exec 자동 승인. 하드 차단·시크릿은 그대로</small></span>
+              <span class="perm-opt-check">✓</span>
+            </button>
+          </div>
+        </div>
+        <!-- Research — permission과 직교한 작업 스타일(별도 토글) -->
+        <button type="button" class="mode-chip" data-mode="research" title="심층 사고 모드 — reasoning effort 최대. 깊게 추론(단순 인터넷 조사 아님), 검색은 사실 확인 보조">🔬 심층사고</button>
       </div>
       <div id="image-preview-bar"></div>
       <form id="input-form">
@@ -3067,32 +3127,93 @@ async function handlePlanDecision(btn, approved) {
   }
 }
 
-// 헤더 배지 + 입력창 칩을 함께 갱신 — 두 표시가 항상 일치하도록.
-function _syncModeChip(mode, active) {
-  const chip = document.querySelector(`.mode-chip[data-mode="${mode}"]`);
-  if (chip) { chip.classList.toggle('active', !!active); chip.classList.remove('pending'); }
+// ── Permission 모드 (default | plan | bypass) — Claude Code 스타일 순환 ──
+const _PERM_META = {
+  default: { icon: '⏵',  label: 'Default' },
+  plan:    { icon: '📋', label: 'Plan mode' },
+  bypass:  { icon: '⏵⏵', label: 'Bypass permissions' },
+};
+const _PERM_ORDER = ['default', 'plan', 'bypass'];
+let _permMode = 'default';
+
+// 버튼 라벨/색상 + 메뉴 체크 + 헤더 배지를 한 번에 갱신
+function _applyPermMode(mode) {
+  if (!_PERM_META[mode]) mode = 'default';
+  _permMode = mode;
+  const btn = document.getElementById('perm-mode-btn');
+  if (btn) {
+    btn.dataset.perm = mode;
+    const ic = document.getElementById('perm-mode-icon');
+    const lb = document.getElementById('perm-mode-label');
+    if (ic) ic.textContent = _PERM_META[mode].icon;
+    if (lb) lb.textContent = _PERM_META[mode].label;
+  }
+  document.querySelectorAll('#perm-mode-menu .perm-opt').forEach(opt => {
+    opt.classList.toggle('selected', opt.dataset.perm === mode);
+  });
+  // 헤더 배지 — plan/bypass만 표시 (default는 숨김)
+  const planBadge = document.getElementById('planModeBadge');
+  const yoloBadge = document.getElementById('yoloModeBadge');
+  if (planBadge) planBadge.style.display = mode === 'plan' ? 'inline-block' : 'none';
+  if (yoloBadge) yoloBadge.style.display = mode === 'bypass' ? 'inline-block' : 'none';
 }
 
-function updatePlanModeIndicator(active) {
-  // 헤더에 plan 모드 표시 (있으면 갱신, 없으면 무시)
-  const el = document.getElementById('planModeBadge');
-  if (el) el.style.display = active ? 'inline-block' : 'none';
-  _syncModeChip('plan', active);
-}
-
-async function refreshPlanMode() {
-  if (!currentSid) { updatePlanModeIndicator(false); return; }
+async function refreshPermissionMode() {
+  if (!currentSid) { _applyPermMode('default'); return; }
   try {
-    const res = await fetch(`/api/sessions/${currentSid}/plan-mode`);
+    const res = await fetch(`/api/sessions/${currentSid}/permission-mode`);
     const data = await res.json();
-    updatePlanModeIndicator(!!data.plan_mode);
+    _applyPermMode(data.permission_mode || 'default');
   } catch { /* 무시 */ }
 }
 
+async function setPermissionMode(mode) {
+  if (!currentSid) { currentSid = await ensureSession(); if (!currentSid) return; }
+  _applyPermMode(mode);  // 낙관적 반영
+  try {
+    const res = await fetch(`/api/sessions/${currentSid}/permission-mode`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode }),
+    });
+    const data = await res.json();
+    _applyPermMode(data.permission_mode || 'default');  // 서버 확정값
+  } catch { refreshPermissionMode(); }
+}
+
+async function cyclePermissionMode() {
+  if (!currentSid) { currentSid = await ensureSession(); if (!currentSid) return; }
+  // 낙관적: 다음 모드 미리 반영
+  const nextLocal = _PERM_ORDER[(_PERM_ORDER.indexOf(_permMode) + 1) % _PERM_ORDER.length];
+  _applyPermMode(nextLocal);
+  try {
+    const res = await fetch(`/api/sessions/${currentSid}/permission-mode`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cycle: true }),
+    });
+    const data = await res.json();
+    _applyPermMode(data.permission_mode || 'default');
+  } catch { refreshPermissionMode(); }
+}
+
+function _togglePermMenu(show) {
+  const menu = document.getElementById('perm-mode-menu');
+  if (!menu) return;
+  if (show === undefined) show = menu.classList.contains('hidden');
+  menu.classList.toggle('hidden', !show);
+}
+
+// 하위호환 — 기존 호출처(refreshPlanMode/refreshYoloMode 등)를 permission 갱신으로 위임
+function refreshPlanMode() { return refreshPermissionMode(); }
+function refreshYoloMode() { return refreshPermissionMode(); }
+function updatePlanModeIndicator(active) { if (active === false && _permMode === 'plan') _applyPermMode('default'); }
+function updateYoloModeIndicator() { /* permission 통합으로 대체 */ }
+
+// ── Research 모드 (별도 토글) ──
 function updateResearchModeIndicator(active) {
   const el = document.getElementById('researchModeBadge');
   if (el) el.style.display = active ? 'inline-block' : 'none';
-  _syncModeChip('research', active);
+  const chip = document.querySelector('.mode-chip[data-mode="research"]');
+  if (chip) { chip.classList.toggle('active', !!active); chip.classList.remove('pending'); }
 }
 
 async function refreshResearchMode() {
@@ -3104,43 +3225,22 @@ async function refreshResearchMode() {
   } catch { /* 무시 */ }
 }
 
-function updateYoloModeIndicator(active) {
-  const el = document.getElementById('yoloModeBadge');
-  if (el) el.style.display = active ? 'inline-block' : 'none';
-  _syncModeChip('yolo', active);
-}
-
-// ── 모드 칩 클릭 토글 ──
-// 슬래시 커맨드 없이 입력창 칩으로 직접 on/off. 낙관적 UI(즉시 반영) + 서버 동기화.
-const _MODE_EP = { plan: 'plan-mode', research: 'research-mode', yolo: 'yolo-mode' };
-const _MODE_KEY = { plan: 'plan_mode', research: 'research_mode', yolo: 'yolo_mode' };
-const _MODE_INDICATOR = {
-  plan: updatePlanModeIndicator, research: updateResearchModeIndicator, yolo: updateYoloModeIndicator,
-};
-
-async function toggleMode(mode) {
-  if (!currentSid) {
-    // 세션이 없으면 먼저 만들고 토글 — 빈 채팅에서도 모드 설정 가능.
-    currentSid = await ensureSession();
-    if (!currentSid) return;
-  }
-  const chip = document.querySelector(`.mode-chip[data-mode="${mode}"]`);
+async function toggleResearchMode() {
+  if (!currentSid) { currentSid = await ensureSession(); if (!currentSid) return; }
+  const chip = document.querySelector('.mode-chip[data-mode="research"]');
   const willEnable = !(chip && chip.classList.contains('active'));
-  if (chip) { chip.classList.add('pending'); }
+  if (chip) chip.classList.add('pending');
   try {
-    const res = await fetch(`/api/sessions/${currentSid}/${_MODE_EP[mode]}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+    const res = await fetch(`/api/sessions/${currentSid}/research-mode`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ enabled: willEnable }),
     });
     const data = await res.json();
-    _MODE_INDICATOR[mode](!!data[_MODE_KEY[mode]]);  // 서버 확정값으로 갱신
-  } catch {
-    if (chip) chip.classList.remove('pending');
-  }
+    updateResearchModeIndicator(!!data.research_mode);
+  } catch { if (chip) chip.classList.remove('pending'); }
 }
 
-// currentSid가 없을 때 빈 세션 생성 — 모드 칩이 첫 메시지 전에도 작동하게.
+// currentSid가 없을 때 빈 세션 생성 — 모드 설정이 첫 메시지 전에도 작동하게.
 async function ensureSession() {
   if (currentSid) return currentSid;
   try {
@@ -3157,19 +3257,37 @@ async function ensureSession() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  document.querySelectorAll('.mode-chip').forEach(chip => {
-    chip.addEventListener('click', () => toggleMode(chip.dataset.mode));
+  const permBtn = document.getElementById('perm-mode-btn');
+  if (permBtn) {
+    // 좌클릭 = 드롭다운 열기, Shift+클릭 = 순환
+    permBtn.addEventListener('click', (e) => {
+      if (e.shiftKey) { cyclePermissionMode(); return; }
+      _togglePermMenu();
+    });
+  }
+  document.querySelectorAll('#perm-mode-menu .perm-opt').forEach(opt => {
+    opt.addEventListener('click', () => { setPermissionMode(opt.dataset.perm); _togglePermMenu(false); });
+  });
+  // Research 칩
+  const rc = document.querySelector('.mode-chip[data-mode="research"]');
+  if (rc) rc.addEventListener('click', toggleResearchMode);
+  // 바깥 클릭 시 메뉴 닫기
+  document.addEventListener('click', (e) => {
+    const wrap = document.getElementById('perm-mode-wrap');
+    if (wrap && !wrap.contains(e.target)) _togglePermMenu(false);
   });
 });
 
-async function refreshYoloMode() {
-  if (!currentSid) { updateYoloModeIndicator(false); return; }
-  try {
-    const res = await fetch(`/api/sessions/${currentSid}/yolo-mode`);
-    const data = await res.json();
-    updateYoloModeIndicator(!!data.yolo_mode);
-  } catch { /* 무시 */ }
-}
+// Shift+Tab 전역 — 입력창 포커스 시 permission 모드 순환 (Claude Code 방식)
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Tab' && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    const ae = document.activeElement;
+    if (ae && (ae.id === 'input' || ae.id === 'perm-mode-btn')) {
+      e.preventDefault();
+      cyclePermissionMode();
+    }
+  }
+});
 
 // ── 상시 작업 스피너 (statusbar) ──
 // 서버 _TASK_REGISTRY의 active 세션을 5초 폴링.
