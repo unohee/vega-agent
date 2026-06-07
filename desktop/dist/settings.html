@@ -124,6 +124,7 @@
       <div class="nav-item" data-pane="mcp"><span class="ico">⚙</span><span id="t-nav-mcp">MCP</span></div>
       <div class="nav-item" data-pane="tools"><span class="ico">🧰</span><span id="t-nav-tools">Tools &amp; Keys</span></div>
       <div class="nav-item" data-pane="agent"><span class="ico">📝</span><span id="t-nav-agent">Agent</span></div>
+      <div class="nav-item" data-pane="memory"><span class="ico">🧠</span><span id="t-nav-memory">Memory &amp; Context</span></div>
       <div class="nav-item" data-pane="voice"><span class="ico">🎙</span><span id="t-nav-voice">Voice</span></div>
       <div class="nav-item" data-pane="advanced"><span class="ico">⏱</span><span id="t-nav-adv">Advanced</span></div>
       <div class="nav-item" data-pane="app"><span class="ico">▦</span><span id="t-nav-app">App</span></div>
@@ -239,6 +240,35 @@
             <textarea id="agent-md-text" spellcheck="false" style="min-height:260px">불러오는 중…</textarea>
           </div>
           <div class="actions"><span class="status" id="agent-md-status"></span><button class="btn primary" id="agent-md-save">저장</button></div>
+        </div>
+      </div>
+
+      <!-- ── Memory & Context ── -->
+      <div class="pane" id="pane-memory">
+        <h1 id="t-mem-h">Memory &amp; Context</h1>
+        <p class="desc" id="t-mem-d">대화 압축(compaction)과 장기 기억 동작. VEGA는 메시지 수 기준으로 오래된 대화를 요약합니다.</p>
+        <div class="section">
+          <h2>컨텍스트 압축</h2>
+          <div class="row">
+            <div class="field"><label>압축 임계값</label><div class="hint">대화가 이 메시지 수를 넘으면 오래된 부분을 요약 (기본 20)</div></div>
+            <input type="text" id="mem-threshold" placeholder="20" style="width:90px" />
+          </div>
+          <div class="row">
+            <div class="field"><label>보존 메시지 수</label><div class="hint">요약 후 그대로 남길 최근 메시지 (임계값보다 작아야 함, 기본 6)</div></div>
+            <input type="text" id="mem-keep" placeholder="6" style="width:90px" />
+          </div>
+          <div class="row">
+            <div class="field"><label>메모리 자동 업데이트</label><div class="hint">압축 시 persona·이벤트·규칙을 자동 갱신</div></div>
+            <div class="toggle on" id="mem-auto-toggle"></div>
+          </div>
+          <div class="actions"><span class="status" id="mem-status"></span><button class="btn primary" id="mem-save">저장</button></div>
+        </div>
+        <div class="section">
+          <h2>저장된 기억 (조회)</h2>
+          <div class="row"><div class="field"><label>페르소나 섹션</label></div><span class="pill" id="mem-persona">—</span></div>
+          <div class="row"><div class="field"><label>이벤트</label></div><span class="pill" id="mem-events">—</span></div>
+          <div class="row"><div class="field"><label>엔티티</label></div><span class="pill" id="mem-entities">—</span></div>
+          <div class="row"><div class="field"><label>세션 요약</label></div><span class="pill" id="mem-sessions">—</span></div>
         </div>
       </div>
 
@@ -402,6 +432,7 @@ document.querySelectorAll('.nav-item').forEach(item => {
     if (item.dataset.pane === 'model') loadModelPane();
     if (item.dataset.pane === 'tools') loadToolsPane();
     if (item.dataset.pane === 'agent') loadAgentMd();
+    if (item.dataset.pane === 'memory') loadMemoryPane();
     if (item.dataset.pane === 'voice') loadVoice();
     if (item.dataset.pane === 'advanced') loadScheduler();
   });
@@ -668,6 +699,43 @@ $('agent-md-save').addEventListener('click', async () => {
     const r = await fetch(base + '/api/llm/agent-md', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name, text}) }).then(r => r.json());
     if (r.ok || r.error === undefined) { st.textContent = '✓ 저장됨'; st.style.color = 'var(--ok)'; }
     else { st.textContent = r.error || '실패'; st.style.color = 'var(--error)'; }
+  } catch (e) { st.textContent = '오류: ' + (e.message || e); st.style.color = 'var(--error)'; }
+});
+
+// ── Memory & Context 패널 ──
+async function loadMemoryPane() {
+  const base = provBase();
+  try {
+    const r = await fetch(base + '/api/memory/settings', { signal: AbortSignal.timeout(5000) }).then(r => r.json());
+    const s = r.settings || {};
+    $('mem-threshold').value = s.compact_threshold ?? '';
+    $('mem-keep').value = s.keep_recent ?? '';
+    $('mem-auto-toggle').classList.toggle('on', s.auto_memory_update !== false);
+  } catch { $('mem-status').textContent = '설정 조회 실패'; $('mem-status').style.color = 'var(--error)'; }
+  // 저장된 기억 현황 (조회)
+  try {
+    const m = await fetch(base + '/api/memory/summary', { signal: AbortSignal.timeout(5000) }).then(r => r.json());
+    $('mem-persona').textContent = `${m.persona?.active ?? 0} / ${m.persona?.total ?? 0}`;
+    $('mem-events').textContent = `${m.events?.total ?? 0}`;
+    $('mem-entities').textContent = `${m.entities?.total ?? 0}`;
+    $('mem-sessions').textContent = `${m.sessions?.total ?? 0}`;
+  } catch {}
+}
+$('mem-auto-toggle').addEventListener('click', e => e.currentTarget.classList.toggle('on'));
+$('mem-save').addEventListener('click', async () => {
+  const st = $('mem-status'); st.textContent = '저장 중…'; st.style.color = 'var(--muted)';
+  const th = parseInt($('mem-threshold').value, 10), kr = parseInt($('mem-keep').value, 10);
+  if (isNaN(th) || isNaN(kr)) { st.textContent = '숫자를 입력하세요'; st.style.color = 'var(--error)'; return; }
+  const body = { compact_threshold: th, keep_recent: kr, auto_memory_update: $('mem-auto-toggle').classList.contains('on') };
+  try {
+    const r = await fetch(provBase() + '/api/memory/settings', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) }).then(r => r.json());
+    if (r.ok) {
+      const s = r.settings;
+      // 서버 검증·보정 결과를 다시 반영(keep<threshold 보정 등)
+      $('mem-threshold').value = s.compact_threshold; $('mem-keep').value = s.keep_recent;
+      $('mem-auto-toggle').classList.toggle('on', s.auto_memory_update !== false);
+      st.textContent = '✓ 저장됨'; st.style.color = 'var(--ok)';
+    } else { st.textContent = r.error || '실패'; st.style.color = 'var(--error)'; }
   } catch (e) { st.textContent = '오류: ' + (e.message || e); st.style.color = 'var(--error)'; }
 });
 
