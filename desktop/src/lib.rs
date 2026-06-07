@@ -215,8 +215,9 @@ fn open_settings_window(app: &tauri::AppHandle) {
     let title = strings().settings_title;
     let _ = WebviewWindowBuilder::new(app, "settings", WebviewUrl::App(settings_html.into()))
         .title(title)
-        .inner_size(480.0, 340.0)
-        .resizable(false)
+        .inner_size(880.0, 640.0)
+        .min_inner_size(640.0, 480.0)
+        .resizable(true)
         .center()
         .title_bar_style(tauri::TitleBarStyle::Overlay)
         .hidden_title(true)
