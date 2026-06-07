@@ -11,6 +11,8 @@
     "core:window:allow-set-focus",
     "core:window:allow-unminimize",
     "core:window:allow-start-dragging",
+    "core:event:allow-emit",
+    "core:event:allow-listen",
     "dialog:allow-open"
   ],
   "remote": {

@@ -235,13 +235,6 @@ fn open_settings_window_at(app: &tauri::AppHandle, section: &str) {
         .build();
 }
 
-/// 프론트(chat.html)에서 설정 창을 여는 invoke 커맨드.
-/// 톱니바퀴 버튼·우하단 모델 칩이 호출한다. section: "model"|"providers"|... (빈 문자열이면 기본 탭).
-#[cfg(desktop)]
-#[tauri::command]
-fn open_settings(app: tauri::AppHandle, section: Option<String>) {
-    open_settings_window_at(&app, section.as_deref().unwrap_or(""));
-}
 
 // ── LaunchAgent 관리 (daemon 전용) ────────────────────────────────────────────
 
@@ -416,7 +409,6 @@ pub fn run() {
         builder = builder.invoke_handler(tauri::generate_handler![
             client_config::get_lang,
             client_config::set_lang,
-            open_settings,
         ]);
     }
 
@@ -437,6 +429,21 @@ pub fn run() {
 
     builder
         .setup(|app| {
+            // 프론트(remote chat.html)에서 설정 창을 여는 경로.
+            // remote 콘텐츠는 ACL상 앱 커스텀 invoke 커맨드가 막히므로(core:event는 허용),
+            // invoke 대신 "open-settings" 이벤트를 emit하면 여기서 받아 창을 연다.
+            // payload는 섹션 문자열(JSON 문자열, 예: "\"model\"") 또는 빈 문자열.
+            #[cfg(desktop)]
+            {
+                use tauri::Listener;
+                let handle = app.handle().clone();
+                app.listen_any("open-settings", move |event| {
+                    let raw = event.payload();
+                    let section = serde_json::from_str::<String>(raw).unwrap_or_else(|_| raw.trim_matches('"').to_string());
+                    open_settings_window_at(&handle, &section);
+                });
+            }
+
             // 데스크탑: 크기 지정 + macOS 오버레이 타이틀바.
             // 모바일(iOS/Android): 전체화면 단일 윈도우 — TitleBarStyle/inner_size 등은
             // macOS 전용이거나 무의미하므로 적용하지 않는다.

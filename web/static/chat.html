@@ -4703,14 +4703,16 @@ const llmList = document.getElementById('llm-list');
 const statusLlm = document.getElementById('status-llm');
 const statusLlmLabel = document.getElementById('status-llm-label');
 
-// 설정 창 열기 — Tauri면 새 설정 윈도우(invoke), 순수 웹이면 기존 LLM 모달 폴백.
+// 설정 창 열기 — Tauri면 "open-settings" 이벤트 emit(Rust가 받아 창 오픈), 순수 웹이면 기존 모달.
+// remote 콘텐츠(localhost:8100)는 ACL상 앱 invoke 커맨드가 막히지만 core:event:emit은 허용된다.
 async function openSettings(section) {
-  try {
-    await tauriInvoke('open_settings', { section: section || '' });
-  } catch (_e) {
-    // Tauri invoke 불가(브라우저) → 기존 모달
-    openLlmModal();
+  const t = window.__TAURI__;
+  const emit = t?.event?.emit;
+  if (emit) {
+    try { await emit('open-settings', section || ''); return; }
+    catch (_e) { /* emit 실패 시 아래 폴백 */ }
   }
+  openLlmModal();  // 순수 웹(브라우저) 폴백
 }
 // 우상단 톱니바퀴 → 설정 창(기본 탭)
 const settingsBtn = document.getElementById('open-settings');
