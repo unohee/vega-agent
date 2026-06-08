@@ -60,6 +60,7 @@
     <div class="dot" id="dot1"></div>
     <div class="dot" id="dot2"></div>
     <div class="dot" id="dot3"></div>
+    <div class="dot" id="dot4"></div>
   </div>
 
   <!-- STEP 0: 프로바이더 선택 + 인증 -->
@@ -135,11 +136,24 @@
       <button class="btn" id="sAuth">Slack 연결</button>
     </div>
   </div>
+
+  <!-- STEP 4: Superthread 연동 -->
+  <div class="card hidden" id="step4">
+    <h2>Superthread 연동 (선택)</h2>
+    <div class="sub">Superthread 보드·카드를 읽고 관리하려면 워크스페이스에 연결하세요. 건너뛰어도 나중에 설정할 수 있습니다.</div>
+    <div class="hint">"Superthread 연결"을 누르면 새 탭에서 동의 화면이 열립니다. 동의 후 이 창으로 돌아오면 자동으로 완료 처리됩니다.</div>
+    <div class="msg" id="tMsg"></div>
+    <div class="row">
+      <button class="btn ghost" id="tSkip">건너뛰기</button>
+      <div class="grow"></div>
+      <button class="btn" id="tAuth">Superthread 연결</button>
+    </div>
+  </div>
 </div>
 
 <script>
 const $ = id => document.getElementById(id);
-function setStep(n){ [0,1,2,3].forEach(i=>{ $('step'+i).classList.toggle('hidden', i!==n);
+function setStep(n){ [0,1,2,3,4].forEach(i=>{ $('step'+i).classList.toggle('hidden', i!==n);
   const d=$('dot'+i); d.classList.toggle('active', i===n); d.classList.toggle('done', i<n); }); }
 async function api(path, body){ const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})}); return r.json(); }
 function gotoChat(){ location.href='/chat'; }
@@ -259,7 +273,7 @@ async function enterSlackStep(){
   }catch(e){ /* 상태 조회 실패해도 단계는 보여준다 */ }
 }
 function stopSlackPoll(){ if(slackPoll){ clearInterval(slackPoll); slackPoll=null; } }
-$('sSkip').onclick = async ()=>{ stopSlackPoll(); await finishOnboarding(); };
+$('sSkip').onclick = async ()=>{ stopSlackPoll(); enterSuperthreadStep(); };
 $('sAuth').onclick = ()=>{
   const msg=$('sMsg');
   window.open('/slack/auth', '_blank');   // 새 탭에서 Slack 동의
@@ -275,11 +289,47 @@ $('sAuth').onclick = ()=>{
       if(s.authenticated){
         stopSlackPoll();
         msg.className='msg ok'; msg.textContent='Slack 연동 완료!'+(s.team?(' (team: '+s.team+')'):'');
-        setTimeout(finishOnboarding, 1000);
+        setTimeout(enterSuperthreadStep, 1000);
       }
     }catch(e){ /* 일시 오류 무시, 계속 폴링 */ }
     if(ticks>=90){ stopSlackPoll(); $('sAuth').disabled=false;
       msg.className='msg err'; msg.textContent='시간 초과 — 동의가 끝났으면 다시 "Slack 연결"을 누르거나 건너뛰세요.'; }
+  }, 2000);
+};
+
+// ── STEP 4: Superthread ───────────────────────────────────────────────
+let stPoll = null;
+async function enterSuperthreadStep(){
+  setStep(4);
+  // 상태 조회 실패해도 단계는 보여준다.
+  try{
+    const r = await fetch('/api/onboarding/superthread'); const s = await r.json();
+    if(!s.configured){ await finishOnboarding(); return; }
+    if(s.authenticated){ $('tMsg').className='msg ok'; $('tMsg').textContent='이미 연결돼 있습니다.'; }
+  }catch(e){ /* noop */ }
+}
+function stopStPoll(){ if(stPoll){ clearInterval(stPoll); stPoll=null; } }
+$('tSkip').onclick = async ()=>{ stopStPoll(); await finishOnboarding(); };
+$('tAuth').onclick = ()=>{
+  const msg=$('tMsg');
+  window.open('/superthread/auth', '_blank');   // 새 탭에서 Superthread 동의
+  msg.className='msg'; msg.innerHTML='<span class="spinner"></span> 새 탭에서 동의를 완료해 주세요…';
+  $('tAuth').disabled=true;
+  stopStPoll();
+  // 인증 완료까지 폴링 (최대 ~3분)
+  let ticks=0;
+  stPoll = setInterval(async ()=>{
+    ticks++;
+    try{
+      const r=await fetch('/api/onboarding/superthread'); const s=await r.json();
+      if(s.authenticated){
+        stopStPoll();
+        msg.className='msg ok'; msg.textContent='Superthread 연동 완료!';
+        setTimeout(finishOnboarding, 1000);
+      }
+    }catch(e){ /* 일시 오류 무시, 계속 폴링 */ }
+    if(ticks>=90){ stopStPoll(); $('tAuth').disabled=false;
+      msg.className='msg err'; msg.textContent='시간 초과 — 동의가 끝났으면 다시 "Superthread 연결"을 누르거나 건너뛰세요.'; }
   }, 2000);
 };
 

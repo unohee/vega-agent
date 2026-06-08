@@ -403,6 +403,23 @@ async def slack_status():
         return JSONResponse({"configured": False, "authenticated": False, "error": str(e)})
 
 
+# ── Superthread 연동 단계 ─────────────────────────────────────────────────────
+# OAuth 자체는 server.py의 GET /superthread/auth (새 탭) → GET /superthread/callback.
+# Superthread 는 public client(ocstcli)라 빌드 종속 client.json 이 없어 항상 configured.
+
+@router.get("/api/onboarding/superthread")
+async def superthread_status():
+    """Superthread 연동 상태. authenticated(유효 PAT 보유) 여부."""
+    try:
+        from pipeline.auth import superthread
+        return JSONResponse({
+            "configured": True,
+            "authenticated": superthread.is_authenticated(),
+        })
+    except Exception as e:
+        return JSONResponse({"configured": False, "authenticated": False, "error": str(e)})
+
+
 # ── Google Cloud OAuth 단계 ──────────────────────────────────────────────────
 
 class GoogleCredsPayload(BaseModel):

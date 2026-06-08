@@ -1068,6 +1068,45 @@ async def slack_callback(request: Request):
     )
 
 
+@app.get("/superthread/auth")
+async def superthread_auth_start():
+    """Start Superthread OAuth (PKCE) in the browser."""
+    try:
+        from pipeline.auth.superthread import authorize_url
+        return RedirectResponse(url=authorize_url(), status_code=302)
+    except Exception as e:
+        return HTMLResponse(
+            f"<h3>Superthread OAuth 설정 오류</h3><pre>{str(e)}</pre>",
+            status_code=500,
+        )
+
+
+@app.get("/callback")
+async def superthread_callback(request: Request):
+    """Receive Superthread OAuth callback → exchange code → issue + store PAT.
+
+    경로는 반드시 /callback — Superthread client(ocstcli)의 사전 등록 패턴.
+    """
+    error = request.query_params.get("error")
+    if error:
+        return HTMLResponse(f"<h3>Superthread 인증 취소/실패</h3><pre>{error}</pre>", status_code=400)
+
+    code = request.query_params.get("code", "")
+    state = request.query_params.get("state")
+    if not code:
+        return HTMLResponse("<h3>Superthread 인증 실패</h3><pre>code 파라미터가 없습니다.</pre>", status_code=400)
+
+    from pipeline.auth.superthread import exchange_code
+    result = exchange_code(code, state=state)
+    if result.get("ok"):
+        exp = result.get("expires_at") or "(만료 정보 없음)"
+        return HTMLResponse(f"<h3>Superthread 인증 완료</h3><p>PAT 발급됨 · 만료: {exp}</p>")
+
+    return HTMLResponse(
+        f"<h3>Superthread 인증 실패</h3><pre>{result.get('error') or 'unknown error'}</pre>",
+        status_code=400,
+    )
+
 
 _UPLOAD_DIR = _uploads_dir()
 

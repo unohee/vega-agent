@@ -63,7 +63,9 @@ build_output/
 # PyInstaller 백엔드 빌드 산출물 (소스 spec/launcher 만 커밋)
 bin/.venv/
 bin/dist/
+bin/dist_*/
 bin/build_pyinstaller/
+bin/build_pyinstaller_*/
 bin/vega-backend
 bin/vega-backend-*
 !bin/vega-backend.spec
