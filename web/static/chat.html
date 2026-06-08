@@ -3710,8 +3710,14 @@ async function streamChat(msg, opts) {
     sendFiles = [];
     fullMsg = '';
     const last = messagesEl.lastElementChild;
-    if (last && last.classList.contains('msg-asst')) {
-      bub = last.querySelector('.bubble') || last;
+    const lastBub = last && last.classList.contains('msg-asst')
+      ? (last.querySelector('.bubble') || last) : null;
+    // 마지막 버블에 usage-meta가 있으면 이미 done까지 완료된 응답이다.
+    // 거기에 reattach로 이어붙이면(서버가 buf를 재전송할 경우) 본문이 통째로
+    // 중복 렌더된다(메타 라인 뒤 같은 본문 재출력). 완료된 버블엔 붙지 않고
+    // 새 버블을 연다 — 서버 측 재전송 차단의 2차 방어선.
+    if (lastBub && !lastBub.querySelector('.usage-meta')) {
+      bub = lastBub;
     } else {
       bub = addAssistantBubble();
     }
