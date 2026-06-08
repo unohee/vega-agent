@@ -73,8 +73,10 @@ lipo -create \
     "bin/dist_arm64/vega-backend" \
     "bin/dist_x86_64/vega-backend" \
     -output "bin/vega-backend"
-cp "bin/vega-backend" "bin/vega-backend-aarch64-apple-darwin"
-chmod +x bin/vega-backend "bin/vega-backend-aarch64-apple-darwin"
+# Tauri externalBin 은 타겟별 suffix 파일을 요구한다
+cp "bin/dist_arm64/vega-backend"  "bin/vega-backend-aarch64-apple-darwin"
+cp "bin/dist_x86_64/vega-backend" "bin/vega-backend-x86_64-apple-darwin"
+chmod +x bin/vega-backend "bin/vega-backend-aarch64-apple-darwin" "bin/vega-backend-x86_64-apple-darwin"
 lipo -info "bin/vega-backend"
 echo "  ✓ Universal vega-backend ($(du -sh bin/vega-backend | cut -f1))"
 
@@ -123,10 +125,14 @@ TAURI_APP="$TAURI_APP_ARM"
 for bin_name in vega-desktop vega-backend; do
     ARM_BIN="$TAURI_APP_ARM/Contents/MacOS/$bin_name"
     X86_BIN="$TAURI_APP_X86/Contents/MacOS/$bin_name"
-    if [ -f "$ARM_BIN" ] && [ -f "$X86_BIN" ]; then
-        lipo -create "$ARM_BIN" "$X86_BIN" -output "$ARM_BIN"
-        echo "  lipo: $bin_name → $(lipo -archs "$ARM_BIN")"
+    if [ ! -f "$ARM_BIN" ] || [ ! -f "$X86_BIN" ]; then continue; fi
+    # 이미 fat이면 skip (Tauri가 externalBin lipo를 미리 했을 수 있음)
+    if lipo -archs "$ARM_BIN" 2>/dev/null | grep -q "x86_64"; then
+        echo "  lipo skip ($bin_name 이미 universal): $(lipo -archs "$ARM_BIN")"
+        continue
     fi
+    lipo -create "$ARM_BIN" "$X86_BIN" -output "$ARM_BIN"
+    echo "  lipo: $bin_name → $(lipo -archs "$ARM_BIN")"
 done
 
 cd "$REPO_ROOT"
