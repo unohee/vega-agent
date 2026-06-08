@@ -404,6 +404,17 @@
             <button class="btn" id="data-wipe" style="border-color:rgba(248,81,73,.4);color:#f85149">전체 삭제</button>
           </div>
         </div>
+
+        <!-- 온보딩 초기화 (빌드 디버깅용) -->
+        <div class="section">
+          <h2>온보딩 초기화</h2>
+          <p class="desc">설치 마법사를 처음부터 다시 보고 싶을 때 사용합니다. 온보딩 완료 표시를 지워 다음 실행 시 마법사로 시작합니다(빌드·온보딩 흐름 디버깅용).</p>
+          <div class="actions">
+            <span class="status" id="onb-reset-status"></span>
+            <button class="btn" id="onb-reset-soft">온보딩만 초기화</button>
+            <button class="btn" id="onb-reset-full" style="border-color:rgba(248,81,73,.4);color:#f85149">전체 초기화 (토큰 포함)</button>
+          </div>
+        </div>
       </div>
 
       <!-- ── Language ── -->
@@ -744,6 +755,30 @@ $('data-wipe')?.addEventListener('click', async () => {
     else { st.textContent = r.error || '실패'; st.style.color = 'var(--error)'; }
   } catch (e) { st.textContent = '오류: ' + (e.message || e); st.style.color = 'var(--error)'; }
 });
+
+// ── 온보딩 초기화 (빌드 디버깅용) ──
+async function resetOnboarding(mode) {
+  const st = $('onb-reset-status');
+  const full = mode === 'full';
+  const msg = full
+    ? '온보딩 + LLM 토큰·프로바이더 설정까지 모두 초기화합니다(휴지통, 복구 가능).\n완전한 첫 실행 상태로 돌아갑니다. 계속할까요?'
+    : '온보딩 완료 표시를 지웁니다(휴지통, 복구 가능).\nDB·메모리·토큰은 유지됩니다. 다음 실행 시 설치 마법사로 시작합니다. 계속할까요?';
+  if (!confirm(msg)) return;
+  st.textContent = '초기화 중…'; st.style.color = 'var(--muted)';
+  try {
+    const r = await fetch(provBase() + '/api/onboarding/reset', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ confirm: true, mode })
+    }).then(r => r.json());
+    if (r.ok) {
+      st.textContent = `✓ 초기화됨 — ${r.note || '재시작 시 마법사'}`; st.style.color = 'var(--ok)';
+    } else {
+      st.textContent = r.error || r.note || '실패'; st.style.color = 'var(--error)';
+    }
+  } catch (e) { st.textContent = '오류: ' + (e.message || e); st.style.color = 'var(--error)'; }
+}
+$('onb-reset-soft')?.addEventListener('click', () => resetOnboarding('soft'));
+$('onb-reset-full')?.addEventListener('click', () => resetOnboarding('full'));
 
 $('lang-select').addEventListener('change', async (e) => { applyLang(e.target.value); await tauriCall('set_lang', { lang: e.target.value }).catch(() => {}); });
 $('save').addEventListener('click', () => {

@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import os
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -503,6 +503,65 @@ async def finish_onboarding(payload: OnboardingPayload):
         pass
 
     return JSONResponse({"ok": True, "profile": load_profile()})
+
+
+@router.post("/api/onboarding/reset")
+async def reset_onboarding(request: Request):
+    """온보딩 상태를 초기화해 다음 실행 시 설치 마법사로 되돌린다 — 빌드 디버깅용.
+
+    confirm:true 필수. trash 경유(복구 가능, 직접 rm 금지 원칙).
+    mode:
+      "soft" (기본) — user_profile.json 만 제거. onboarded=False 가 되어 마법사 재진입.
+                       DB·메모리·LLM 토큰·연동(Slack/Superthread)은 보존.
+      "full"        — soft + LLM 프로바이더 설정·OAuth 토큰까지 제거. 완전한 첫 실행 상태.
+    """
+    import shutil
+    import subprocess
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    if not body.get("confirm"):
+        return JSONResponse(
+            {"ok": False, "error": "confirm:true 필요 — 온보딩 상태를 되돌립니다"},
+            status_code=400,
+        )
+    mode = (body.get("mode") or "soft").strip().lower()
+
+    from pipeline.data_paths import data_dir
+    d = data_dir()
+
+    # soft: 온보딩 완료 플래그가 든 프로필만. full: + 프로바이더/토큰.
+    targets = ["user_profile.json"]
+    if mode == "full":
+        targets += ["llm_providers.json", "chatgpt_token.json", "openai_oauth.json"]
+
+    trash_bin = shutil.which("trash")
+    removed, skipped = [], []
+    for name in targets:
+        p = d / name
+        if not p.exists():
+            continue
+        try:
+            if trash_bin:
+                r = subprocess.run([trash_bin, str(p)], capture_output=True, text=True, timeout=30)
+                (removed if r.returncode == 0 else skipped).append(name)
+            else:
+                skipped.append(name)
+        except Exception:
+            skipped.append(name)
+
+    from pipeline.user_profile import is_onboarded
+    return JSONResponse({
+        "ok": not is_onboarded(),
+        "mode": mode,
+        "removed": removed,
+        "skipped": skipped,
+        "onboarded": is_onboarded(),
+        "note": "다음 실행 시 설치 마법사로 시작합니다" if not is_onboarded()
+                else ("trash CLI 없음 — 수동 삭제 필요" if skipped else "리셋 실패"),
+    })
 
 
 # ── 검색 엔드포인트 (SearXNG) — 설정 창 Tools & Keys + 첫 실행 안내 ──
