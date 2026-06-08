@@ -222,6 +222,20 @@
           <div id="tools-list"><div class="empty">불러오는 중…</div></div>
           <div class="row"><span class="status" id="tools-status"></span></div>
         </div>
+
+        <h2 id="t-search-h" style="margin-top:22px">검색 엔드포인트</h2>
+        <p class="desc" id="t-search-d">웹 검색(web_search)이 쓰는 SearXNG 인스턴스. 비우면 로컬 기본값(localhost:18888)을 씁니다. 사내 배포 시 공용 인스턴스 URL과 인증 키를 입력하세요.</p>
+        <div class="section">
+          <div class="row">
+            <div class="field"><label id="t-search-url-lbl">SearXNG URL</label><div class="hint" id="search-url-hint">예: https://search.example.com</div></div>
+            <input type="text" id="search-url" placeholder="http://localhost:18888" style="width:260px" />
+          </div>
+          <div class="row">
+            <div class="field"><label id="t-search-key-lbl">인증 키 (X-VEGA-Key)</label><div class="hint" id="search-key-hint">엣지 인증용. 없으면 비워둠. 저장된 키는 표시되지 않습니다.</div></div>
+            <input type="password" id="search-key" placeholder="(선택) 인증 키" style="width:260px" autocomplete="off" />
+          </div>
+          <div class="actions"><span class="status" id="search-status"></span><button class="btn primary" id="search-save">저장 · 연결 테스트</button></div>
+        </div>
       </div>
 
       <!-- ── Agent (지침 .md) ── -->
@@ -675,7 +689,31 @@ async function loadToolsPane() {
       row.appendChild(tg); box.appendChild(row);
     }
   } catch (e) { box.innerHTML = '<div class="empty">도구 그룹 조회 실패</div>'; }
+  loadSearchEndpoint();
 }
+
+// ── 검색 엔드포인트 (SearXNG) ──
+async function loadSearchEndpoint() {
+  try {
+    const r = await fetch(provBase() + '/api/onboarding/search', { signal: AbortSignal.timeout(5000) }).then(r => r.json());
+    $('search-url').value = r.is_default ? '' : (r.url || '');
+    $('search-url').placeholder = r.url || 'http://localhost:18888';
+    const st = $('search-status');
+    if (r.has_key) { st.textContent = '키 저장됨'; st.style.color = 'var(--muted)'; }
+    else { st.textContent = ''; }
+    $('search-key').value = '';
+  } catch (e) { /* 백엔드 미지원 시 조용히 무시 */ }
+}
+$('search-save')?.addEventListener('click', async () => {
+  const url = $('search-url').value.trim() || $('search-url').placeholder.trim();
+  const key = $('search-key').value.trim();
+  const st = $('search-status'); st.textContent = '연결 테스트 중…'; st.style.color = 'var(--muted)';
+  try {
+    const r = await fetch(provBase() + '/api/onboarding/search', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({url, key}), signal: AbortSignal.timeout(15000) }).then(r => r.json());
+    if (r.ok) { st.textContent = '✓ 저장 · ' + (r.detail || '연결 성공'); st.style.color = 'var(--ok)'; $('search-key').value=''; }
+    else { st.textContent = r.error || '실패'; st.style.color = 'var(--error)'; }
+  } catch (e) { st.textContent = '오류: ' + (e.message || e); st.style.color = 'var(--error)'; }
+});
 $('tools-save').addEventListener('click', async () => {
   const enabled = Array.from(document.querySelectorAll('#tools-list .toggle.on')).map(t => t.dataset.group);
   const st = $('tools-status'); st.textContent = '적용 중…'; st.style.color = 'var(--muted)';

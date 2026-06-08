@@ -488,6 +488,71 @@ async def finish_onboarding(payload: OnboardingPayload):
     return JSONResponse({"ok": True, "profile": load_profile()})
 
 
+# ── 검색 엔드포인트 (SearXNG) — 설정 창 Tools & Keys + 첫 실행 안내 ──
+class SearchEndpointPayload(BaseModel):
+    url: str = ""
+    key: str = ""
+
+
+def _searxng_reachable(url: str, key: str) -> tuple[bool, str]:
+    """SearXNG /search JSON 1회 호출로 도달성·인증 확인. (ok, detail)."""
+    import urllib.parse
+    import urllib.request
+
+    base = url.rstrip("/")
+    if not base:
+        return False, "URL이 비어 있음"
+    params = urllib.parse.urlencode({"q": "vega ping", "format": "json", "engines": "google"})
+    headers = {"Accept": "application/json", "User-Agent": "VEGA/1.0"}
+    if key:
+        headers["X-VEGA-Key"] = key
+    req = urllib.request.Request(f"{base}/search?{params}", headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            if r.status == 200:
+                return True, "연결 성공"
+            return False, f"HTTP {r.status}"
+    except Exception as e:
+        return False, str(e)[:200]
+
+
+@router.get("/api/onboarding/search")
+async def get_search_endpoint():
+    """현재 검색 엔드포인트 설정 상태. 키 값 자체는 노출하지 않는다(저장 여부만)."""
+    from pipeline.tools_web import _DEFAULT_SEARXNG_URL, _get_searxng_key, _get_searxng_url
+
+    url = _get_searxng_url()
+    return JSONResponse({
+        "url": url,
+        "has_key": bool(_get_searxng_key()),
+        "is_default": url.rstrip("/") == _DEFAULT_SEARXNG_URL,
+    })
+
+
+@router.post("/api/onboarding/search")
+async def configure_search_endpoint(payload: SearchEndpointPayload):
+    """검색 엔드포인트 URL/키를 Keychain에 저장(런타임 즉시 반영). 저장 전 연결 테스트.
+    키를 비워 보내면 기존 키 유지."""
+    from pipeline import keychain
+    from pipeline.tools_web import _get_searxng_key
+
+    url = (payload.url or "").strip().rstrip("/")
+    if not url:
+        return JSONResponse({"ok": False, "error": "URL이 필요합니다."}, status_code=400)
+    key = (payload.key or "").strip() or (_get_searxng_key() or "")
+
+    ok, detail = _searxng_reachable(url, key)
+    if not ok:
+        return JSONResponse({"ok": False, "error": f"연결 실패: {detail}"}, status_code=400)
+
+    keychain.set_secret("VEGA_SEARXNG_URL", url)
+    os.environ["VEGA_SEARXNG_URL"] = url
+    if (payload.key or "").strip():
+        keychain.set_secret("VEGA_SEARXNG_KEY", key)
+        os.environ["VEGA_SEARXNG_KEY"] = key
+    return JSONResponse({"ok": True, "url": url, "detail": detail})
+
+
 def _bootstrap_db() -> None:
     import sys
     from pathlib import Path

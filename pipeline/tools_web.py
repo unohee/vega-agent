@@ -11,9 +11,32 @@ import urllib.request
 
 # SearXNG endpoint. Deployment scenarios:
 #   - Single user: localhost:18888 (local Docker)
-#   - Internal deployment: set VEGA_SEARXNG_URL=http://intranet-searxng.local:8080
-# Injected via .env or LaunchAgent EnvironmentVariables.
-SEARXNG_URL = os.environ.get("VEGA_SEARXNG_URL", "http://localhost:18888").rstrip("/")
+#   - Internal deployment: an internal/shared instance (e.g. https://search.example.com)
+# Resolution priority (read at call time so GUI saves apply immediately):
+#   Keychain > .env/env var > default. The settings window (Tools & Keys) saves to Keychain.
+_DEFAULT_SEARXNG_URL = "http://localhost:18888"
+
+
+def _get_searxng_url() -> str:
+    try:
+        from pipeline.keychain import get_secret
+        kc = get_secret("VEGA_SEARXNG_URL")
+        if kc:
+            return kc.rstrip("/")
+    except Exception:
+        pass
+    return os.environ.get("VEGA_SEARXNG_URL", _DEFAULT_SEARXNG_URL).rstrip("/")
+
+
+def _get_searxng_key() -> str:
+    try:
+        from pipeline.keychain import get_secret
+        kc = get_secret("VEGA_SEARXNG_KEY") or get_secret("VEGA_API_KEY")
+        if kc:
+            return kc
+    except Exception:
+        pass
+    return os.environ.get("VEGA_SEARXNG_KEY", "") or os.environ.get("VEGA_API_KEY", "")
 
 
 def _pw_get_text(page) -> str:
@@ -41,9 +64,17 @@ def web_search(query: str, max_results: int = 5) -> list[dict]:
         "language": "ko-KR",
         "categories": "general",
     })
+    headers = {
+        "Accept": "application/json",
+        "User-Agent": "VEGA/1.0",
+    }
+    searxng_url = _get_searxng_url()
+    searxng_key = _get_searxng_key()
+    if searxng_key:
+        headers["X-VEGA-Key"] = searxng_key
     req = urllib.request.Request(
-        f"{SEARXNG_URL}/search?{params}",
-        headers={"Accept": "application/json"},
+        f"{searxng_url}/search?{params}",
+        headers=headers,
     )
     try:
         with urllib.request.urlopen(req, timeout=15) as r:
@@ -51,7 +82,7 @@ def web_search(query: str, max_results: int = 5) -> list[dict]:
             data = json.loads(r.read())
     except Exception as e:
         # Covers: SearXNG not running, network error, JSON parse failure
-        raise RuntimeError(f"SearXNG ({SEARXNG_URL}) request failed: {e}") from e
+        raise RuntimeError(f"SearXNG ({searxng_url}) request failed: {e}") from e
 
     results = []
     for item in data.get("results", [])[:max_results]:
