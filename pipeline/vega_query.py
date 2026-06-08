@@ -34,7 +34,8 @@ def _ensure_schema() -> None:
                 version     INTEGER NOT NULL DEFAULT 1,
                 is_active   INTEGER NOT NULL DEFAULT 1,
                 notes       TEXT,
-                updated_at  TEXT
+                updated_at  TEXT,
+                user_edited INTEGER NOT NULL DEFAULT 0
             )
         """)
         conn.execute("""
@@ -66,6 +67,10 @@ def _ensure_schema() -> None:
                 match_text TEXT
             )
         """)
+        # Migration: add user_edited to existing persona_sections (INT-1395 — Memory Inspector edit)
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(persona_sections)").fetchall()}
+        if "user_edited" not in cols:
+            conn.execute("ALTER TABLE persona_sections ADD COLUMN user_edited INTEGER NOT NULL DEFAULT 0")
 
 
 _ensure_schema()

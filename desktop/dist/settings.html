@@ -98,6 +98,18 @@
   .pill { font-size: 10px; padding: 2px 7px; border-radius: 10px; background: var(--surface2); color: var(--muted); }
   .pill.ok { color: var(--ok); }
   .pill.active { color: var(--accent); }
+  /* Memory Inspector (INT-1395) */
+  #mem-insp-list { max-height: 320px; overflow-y: auto; }
+  .mi-item { padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; margin-bottom: 6px; font-size: 12px; }
+  .mi-item-head { display: flex; align-items: center; gap: 6px; }
+  .mi-key { font-weight: 600; color: var(--text); }
+  .mi-meta { color: var(--muted); font-size: 10.5px; margin-left: auto; }
+  .mi-val { color: var(--muted); margin-top: 4px; white-space: pre-wrap; word-break: break-word; }
+  .mi-val[contenteditable="true"] { background: var(--surface); border: 1px solid var(--accent); border-radius: 4px; padding: 4px 6px; color: var(--text); outline: none; }
+  .mi-actions { display: flex; gap: 6px; margin-top: 6px; }
+  .mi-btn { font-size: 11px; padding: 2px 8px; border-radius: 4px; border: 1px solid var(--border); background: transparent; color: var(--muted); cursor: pointer; }
+  .mi-btn:hover { color: var(--text); background: var(--surface2); }
+  .mi-btn.danger:hover { color: var(--error); border-color: var(--error); }
   /* MCP / 목록 카드 */
   .card {
     background: var(--surface); border: 1px solid var(--border);
@@ -283,6 +295,20 @@
           <div class="row"><div class="field"><label>이벤트</label></div><span class="pill" id="mem-events">—</span></div>
           <div class="row"><div class="field"><label>엔티티</label></div><span class="pill" id="mem-entities">—</span></div>
           <div class="row"><div class="field"><label>세션 요약</label></div><span class="pill" id="mem-sessions">—</span></div>
+        </div>
+
+        <!-- Memory Inspector — 조회·편집·삭제 (INT-1395) -->
+        <div class="section">
+          <h2 id="t-mem-insp">Memory Inspector</h2>
+          <p class="desc">VEGA가 나에 대해 기억하는 것을 직접 보고 편집·삭제합니다. 다음 대화에 반영됩니다.</p>
+          <div id="mem-insp-tabs" role="tablist" style="display:flex;gap:4px;margin-bottom:8px">
+            <button class="side-tab active" data-mtab="persona">페르소나</button>
+            <button class="side-tab" data-mtab="events">이벤트</button>
+            <button class="side-tab" data-mtab="entities">엔티티</button>
+          </div>
+          <input type="text" id="mem-insp-q" placeholder="검색…" style="width:100%;margin-bottom:8px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px 10px;font-size:12px" />
+          <div id="mem-insp-list"><div class="empty">불러오는 중…</div></div>
+          <div class="row"><span class="status" id="mem-insp-status"></span></div>
         </div>
       </div>
 
@@ -763,7 +789,94 @@ async function loadMemoryPane() {
     $('mem-entities').textContent = `${m.entities?.total ?? 0}`;
     $('mem-sessions').textContent = `${m.sessions?.total ?? 0}`;
   } catch {}
+  loadMemInspector();
 }
+
+// ── Memory Inspector (INT-1395) — persona/events/entities 조회·편집·삭제 ──
+let _miTab = 'persona';
+function _miSetTab(t) {
+  _miTab = t;
+  document.querySelectorAll('#mem-insp-tabs .side-tab').forEach(b =>
+    b.classList.toggle('active', b.dataset.mtab === t));
+  loadMemInspector();
+}
+async function loadMemInspector() {
+  const box = $('mem-insp-list');
+  if (!box) return;
+  const q = ($('mem-insp-q')?.value || '').trim();
+  box.innerHTML = '<div class="empty">불러오는 중…</div>';
+  try {
+    const ep = { persona: '/api/memory/persona', events: '/api/memory/events', entities: '/api/memory/entities' }[_miTab];
+    const url = ep + (q ? `?search=${encodeURIComponent(q)}` : '');
+    const r = await fetch(provBase() + url, { signal: AbortSignal.timeout(6000) }).then(r => r.json());
+    const rows = r.rows || [];
+    if (!rows.length) { box.innerHTML = '<div class="empty">없음</div>'; return; }
+    box.innerHTML = '';
+    for (const row of rows) box.appendChild(_miRow(row));
+  } catch (e) { box.innerHTML = '<div class="empty">조회 실패</div>'; }
+}
+function _miRow(row) {
+  const el = document.createElement('div');
+  el.className = 'mi-item';
+  const id = row.id;
+  // 탭별 표시 필드
+  let key, val, meta;
+  if (_miTab === 'persona') { key = row.section_key || `#${id}`; val = row.content || ''; meta = row.is_active ? '' : '비활성'; }
+  else if (_miTab === 'events') { key = row.title || `이벤트 #${id}`; val = row.body || ''; meta = row.event_date || ''; }
+  else { key = row.name || `엔티티 #${id}`; val = row.notes || ''; meta = row.kind || ''; }
+  el.innerHTML = `
+    <div class="mi-item-head"><span class="mi-key"></span><span class="mi-meta"></span></div>
+    <div class="mi-val"></div>
+    <div class="mi-actions"></div>`;
+  el.querySelector('.mi-key').textContent = key;
+  el.querySelector('.mi-meta').textContent = meta;
+  const valEl = el.querySelector('.mi-val');
+  valEl.textContent = typeof val === 'string' ? val : JSON.stringify(val);
+  const acts = el.querySelector('.mi-actions');
+  // persona는 편집 가능, events/entities는 삭제
+  if (_miTab === 'persona') {
+    const edit = document.createElement('button'); edit.className = 'mi-btn'; edit.textContent = '편집';
+    edit.addEventListener('click', () => _miEditPersona(id, valEl, edit, el));
+    acts.appendChild(edit);
+  } else {
+    const del = document.createElement('button'); del.className = 'mi-btn danger'; del.textContent = '삭제';
+    del.addEventListener('click', () => _miDelete(_miTab, id, el));
+    acts.appendChild(del);
+  }
+  return el;
+}
+async function _miEditPersona(id, valEl, btn, el) {
+  if (btn.textContent === '편집') {
+    valEl.contentEditable = 'true'; valEl.focus(); btn.textContent = '저장';
+    return;
+  }
+  valEl.contentEditable = 'false'; btn.textContent = '편집';
+  const st = $('mem-insp-status'); st.textContent = '저장 중…'; st.style.color = 'var(--muted)';
+  try {
+    const r = await fetch(provBase() + `/api/memory/persona/${id}`, {
+      method: 'PATCH', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ content: valEl.textContent }),
+    }).then(r => r.json());
+    st.textContent = (r.ok || r.error === undefined) ? '✓ 저장됨' : (r.error || '실패');
+    st.style.color = (r.ok || r.error === undefined) ? 'var(--ok)' : 'var(--error)';
+  } catch (e) { st.textContent = '오류: ' + (e.message || e); st.style.color = 'var(--error)'; }
+}
+async function _miDelete(tab, id, el) {
+  const st = $('mem-insp-status'); st.textContent = '삭제 중…'; st.style.color = 'var(--muted)';
+  try {
+    const ep = tab === 'events' ? `/api/memory/events/${id}` : `/api/memory/entities/${id}`;
+    const r = await fetch(provBase() + ep, { method: 'DELETE' }).then(r => r.json());
+    if (r.ok || r.error === undefined) { el.remove(); st.textContent = '✓ 삭제됨'; st.style.color = 'var(--ok)'; }
+    else { st.textContent = r.error || '실패'; st.style.color = 'var(--error)'; }
+  } catch (e) { st.textContent = '오류: ' + (e.message || e); st.style.color = 'var(--error)'; }
+}
+document.querySelectorAll('#mem-insp-tabs .side-tab').forEach(b =>
+  b.addEventListener('click', () => _miSetTab(b.dataset.mtab)));
+let _miSearchTimer;
+$('mem-insp-q')?.addEventListener('input', () => {
+  clearTimeout(_miSearchTimer); _miSearchTimer = setTimeout(loadMemInspector, 300);
+});
+
 $('mem-auto-toggle').addEventListener('click', e => e.currentTarget.classList.toggle('on'));
 $('mem-save').addEventListener('click', async () => {
   const st = $('mem-status'); st.textContent = '저장 중…'; st.style.color = 'var(--muted)';
