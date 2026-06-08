@@ -1308,6 +1308,13 @@ async def approve_command(req: Request):
             await reg["approval_queue"].put({"approved": bool(approved)})
         return JSONResponse({"ok": True, "approved": bool(approved)})
 
+    if approve_type == "consent":
+        # Permission consent gate (INT-1386) — only the approval decision; streaming dispatches.
+        reg = _TASK_REGISTRY.get(sid)
+        if reg and "approval_queue" in reg:
+            await reg["approval_queue"].put({"approved": bool(approved)})
+        return JSONResponse({"ok": True, "approved": bool(approved)})
+
     # host_exec approval — execute, then push result to session approval_queue → resumes VEGA loop
     command = body.get("command", "")
 
@@ -1939,6 +1946,35 @@ async def _run_gpt_task(sid: str, history: list[dict], images: list[dict]) -> No
         except Exception:
             pass
 
+    async def on_consent(name: str, args: dict, call_id: str = "") -> bool:
+        """Permission consent gate (INT-1386). Pushes a consent card with a level badge
+        and awaits the decision via approval_queue. Auto-approves in YOLO mode."""
+        if _yolo_on(sid):
+            return True
+        try:
+            from pipeline.permission import level_meta
+            meta = level_meta(name)
+        except Exception:
+            meta = {"level": "WRITE", "label": "쓰기", "color": "#3b82f6", "badge": "W"}
+        try:
+            args_preview = json.dumps(args, ensure_ascii=False)[:400]
+        except Exception:
+            args_preview = str(args)[:400]
+        _push_event(reg, {"event": "consent", "data": {
+            "call_id": call_id, "name": name, "label": _tool_label(name, args),
+            "args": args_preview, "level": meta,
+        }})
+        reg["awaiting_approval"] = True
+        reg["awaiting_since"] = time.time()
+        try:
+            decision = await reg["approval_queue"].get()
+        finally:
+            reg["awaiting_approval"] = False
+            reg.pop("awaiting_since", None)
+        if decision.get("__aborted__"):
+            raise asyncio.CancelledError()
+        return bool(decision.get("approved", False))
+
     async def on_tool_done(name: str, result: str, call_id: str = "") -> str | None:
         try:
             parsed = json.loads(result)
@@ -2198,6 +2234,7 @@ async def _run_gpt_task(sid: str, history: list[dict], images: list[dict]) -> No
                 on_token=on_token,
                 on_tool_start=on_tool_start,
                 on_tool_done=on_tool_done,
+                on_consent=on_consent,
                 on_waiting=on_waiting,
                 images=images or None,
                 working_dir=wdir,

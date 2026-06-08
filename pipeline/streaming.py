@@ -564,6 +564,7 @@ async def stream_gpt(
     on_token,
     on_tool_start=None,
     on_tool_done=None,
+    on_consent=None,
     on_waiting=None,
     images: list[dict] | None = None,
     working_dir: str | None = None,
@@ -693,6 +694,33 @@ async def stream_gpt(
 
             if on_tool_start:
                 await on_tool_start(name, args, call_id)
+
+            # Permission consent gate (INT-1386) — dangerous-level tools (delete/order/send
+            # per policy) require user approval before execution. Separate from host_exec's
+            # __needs_approval__ path (host_exec/bash/python have their own ask flow).
+            if on_consent and name not in ("host_exec", "bash_exec", "python_exec"):
+                try:
+                    from pipeline.permission import requires_consent
+                    need = requires_consent(name)
+                except Exception:
+                    need = False
+                if need:
+                    granted = await on_consent(name, args, call_id)
+                    if not granted:
+                        result = json.dumps(
+                            {"status": "denied", "output": "User did not approve this action."},
+                            ensure_ascii=False,
+                        )
+                        if on_tool_done:
+                            await on_tool_done(name, result, call_id)
+                        input_items.append({
+                            "type": "function_call", "id": tc["id"], "call_id": tc["call_id"],
+                            "name": name, "arguments": tc["arguments"],
+                        })
+                        input_items.append({
+                            "type": "function_call_output", "call_id": tc["call_id"], "output": result,
+                        })
+                        continue
 
             try:
                 # Set working directory before tool execution in the thread

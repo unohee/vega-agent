@@ -1028,6 +1028,13 @@ header button, header button *, header a, header a * { -webkit-app-region: no-dr
   width: fit-content;
   max-width: 100%;
 }
+/* 권한 consent 카드 (INT-1386) */
+.consent-box { border-color: rgba(88,166,255,.35); background: rgba(88,166,255,.05); }
+.consent-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.consent-badge { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 4px; color: #fff; font-size: 11px; font-weight: 700; flex-shrink: 0; }
+.consent-level { font-size: 11px; font-weight: 600; }
+.consent-tool { font-size: 12px; color: var(--text); font-weight: 600; }
+.consent-result { font-size: 12px; margin-top: 4px; }
 .approval-cmd {
   font-family: monospace; font-size: 12px;
   color: #e3b341;
@@ -2953,6 +2960,51 @@ async function handleApproval(btn, callId, command, approved) {
   }
 }
 
+// 권한 consent 카드 (INT-1386) — 레벨 배지 + 작업 내용 + 승인/거절
+function addConsentBox(bub, payload) {
+  const c = getOrCreateBadgeContainer(bub);
+  const box = document.createElement('div');
+  box.className = 'approval-box consent-box';
+  const callId = payload.call_id || '';
+  box.dataset.callId = callId;
+  const lvl = payload.level || {label: '확인', color: '#3b82f6', badge: '?'};
+  box.innerHTML = `
+    <div class="consent-head">
+      <span class="consent-badge" style="background:${esc(lvl.color)}">${esc(lvl.badge)}</span>
+      <span class="consent-level" style="color:${esc(lvl.color)}">${esc(lvl.label)}</span>
+      <span class="consent-tool">${esc(payload.label || payload.name || '')}</span>
+    </div>
+    <div class="approval-cmd">${esc((payload.args || '').slice(0, 300))}</div>
+    <div class="approval-actions">
+      <button class="approval-btn confirm">✓ 승인</button>
+      <button class="approval-btn deny">✕ 거절</button>
+    </div>`;
+  box.querySelector('.confirm').addEventListener('click', (e) => handleConsent(e.currentTarget, true));
+  box.querySelector('.deny').addEventListener('click', (e) => handleConsent(e.currentTarget, false));
+  c.appendChild(box);
+  scrollBottom();
+}
+
+async function handleConsent(btn, approved) {
+  const box = btn.closest('.consent-box');
+  box.querySelectorAll('.approval-btn').forEach(b => b.disabled = true);
+  btn.classList.add('loading');
+  btn.textContent = approved ? '⏳ 승인 중...' : '⏳ 거절 중...';
+  try {
+    await fetch('/api/approve', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({type: 'consent', approved, sid: currentSid}),
+    });
+    window._awaitingApproval = false;
+    const acts = box.querySelector('.approval-actions');
+    if (acts) acts.remove();
+    box.querySelector('.approval-cmd').insertAdjacentHTML('afterend',
+      `<div class="consent-result" style="color:${approved?'#7ee787':'var(--muted)'}">${approved?'✓ 승인됨':'✕ 거절됨'}</div>`);
+  } catch(e) {
+    box.innerHTML = `<div class="approval-cmd" style="color:var(--error)">✗ ${esc(e.message)}</div>`;
+  }
+}
+
 function addImprovementBox(bub, payload) {
   const c = getOrCreateBadgeContainer(bub);
   const box = document.createElement('div');
@@ -3663,6 +3715,12 @@ function _handleSseEvent(event, payload, bub, typer, tokenBufRef) {
     if (spinning) spinning.remove();
     addApprovalBox(bub, payload.call_id || '', payload.command || '');
     window._awaitingApproval = true;  // 승인 대기 — 재연결 무한 유지
+  } else if (event === 'consent') {
+    hideThinking(bub);
+    const spinning = bub.querySelector(`.tool-badge[data-call-id="${payload.call_id || ''}"]`);
+    if (spinning) spinning.remove();
+    addConsentBox(bub, payload);
+    window._awaitingApproval = true;
   } else if (event === 'question') {
     hideThinking(bub);
     const spinning = bub.querySelector(`.tool-badge[data-call-id="${payload.call_id || ''}"]`);
