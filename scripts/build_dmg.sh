@@ -1,25 +1,28 @@
 #!/bin/bash
-# VEGA macOS .dmg 빌드 스크립트 (daemon 풀에디션)
+# VEGA macOS .dmg 빌드 스크립트 (daemon 풀에디션, Universal Binary)
 #
 # 구조:
-#   VEGA.app/Contents/MacOS/vega-backend  — PyInstaller 단일 바이너리
+#   VEGA.app/Contents/MacOS/vega-backend  — lipo universal (aarch64 + x86_64)
 #   VEGA.app/Contents/Resources/          — settings HTML, LaunchAgent plist
 #
 # 첫 실행 시 Tauri가 LaunchAgent를 ~/Library/LaunchAgents/ 에 등록.
 # 이후 로그인 시 백엔드가 자동 시작된다.
 #
 # 사전 요건:
-#   - Rust + cargo-tauri
-#   - mlx_env (pyinstaller 포함): source ~/dev/mlx_env/bin/activate
+#   - Rust + cargo-tauri (aarch64-apple-darwin + x86_64-apple-darwin 타겟)
+#   - mlx_env (arm64 PyInstaller), intel64_env (x86_64 PyInstaller)
 #   - hdiutil (macOS 기본 포함)
 #   - Developer ID Application 코드서명 인증서
+#
+# x86_64 PyInstaller venv: ~/dev/intel64_env (arch -x86_64 /usr/local/bin/python3-intel64 -m venv)
+# 패키지 재설치: arch -x86_64 ~/dev/intel64_env/bin/pip install pyinstaller uvicorn fastapi ...
 
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
-VERSION="0.1.7"
+VERSION="0.1.8"
 APP_NAME="VEGA"
 SIGN_APP="Developer ID Application: Heewon Oh (635QK74RYK)"
 BUILD_DIR="$REPO_ROOT/build_output"
@@ -28,26 +31,52 @@ DMG_OUT="$BUILD_DIR/${APP_NAME}-${VERSION}.dmg"
 
 echo "=== VEGA ${VERSION} .dmg 빌드 시작 ==="
 
-# ── 0. PyInstaller vega-backend 바이너리 빌드 ─────────────────────────────────
-echo "[0/5] PyInstaller — vega-backend 바이너리 빌드..."
+# ── 0. PyInstaller vega-backend 바이너리 빌드 (aarch64 + x86_64 → lipo universal) ──
+echo "[0/5] PyInstaller — vega-backend Universal Binary 빌드..."
 
-VEGA_VENV="$REPO_ROOT/bin/.venv"
-if [ ! -x "$VEGA_VENV/bin/python3" ]; then
-    echo "  격리 venv 생성 중..."
-    python3 -m venv "$VEGA_VENV"
-    "$VEGA_VENV/bin/pip" install --quiet pyinstaller
-    "$VEGA_VENV/bin/pip" install --quiet -r "$REPO_ROOT/requirements.txt"
+# arm64 빌드 (mlx_env)
+ARM_VENV="${VEGA_ARM_VENV:-$HOME/dev/mlx_env}"
+if [ ! -x "$ARM_VENV/bin/pyinstaller" ]; then
+    echo "  ERROR: arm64 PyInstaller 없음 ($ARM_VENV/bin/pyinstaller). mlx_env 확인 필요." >&2
+    exit 1
 fi
-
-"$VEGA_VENV/bin/pyinstaller" bin/vega-backend.spec \
-    --distpath bin/dist \
-    --workpath bin/build_pyinstaller \
+echo "  [0a] arm64 빌드..."
+"$ARM_VENV/bin/pyinstaller" bin/vega-backend.spec \
+    --distpath bin/dist_arm64 \
+    --workpath bin/build_pyinstaller_arm64 \
     --noconfirm 2>&1 | grep -E "(ERROR|WARNING|INFO: Building EXE|INFO: Build complete)" || true
+if [ ! -f "bin/dist_arm64/vega-backend" ]; then
+    echo "  ERROR: arm64 vega-backend 빌드 실패" >&2; exit 1
+fi
+echo "  ✓ arm64 ($(du -sh bin/dist_arm64/vega-backend | cut -f1))"
 
-cp bin/dist/vega-backend bin/vega-backend
-cp bin/dist/vega-backend "bin/vega-backend-aarch64-apple-darwin"
+# x86_64 빌드 (intel64_env)
+X86_VENV="${VEGA_X86_VENV:-$HOME/dev/intel64_env}"
+if [ ! -x "$X86_VENV/bin/pyinstaller" ]; then
+    echo "  ERROR: x86_64 PyInstaller 없음 ($X86_VENV/bin/pyinstaller)." >&2
+    echo "  setup: arch -x86_64 /usr/local/bin/python3-intel64 -m venv ~/dev/intel64_env" >&2
+    exit 1
+fi
+echo "  [0b] x86_64 빌드..."
+arch -x86_64 "$X86_VENV/bin/pyinstaller" bin/vega-backend.spec \
+    --distpath bin/dist_x86_64 \
+    --workpath bin/build_pyinstaller_x86_64 \
+    --noconfirm 2>&1 | grep -E "(ERROR|WARNING|INFO: Building EXE|INFO: Build complete)" || true
+if [ ! -f "bin/dist_x86_64/vega-backend" ]; then
+    echo "  ERROR: x86_64 vega-backend 빌드 실패" >&2; exit 1
+fi
+echo "  ✓ x86_64 ($(du -sh bin/dist_x86_64/vega-backend | cut -f1))"
+
+# lipo 병합 → Universal Binary
+echo "  [0c] lipo — Universal Binary 병합..."
+lipo -create \
+    "bin/dist_arm64/vega-backend" \
+    "bin/dist_x86_64/vega-backend" \
+    -output "bin/vega-backend"
+cp "bin/vega-backend" "bin/vega-backend-aarch64-apple-darwin"
 chmod +x bin/vega-backend "bin/vega-backend-aarch64-apple-darwin"
-echo "  ✓ vega-backend ($(du -sh bin/vega-backend | cut -f1))"
+lipo -info "bin/vega-backend"
+echo "  ✓ Universal vega-backend ($(du -sh bin/vega-backend | cut -f1))"
 
 # ── 1. Tauri 앱 빌드 ──────────────────────────────────────────────────────────
 echo "[1/5] cargo tauri build..."
@@ -74,14 +103,34 @@ fi
 
 # --bundles app: app 번들만 생성. dmg 타겟은 create-dmg(osascript/Finder)로 헤드리스
 # 환경에서 hang 하므로 제외 — DMG 는 아래 hdiutil 단계에서 만든다.
+# Universal Binary: aarch64 + x86_64 각각 빌드 후 lipo 병합.
 cargo tauri build --target aarch64-apple-darwin --bundles app 2>&1 | grep -E "Compiling|Finished|error|Bundling"
-TAURI_APP="$REPO_ROOT/desktop/target/aarch64-apple-darwin/release/bundle/macos/${APP_NAME}.app"
-if [ ! -d "$TAURI_APP" ]; then
-    echo "ERROR: VEGA.app 빌드 실패 — $TAURI_APP 없음" >&2
-    exit 1
+TAURI_APP_ARM="$REPO_ROOT/desktop/target/aarch64-apple-darwin/release/bundle/macos/${APP_NAME}.app"
+if [ ! -d "$TAURI_APP_ARM" ]; then
+    echo "ERROR: VEGA.app (arm64) 빌드 실패 — $TAURI_APP_ARM 없음" >&2; exit 1
 fi
+echo "  ✓ aarch64 VEGA.app"
+
+cargo tauri build --target x86_64-apple-darwin --bundles app 2>&1 | grep -E "Compiling|Finished|error|Bundling"
+TAURI_APP_X86="$REPO_ROOT/desktop/target/x86_64-apple-darwin/release/bundle/macos/${APP_NAME}.app"
+if [ ! -d "$TAURI_APP_X86" ]; then
+    echo "ERROR: VEGA.app (x86_64) 빌드 실패 — $TAURI_APP_X86 없음" >&2; exit 1
+fi
+echo "  ✓ x86_64 VEGA.app"
+
+# Universal .app: arm64 번들 기준으로 x86_64 Mach-O 바이너리만 lipo로 교체
+TAURI_APP="$TAURI_APP_ARM"
+for bin_name in vega-desktop vega-backend; do
+    ARM_BIN="$TAURI_APP_ARM/Contents/MacOS/$bin_name"
+    X86_BIN="$TAURI_APP_X86/Contents/MacOS/$bin_name"
+    if [ -f "$ARM_BIN" ] && [ -f "$X86_BIN" ]; then
+        lipo -create "$ARM_BIN" "$X86_BIN" -output "$ARM_BIN"
+        echo "  lipo: $bin_name → $(lipo -archs "$ARM_BIN")"
+    fi
+done
+
 cd "$REPO_ROOT"
-echo "  ✓ VEGA.app (adhoc — [1.5]에서 Developer ID 재서명)"
+echo "  ✓ VEGA.app Universal Binary (adhoc — [1.5]에서 Developer ID 재서명)"
 
 # ── 1.5. 앱 재서명 (entitlements 강제) ────────────────────────────────────────
 # cargo tauri build 만으로는 내부 vega-backend 에 entitlements 가 안 박혀
@@ -130,7 +179,7 @@ UPDATER_DIR="$BUILD_DIR/updater"
 if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
     echo "[4.5/5] updater 아티팩트(.app.tar.gz + .sig) 생성..."
     mkdir -p "$UPDATER_DIR"
-    UPDATER_TGZ="$UPDATER_DIR/${APP_NAME}-${VERSION}-aarch64.app.tar.gz"
+    UPDATER_TGZ="$UPDATER_DIR/${APP_NAME}-${VERSION}-universal.app.tar.gz"
     # gzip tar 로 .app 통째 압축 (Tauri updater 가 기대하는 형식)
     tar -C "$(dirname "$TAURI_APP")" -czf "$UPDATER_TGZ" "$(basename "$TAURI_APP")"
     # minisign(.sig) 서명 — TAURI_SIGNING_PRIVATE_KEY(_PASSWORD) 환경변수 사용
@@ -139,7 +188,7 @@ if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
         || echo "  ⚠️  서명 실패 — .sig 미생성"
     # latest.json 채우기 도우미: .sig 내용을 출력
     if [ -f "${UPDATER_TGZ}.sig" ]; then
-        echo "  → latest.json 의 darwin-aarch64.signature 에 넣을 값:"
+        echo "  → latest.json 의 darwin-universal.signature 에 넣을 값:"
         echo "    $(cat "${UPDATER_TGZ}.sig")"
     fi
 else

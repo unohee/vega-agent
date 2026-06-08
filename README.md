@@ -1,14 +1,53 @@
 # VEGA Core
 
-**Vector Encoded General Agent** — a self-evolving LLM agent harness that keeps your
-knowledge, rules, and workflows outside the model so they persist across sessions,
-model swaps, and team deployments.
+**Vector Encoded General Agent** — a local-first AI workspace for people who want
+power-user LLM workflows without becoming terminal-native developers first.
+
+VEGA sits in the missing middle between easy-but-limited desktop AI apps and
+developer-only terminal/CLI agent setups. It gives non-developer power users the
+kind of control that technical users already build for themselves with shells,
+MCP servers, scripts, local daemons, and custom model routing.
 
 > VEGA Core is the open, generalized layer extracted from a production personal agent.
 > It ships with the harness infrastructure; you supply the domain knowledge via
 > `data/agents/_default.md` and let users evolve behavior through natural language.
 
 ---
+
+## Product thesis
+
+Most people now use several AI apps: ChatGPT, Claude, Codex-style coding agents,
+local models, OpenRouter models, and specialized tools. The problem is not a lack
+of models. The problem is that context, memory, permissions, files, and workflows
+are scattered across apps.
+
+Technical users can bridge that gap with terminals, CLI tools, MCP configs,
+shell scripts, local services, and custom glue code. Most power users cannot or do
+not want to pay that setup tax.
+
+VEGA exists to make that terminal-level AI setup feel like a desktop app:
+
+- **Easy like a desktop app** — install, open, connect accounts, and work.
+- **Powerful like a terminal setup** — local tools, files, model routing, MCP,
+  workflow memory, command execution, and approval gates.
+- **Local-first by default** — the user's working state, data, and authority stay
+  on their machine unless they explicitly opt into sync or remote features.
+
+In one sentence:
+
+> VEGA is the AI workspace between chat apps and command lines.
+
+Possible product language:
+
+> Power-user AI, without the terminal.
+
+> Terminal-level AI power. Desktop-app simple.
+
+> The last AI workspace you need.
+
+The long-term business shape follows from this: the local workspace can be free
+and useful on its own, while paid tiers can unlock account sync, encrypted backup,
+remote access, managed connectors, team policy, and support.
 
 ## What it is
 

@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
@@ -22,6 +23,8 @@ logger = logging.getLogger(__name__)
 # Max chars for dashboard section in system prompt (guards token budget)
 _DASHBOARD_MAX_CHARS = 3000
 _COLLECT_TIMEOUT = 5.0  # max wait time per collector function (seconds)
+_SSE_CONNECT_TIMEOUT = float(os.getenv("VEGA_SSE_CONNECT_TIMEOUT", "30"))
+_SSE_IDLE_TIMEOUT = float(os.getenv("VEGA_SSE_IDLE_TIMEOUT", "90"))
 
 from pipeline.auth.chatgpt import (
     CODEX_BASE_URL,
@@ -41,16 +44,19 @@ _STATE_TTL = 1800  # 30 minutes
 
 def _collect_safe(fn, *args, timeout: float = _COLLECT_TIMEOUT, default=None, **kwargs):
     """Run a collector function in a separate thread within the timeout. Returns default on failure or timeout."""
-    with ThreadPoolExecutor(max_workers=1) as ex:
-        future = ex.submit(fn, *args, **kwargs)
-        try:
-            return future.result(timeout=timeout)
-        except FuturesTimeoutError:
-            logger.warning("context_collect timeout: %s (%.1fs)", fn.__name__, timeout)
-            return default if default is not None else ([] if "list" in fn.__name__ else {})
-        except Exception as e:
-            logger.warning("context_collect error: %s — %s", fn.__name__, e)
-            return default if default is not None else ([] if "list" in fn.__name__ else {})
+    ex = ThreadPoolExecutor(max_workers=1)
+    future = ex.submit(fn, *args, **kwargs)
+    try:
+        return future.result(timeout=timeout)
+    except FuturesTimeoutError:
+        future.cancel()
+        logger.warning("context_collect timeout: %s (%.1fs)", fn.__name__, timeout)
+        return default if default is not None else ([] if "list" in fn.__name__ else {})
+    except Exception as e:
+        logger.warning("context_collect error: %s — %s", fn.__name__, e)
+        return default if default is not None else ([] if "list" in fn.__name__ else {})
+    finally:
+        ex.shutdown(wait=False, cancel_futures=True)
 
 
 def _build_dashboard_context() -> str:
@@ -68,11 +74,16 @@ def _build_dashboard_context() -> str:
     kst = ZoneInfo("Asia/Seoul")
     today_str = _dt.now(kst).strftime("%Y-%m-%d")
 
-    # Parallel collection — total wait = _COLLECT_TIMEOUT cap instead of sum of each function
-    with ThreadPoolExecutor(max_workers=3) as ex:
+    # Parallel collection — total wait = _COLLECT_TIMEOUT cap instead of sum of each function.
+    # Do not use ThreadPoolExecutor as a context manager here: __exit__ waits for timed-out
+    # collectors and can make the LLM appear frozen before the first token.
+    ex = ThreadPoolExecutor(max_workers=3)
+    futures = []
+    try:
         f_cal = ex.submit(collect_calendar, 7)
         f_linear = ex.submit(collect_linear_in_progress, 8)
         f_mail = ex.submit(collect_priority_mail_since, 24)
+        futures = [f_cal, f_linear, f_mail]
 
         def _get(future, default):
             try:
@@ -83,6 +94,10 @@ def _build_dashboard_context() -> str:
         events_by_day: dict = _get(f_cal, {})
         issues: list = _get(f_linear, [])
         mails: list = _get(f_mail, [])
+    finally:
+        for f in futures:
+            f.cancel()
+        ex.shutdown(wait=False, cancel_futures=True)
 
     lines: list[str] = []
 
@@ -295,17 +310,30 @@ def _iter_sse_lines(resp):
             buf = b""
 
 
+def _queue_put(q, value, loop: asyncio.AbstractEventLoop | None = None) -> None:
+    """Put into stdlib Queue or asyncio.Queue safely from the SSE worker thread."""
+    if loop is not None:
+        try:
+            loop.call_soon_threadsafe(q.put_nowait, value)
+            return
+        except RuntimeError:
+            pass
+    q.put_nowait(value)
+
+
 def _stream_sse(
     req: urllib.request.Request,
     token_q: "asyncio.Queue[str | None]",
     tool_q: "asyncio.Queue[dict | None]",
     kind: str = "responses",
     stats_out: dict | None = None,
+    loop: asyncio.AbstractEventLoop | None = None,
 ) -> None:
     """Blocking SSE consumer — emits events into two Queues (runs inside an executor).
 
-    urllib timeout applies to socket reads too, causing timeouts during model 'thinking' idle.
-    Uses http.client directly to set only a connect timeout (30s) with unlimited read time.
+    Uses http.client directly so connect and read-idle timeouts can be controlled separately.
+    The idle timeout prevents OpenRouter/provider SSE streams from staying open forever
+    without events, which otherwise leaves VEGA looking stuck and can accumulate worker threads.
 
     kind:
       'responses'         — OpenAI Responses API SSE (ChatGPT Codex)
@@ -331,9 +359,9 @@ def _stream_sse(
             ConnCls = http.client.HTTPSConnection if is_https else http.client.HTTPConnection
             # certifi 명시 context — PyInstaller 번들/깨끗한 사용자 맥에서도 CA 검증 통과
             ctx = certified_context() if is_https else None
-            conn = ConnCls(host_port, context=ctx, timeout=30) if is_https else ConnCls(host_port, timeout=30)
+            conn = ConnCls(host_port, context=ctx, timeout=_SSE_CONNECT_TIMEOUT) if is_https else ConnCls(host_port, timeout=_SSE_CONNECT_TIMEOUT)
             conn.connect()
-            conn.sock.settimeout(None)  # model can take a long time before the first token
+            conn.sock.settimeout(_SSE_IDLE_TIMEOUT)
             conn.request(req.get_method(), path, body=req.data, headers=dict(req.headers))
             resp = conn.getresponse()
             if resp.status != 200:
@@ -347,7 +375,7 @@ def _stream_sse(
                 except Exception: pass
             conn = None
             _ufctx = certified_context() if req.full_url.startswith("https://") else None
-            line_iter = urllib.request.urlopen(req, timeout=600, context=_ufctx)
+            line_iter = urllib.request.urlopen(req, timeout=_SSE_IDLE_TIMEOUT, context=_ufctx)
 
         # 2) Consume SSE lines
         for raw_line in line_iter:
@@ -360,7 +388,7 @@ def _stream_sse(
                 if kind == "chat_completions":
                     for tc in cc_tool_calls.values():
                         if tc.get("name"):
-                            tool_q.put_nowait(dict(tc))
+                            _queue_put(tool_q, dict(tc), loop)
                 break
             try:
                 ev = json.loads(chunk)
@@ -400,7 +428,7 @@ def _stream_sse(
                     if dt == "text_delta":
                         text = delta.get("text", "")
                         if text:
-                            token_q.put_nowait(text)
+                            _queue_put(token_q, text, loop)
                     elif dt == "input_json_delta":
                         blk = anthropic_blocks.get(idx)
                         if blk is not None and "arguments" in blk:
@@ -409,10 +437,10 @@ def _stream_sse(
                     idx = ev.get("index", 0)
                     blk = anthropic_blocks.get(idx)
                     if blk and blk.get("name"):
-                        tool_q.put_nowait({
+                        _queue_put(tool_q, {
                             "id": blk["id"], "call_id": blk["call_id"],
                             "name": blk["name"], "arguments": blk["arguments"],
-                        })
+                        }, loop)
                 elif et == "message_delta":
                     usage = ev.get("usage") or {}
                     if stats_out is not None and usage:
@@ -451,7 +479,7 @@ def _stream_sse(
                 delta = choices[0].get("delta") or {}
                 content = delta.get("content")
                 if content:
-                    token_q.put_nowait(content)
+                    _queue_put(token_q, content, loop)
                 tcs = delta.get("tool_calls") or []
                 for tc in tcs:
                     idx = tc.get("index", 0)
@@ -474,7 +502,7 @@ def _stream_sse(
             if t == "response.output_text.delta":
                 delta = ev.get("delta", "")
                 if delta:
-                    token_q.put_nowait(delta)
+                    _queue_put(token_q, delta, loop)
 
             elif t == "response.output_item.added":
                 item = ev.get("item", {})
@@ -499,7 +527,7 @@ def _stream_sse(
                     tool_calls[iid]["arguments"] = ev.get(
                         "arguments", arg_buffers.get(iid, "")
                     )
-                    tool_q.put_nowait(dict(tool_calls[iid]))
+                    _queue_put(tool_q, dict(tool_calls[iid]), loop)
 
             elif t == "response.completed":
                 # ChatGPT Responses API: response.usage.{input_tokens, output_tokens, ...}
@@ -519,10 +547,12 @@ def _stream_sse(
                         stats_out["model"] = model_id
 
     except Exception as e:
+        if stats_out is not None:
+            stats_out["stream_error"] = str(e)
         logger.error("SSE streaming error: %s", e)
     finally:
-        token_q.put_nowait(None)
-        tool_q.put_nowait(None)
+        _queue_put(token_q, None, loop)
+        _queue_put(tool_q, None, loop)
         if conn:
             try: conn.close()
             except Exception: pass
@@ -598,7 +628,7 @@ async def stream_gpt(
         token_q: asyncio.Queue = asyncio.Queue()
         tool_q: asyncio.Queue = asyncio.Queue()
 
-        sse_task = loop.run_in_executor(None, _stream_sse, req, token_q, tool_q, kind, stats)
+        sse_task = loop.run_in_executor(None, _stream_sse, req, token_q, tool_q, kind, stats, loop)
 
         # Show "thinking" indicator at the start of each round — so the UI doesn't appear frozen
         # while the model deliberates before responding after a tool call.
@@ -644,6 +674,10 @@ async def stream_gpt(
                 await asyncio.sleep(0.005)
 
         await sse_task
+
+        stream_error = stats.get("stream_error") if stats is not None else None
+        if stream_error and not round_text and not pending_tools:
+            raise RuntimeError(f"LLM 스트림 오류: {stream_error}")
 
         if not pending_tools:
             break

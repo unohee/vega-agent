@@ -93,6 +93,14 @@ def tool_groups_path() -> Path:
     return data_dir() / "tool_groups.json"
 
 
+def slack_oauth_client_path() -> Path:
+    """Slack OAuth client config. User data overrides the bundled repo default."""
+    user_path = data_dir() / "slack_oauth_client.json"
+    if user_path.exists():
+        return user_path
+    return _REPO_DATA / "slack_oauth_client.json"
+
+
 def uploads_dir() -> Path:
     p = data_dir() / "uploads"
     p.mkdir(parents=True, exist_ok=True)

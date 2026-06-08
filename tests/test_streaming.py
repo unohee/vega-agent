@@ -26,11 +26,15 @@ class TestCollectSafe:
 
     def test_timeout_returns_default(self):
         def slow():
-            time.sleep(10)
+            time.sleep(0.2)
             return {"data": "never"}
 
-        result = self.collect_safe(slow, timeout=0.1, default={})
+        start = time.monotonic()
+        result = self.collect_safe(slow, timeout=0.01, default={})
+        elapsed = time.monotonic() - start
+
         assert result == {}
+        assert elapsed < 0.1
 
     def test_exception_returns_default(self):
         def boom():
@@ -65,19 +69,24 @@ class TestBuildDashboardContext:
 
     def test_calendar_hang_does_not_block(self):
         """calendar가 timeout해도 결과 반환 (병렬 수집 구조)."""
-        from pipeline.streaming import _build_dashboard_context
+        from pipeline import streaming
 
         import time as _time
 
         def slow_calendar(*args, **kwargs):
-            _time.sleep(0.05)
+            _time.sleep(0.2)
             return {}
 
-        with patch("pipeline.context_collect.collect_calendar", side_effect=slow_calendar):
-            with patch("pipeline.context_collect.collect_linear_in_progress", return_value=[]):
-                with patch("pipeline.context_collect.collect_priority_mail_since", return_value=[]):
-                    result = _build_dashboard_context()
+        start = _time.monotonic()
+        with patch("pipeline.streaming._COLLECT_TIMEOUT", 0.01):
+            with patch("pipeline.context_collect.collect_calendar", side_effect=slow_calendar):
+                with patch("pipeline.context_collect.collect_linear_in_progress", return_value=[]):
+                    with patch("pipeline.context_collect.collect_priority_mail_since", return_value=[]):
+                        result = streaming._build_dashboard_context()
+        elapsed = _time.monotonic() - start
+
         assert isinstance(result, str)
+        assert elapsed < 0.1
 
     def test_linear_issues_rendered(self):
         from pipeline.streaming import _build_dashboard_context
@@ -371,3 +380,33 @@ class TestStreamSSE:
         assert tc["name"] == "web_search"
         assert tc["call_id"] == "call1"
         assert json.loads(tc["arguments"])["query"] == "VEGA"
+
+
+class TestStreamGptStability:
+    """stream_gpt — provider stream failure handling."""
+
+    @pytest.mark.asyncio
+    async def test_empty_stream_error_is_not_silent_done(self):
+        from pipeline import streaming
+
+        def fake_stream_sse(req, token_q, tool_q, kind="chat_completions", stats_out=None, loop=None):
+            if stats_out is not None:
+                stats_out["stream_error"] = "timed out"
+            streaming._queue_put(token_q, None, loop)
+            streaming._queue_put(tool_q, None, loop)
+
+        tokens: list[str] = []
+        stats: dict = {}
+        with patch("pipeline.streaming._build_request", return_value=(MagicMock(), "chat_completions")):
+            with patch("pipeline.streaming._stream_sse", side_effect=fake_stream_sse):
+                with patch("pipeline.streaming.build_dynamic_preamble", return_value=""):
+                    with pytest.raises(RuntimeError, match="LLM 스트림 오류"):
+                        await streaming.stream_gpt(
+                            [{"role": "user", "content": "hi"}],
+                            "system",
+                            on_token=lambda tok: tokens.append(tok),
+                            stats=stats,
+                        )
+
+        assert tokens == []
+        assert stats["stream_error"] == "timed out"
