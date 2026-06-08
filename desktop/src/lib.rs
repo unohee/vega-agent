@@ -67,6 +67,29 @@ fn backend_is_listening() -> bool {
     std::net::TcpStream::connect("127.0.0.1:8100").is_ok()
 }
 
+/// 백엔드 /api/health 가 HTTP 200을 돌려주는지 std TcpStream 으로 직접 확인한다.
+/// reqwest 등 무거운 의존성 없이 한 번의 GET 으로 판단. uvicorn 이 막 떠서
+/// TCP 는 열렸지만 앱 startup(MCP 등록 등)이 안 끝났으면 200이 아니므로
+/// 진짜 "준비됨" 신호로 쓸 수 있다.
+fn backend_health_ok() -> bool {
+    use std::io::{Read, Write};
+    let mut stream = match std::net::TcpStream::connect("127.0.0.1:8100") {
+        Ok(s) => s,
+        Err(_) => return false,
+    };
+    let _ = stream.set_read_timeout(Some(std::time::Duration::from_millis(800)));
+    let _ = stream.set_write_timeout(Some(std::time::Duration::from_millis(800)));
+    let req = "GET /api/health HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n";
+    if stream.write_all(req.as_bytes()).is_err() {
+        return false;
+    }
+    let mut buf = [0u8; 64];
+    match stream.read(&mut buf) {
+        Ok(n) if n >= 12 => buf.starts_with(b"HTTP/1.1 200") || buf.starts_with(b"HTTP/1.0 200"),
+        _ => false,
+    }
+}
+
 /// 빌드타임에 주입하는 모바일 기본 백엔드 URL.
 /// `VEGA_SERVER_URL` 환경변수가 있으면 그 값을, 없으면 localhost(시뮬레이터용)를 쓴다.
 /// 예) VEGA_SERVER_URL=https://vega.example.com cargo tauri ios build
@@ -122,12 +145,38 @@ fn wait_and_navigate(win: tauri::WebviewWindow, url: String) {
     }
     std::thread::spawn(move || {
         let health = format!("{}/api/health", backend_base());
-        for _ in 0..240 {
-            if backend_is_listening() {
-                // TCP 연결 가능 → HTTP 응답 대기 (uvicorn 초기화 시간)
-                std::thread::sleep(std::time::Duration::from_millis(300));
+
+        // index.html 의 window.vegaProgress(pct, label) 를 호출하는 헬퍼.
+        let progress = |win: &tauri::WebviewWindow, pct: u32, label: &str| {
+            let safe = label.replace('\'', "");
+            let _ = win.eval(&format!("window.vegaProgress && window.vegaProgress({pct}, '{safe}')"));
+        };
+
+        // 폴링: 500ms × 240 = 최대 120초.
+        // 단계별 실제 신호로 진행률을 채운다.
+        //  - 프로세스 부팅 대기(TCP 미연결): 경과 시간 기반 0→80% (백엔드 spawn~uvicorn 기동)
+        //  - TCP listen 감지: 85% ("서버 응답 확인 중")
+        //  - health 200: 100% 후 navigate (앱 startup·MCP 등록까지 완료)
+        let mut listening_seen = false;
+        for i in 0..240u32 {
+            if backend_health_ok() {
+                progress(&win, 100, "준비 완료");
+                std::thread::sleep(std::time::Duration::from_millis(180));
                 let _ = win.eval(&format!("window.location.href = {:?}", url));
                 return;
+            }
+            if backend_is_listening() {
+                if !listening_seen {
+                    listening_seen = true;
+                    progress(&win, 88, "서버 응답 확인 중…");
+                }
+                // TCP 는 열렸으나 아직 health 미준비 — 90~96% 사이를 천천히 채운다.
+                let creep = 90 + (i % 7);
+                progress(&win, creep.min(96), "백엔드 초기화 중…");
+            } else {
+                // 아직 프로세스 기동 전 — 경과 시간으로 0→80% (약 16초에 80% 도달).
+                let pct = (i * 5).min(80);
+                progress(&win, pct, "VEGA 백엔드 시작 중…");
             }
             std::thread::sleep(std::time::Duration::from_millis(500));
         }
