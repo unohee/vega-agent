@@ -1,0 +1,120 @@
+name: Release DMG
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '버전 (예: 0.1.8)'
+        required: true
+        type: string
+
+jobs:
+  build-and-release:
+    name: Build Universal DMG & Release
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 60
+
+    env:
+      # 서명 인증서: org/repo secret 에 저장
+      VEGA_SIGN_ID: "Developer ID Application: Heewon Oh (635QK74RYK)"
+      # 공증 자격증명 (notarytool keychain-profile 대신 env var 방식)
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      # Tauri updater 서명 키
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: 버전 결정
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="${{ inputs.version }}"
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Rust 타겟 확인
+        run: |
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
+      - name: mlx_env PyInstaller 확인
+        run: |
+          if [ ! -x "$HOME/dev/mlx_env/bin/pyinstaller" ]; then
+            echo "::error::arm64 PyInstaller 없음 — runner에 mlx_env 구성 필요"
+            exit 1
+          fi
+
+      - name: intel64_env PyInstaller 확인
+        run: |
+          if [ ! -x "$HOME/dev/intel64_env/bin/pyinstaller" ]; then
+            echo "::error::x86_64 PyInstaller 없음 — runner에 intel64_env 구성 필요"
+            exit 1
+          fi
+
+      - name: 버전 파일 업데이트
+        run: |
+          sed -i '' "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" desktop/tauri.conf.json
+          sed -i '' "s/^version = \"[^\"]*\"/version = \"$VERSION\"/" desktop/Cargo.toml
+          sed -i '' "s/^VERSION=\"[^\"]*\"/VERSION=\"$VERSION\"/" scripts/build_dmg.sh
+
+      - name: 공증 프로필 등록 (CI env var → keychain-profile)
+        run: |
+          xcrun notarytool store-credentials "vega-notary-ci" \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD"
+
+      - name: DMG 빌드 (Universal Binary + 공증)
+        run: |
+          source "$HOME/dev/mlx_env/bin/activate"
+          VEGA_NOTARY_PROFILE=vega-notary-ci bash scripts/build_dmg.sh
+        timeout-minutes: 45
+
+      - name: DMG 검증
+        run: |
+          DMG="build_output/VEGA-${VERSION}.dmg"
+          spctl --assess --type open --context context:primary-signature -v "$DMG"
+          codesign -d --verbose "$DMG" 2>&1 | grep -E "Authority|TeamID"
+          echo "SHA256: $(shasum -a 256 "$DMG" | cut -d' ' -f1)"
+
+      - name: GitHub Release 생성
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name || format('v{0}', inputs.version) }}
+          name: VEGA v${{ steps.version.outputs.version }}
+          draft: false
+          prerelease: false
+          files: |
+            build_output/VEGA-${{ steps.version.outputs.version }}.dmg
+            build_output/updater/VEGA-${{ steps.version.outputs.version }}-universal.app.tar.gz
+            build_output/updater/VEGA-${{ steps.version.outputs.version }}-universal.app.tar.gz.sig
+          body: |
+            ## VEGA v${{ steps.version.outputs.version }}
+
+            ### 설치
+            1. `VEGA-${{ steps.version.outputs.version }}.dmg` 다운로드
+            2. VEGA.app을 Applications 폴더로 드래그
+            3. 첫 실행 시 백그라운드 데몬 자동 등록
+
+            ### 지원 아키텍처
+            - Apple Silicon (aarch64) — 네이티브
+            - Intel Mac (x86_64) — 네이티브
+
+            > Universal Binary — 단일 DMG로 모든 macOS 지원
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 공증 프로필 정리
+        if: always()
+        run: |
+          security delete-generic-password -s "com.apple.gke.notarytool.account" 2>/dev/null || true
