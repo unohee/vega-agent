@@ -76,18 +76,23 @@ jobs:
             echo "::error::x86_64 PyInstaller 없음 — runner에 ~/dev/intel64_env 구성 필요"; exit 1
           fi
 
-      - name: Slack OAuth client 주입 (gitignore된 시크릿)
+      - name: OAuth client 시크릿 주입 (gitignore된 파일 복원)
         env:
           SLACK_OAUTH_CLIENT_JSON: ${{ secrets.SLACK_OAUTH_CLIENT_JSON }}
+          GOOGLE_OAUTH_CLIENT_JSON: ${{ secrets.GOOGLE_OAUTH_CLIENT_JSON }}
         run: |
-          # data/slack_oauth_client.json 은 시크릿이라 리포에 없다. spec이 번들에
-          # 포함하므로 빌드 전 secret 에서 복원한다. (없으면 빌드가 실패하므로 필수)
+          mkdir -p data
           if [ -z "$SLACK_OAUTH_CLIENT_JSON" ]; then
             echo "::error::SLACK_OAUTH_CLIENT_JSON secret 미설정 — Slack OAuth 번들 불가"; exit 1
           fi
-          mkdir -p data
           printf '%s' "$SLACK_OAUTH_CLIENT_JSON" > data/slack_oauth_client.json
           /usr/bin/python3 -c "import json;json.load(open('data/slack_oauth_client.json'));print('slack_oauth_client.json 복원 OK')"
+          if [ -n "$GOOGLE_OAUTH_CLIENT_JSON" ]; then
+            printf '%s' "$GOOGLE_OAUTH_CLIENT_JSON" > data/google_oauth_client.json
+            /usr/bin/python3 -c "import json;json.load(open('data/google_oauth_client.json'));print('google_oauth_client.json 복원 OK')"
+          else
+            echo "::warning::GOOGLE_OAUTH_CLIENT_JSON 미설정 — Google OAuth 미번들"
+          fi
 
       - name: 공증 프로필 등록 (CI env var → keychain-profile)
         run: |
