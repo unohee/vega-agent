@@ -3982,6 +3982,14 @@ async function streamChat(msg, opts) {
           bub.appendChild(badge);
         }
         await new Promise(r => setTimeout(r, delay));
+        // 재연결 시 서버가 buf를 처음부터 재전송할 수 있다(진행중 task + last_event_id=0
+        // → start_cursor=0). 이미 그려진 토큰 위에 또 쌓이면 스트리밍 중 중복(echo)으로
+        // 보인다(INT-1411). 멱등 재렌더: lastEventId=0으로 전체 재수신 + 버블의 텍스트
+        // 세그먼트·토큰 버퍼·typer를 리셋해 빈 상태에서 다시 그린다(도구 배지 등은 보존).
+        lastEventId = 0;
+        tokenBufRef.v = '';
+        bub.querySelectorAll('.stream-content').forEach(el => el.remove());
+        typer = makeTyper(bub);
       } else if (!streamDone) {
         typer.flush();
         if (!tokenBufRef.v.trim()) showError(bub, '응답이 중간에 끊겼어');

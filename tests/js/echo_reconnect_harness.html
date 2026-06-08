@@ -1,0 +1,115 @@
+<!doctype html>
+<!-- Created: 2026-06-08
+     Purpose: chat.html 토큰 렌더러(makeTyper) + 재연결 멱등 처리를 실제 DOM에서 검증.
+              재연결 시 서버가 buf를 처음부터 재전송해도(start_cursor=0) 본문이
+              중복(echo)되지 않아야 한다 — INT-1411.
+     Usage: Chrome --headless 로 로드 → #result-sink 의 RESULT_JSON:{...}. -->
+<html><head><meta charset="utf-8"></head><body>
+<div id="stage"></div>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script>
+// marked 로드 실패(오프라인) 대비 — 최소 폴백(텍스트 그대로).
+if (typeof marked === 'undefined') {
+  window.marked = { parse: (t) => t.replace(/&/g,'&amp;').replace(/</g,'&lt;') };
+}
+
+// chat.html에서 렌더러 관련 함수만 추출해 주입 (테스트 대상 = 운영 코드).
+async function loadFns() {
+  const html = await fetch('../../web/static/chat.html').then(r => r.text());
+  const m = html.match(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/);
+  const script = m[1];
+  function extract(name) {
+    const re = new RegExp('function ' + name + '\\([\\s\\S]*?\\n\\}');
+    const mm = script.match(re);
+    if (!mm) throw new Error('함수 추출 실패: ' + name);
+    return mm[0];
+  }
+  const names = ['getStreamContent', 'closeStreamSegment', 'renderMarkdown', 'makeTyper'];
+  let src = 'var TYPING_SPEED = 4;\nvar CHUNK_SIZE = 8;\nfunction scrollBottom(){}\n';
+  for (const n of names) src += extract(n) + '\n';
+  src += '\nwindow._fns = { getStreamContent, closeStreamSegment, makeTyper };';
+  (0, eval)(src);
+}
+
+function mkBubble() {
+  const b = document.createElement('div');
+  b.className = 'bubble';
+  document.getElementById('stage').appendChild(b);
+  return b;
+}
+function segText(bub) {
+  return Array.from(bub.querySelectorAll('.stream-content')).map(s => s.textContent).join('');
+}
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+async function run() {
+  await loadFns();
+  const F = window._fns;
+  const results = [];
+  const FULL = '맞아. 수요기관으로 좁혀볼게.';
+
+  // 케이스 1: 재연결 멱등 — 절반 받고 끊김 → [수정 로직] 버블 리셋 + 새 typer →
+  //           서버가 buf 전체 재전송(전체 토큰 재push). 본문이 1번만 나와야 함.
+  {
+    const bub = mkBubble();
+    let typer = F.makeTyper(bub);
+    for (const c of FULL.slice(0, 10)) typer.push(c);
+    await sleep(200);
+    // 재연결 멱등 처리 (chat.html 재연결 블록과 동일): stream-content 제거 + 새 typer
+    bub.querySelectorAll('.stream-content').forEach(el => el.remove());
+    typer = F.makeTyper(bub);
+    for (const c of FULL) typer.push(c);     // 전체 재전송
+    await sleep(300);
+    typer.flush();
+    await sleep(200);
+    const txt = segText(bub).trim();
+    const cnt = (txt.match(/맞아\./g) || []).length;
+    results.push({ case: '재연결멱등', pass: cnt === 1 && txt === FULL, detail: txt });
+  }
+
+  // 케이스 2: 정상 단일 스트림 — 중복 없이 1번.
+  {
+    const bub = mkBubble();
+    const typer = F.makeTyper(bub);
+    for (const c of FULL) typer.push(c);
+    await sleep(300);
+    typer.flush();
+    await sleep(200);
+    const txt = segText(bub).trim();
+    results.push({ case: '단일스트림', pass: txt === FULL, detail: txt });
+  }
+
+  // 케이스 3: 도구 끼어듦(breakSegment) 후 이어쓰기 — 세그먼트 분리되나 중복 아님.
+  {
+    const bub = mkBubble();
+    const typer = F.makeTyper(bub);
+    for (const c of '먼저 검색하고') typer.push(c);
+    await sleep(150);
+    typer.breakSegment();          // 도구 배지 끼어듦
+    for (const c of ' 결과를 정리할게') typer.push(c);
+    await sleep(250);
+    typer.flush();
+    await sleep(200);
+    const txt = segText(bub);
+    const ok = txt.includes('먼저 검색하고') && txt.includes('결과를 정리할게')
+               && (txt.match(/먼저 검색하고/g) || []).length === 1;
+    results.push({ case: '도구분리', pass: ok, detail: txt });
+  }
+
+  const out = { ok: results.every(r => r.pass), results };
+  window.__RESULT__ = out;
+  const sink = document.createElement('pre');
+  sink.id = 'result-sink';
+  sink.textContent = 'RESULT_JSON:' + JSON.stringify(out);
+  document.body.appendChild(sink);
+  document.title = 'DONE';
+}
+run().catch(e => {
+  const sink = document.createElement('pre');
+  sink.id = 'result-sink';
+  sink.textContent = 'RESULT_JSON:' + JSON.stringify({ ok: false, error: String(e && e.stack || e) });
+  document.body.appendChild(sink);
+  document.title = 'DONE';
+});
+</script>
+</body></html>
