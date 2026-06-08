@@ -683,6 +683,11 @@ async def stream_gpt(
         if not pending_tools:
             break
 
+        # Preserve the assistant text from a tool-calling round in history. If dropped,
+        # the model re-emits the same intro every round (echo) — INT-1411 regression.
+        if round_text.strip():
+            input_items.append({"role": "assistant", "content": round_text})
+
         for tc in pending_tools:
             name = tc["name"]
             try:
