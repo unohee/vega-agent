@@ -26,6 +26,10 @@ jobs:
     timeout-minutes: 90
 
     env:
+      # self-hosted runner 의 비대화형 셸엔 ~/.zshrc PATH 가 안 실린다.
+      # rustup/cargo/cargo-tauri(~/.cargo/bin), homebrew(/opt/homebrew/bin),
+      # 기타 사용자 바이너리(~/.local/bin)를 명시적으로 prepend.
+      PATH: "/Users/unohee/.cargo/bin:/Users/unohee/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
       VEGA_SIGN_ID: "Developer ID Application: Heewon Oh (635QK74RYK)"
       APPLE_ID: ${{ secrets.APPLE_ID }}
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
