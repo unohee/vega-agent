@@ -431,6 +431,31 @@ fn ensure_launchagent(app: &tauri::AppHandle) -> bool {
     }
 }
 
+/// 트레이 "백엔드 재시작" — 백엔드 데몬을 kickstart -k 로 재기동 (INT-1412).
+/// 개발(vega.server)·배포(vega-backend) label 둘 다 시도해 환경 무관 동작.
+#[cfg(all(feature = "daemon", not(mobile)))]
+fn restart_backend() {
+    let uid = unsafe { libc::getuid() };
+    let domain = format!("gui/{uid}");
+    for label in ["com.unohee.vega.server", "com.unohee.vega-backend"] {
+        let target = format!("{domain}/{label}");
+        // 로드돼 있을 때만 kickstart (미등록이면 조용히 skip)
+        let loaded = std::process::Command::new("launchctl")
+            .args(["print", &target])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if loaded {
+            let _ = std::process::Command::new("launchctl")
+                .args(["kickstart", "-k", &target])
+                .status();
+            vlog!("[VEGA] 백엔드 재시작: {target}");
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default()
@@ -540,11 +565,12 @@ pub fn run() {
             let show_item     = MenuItemBuilder::with_id("show",     s.open).build(app)?;
             let hide_item     = MenuItemBuilder::with_id("hide",     s.hide).build(app)?;
             let settings_item = MenuItemBuilder::with_id("settings", s.settings).build(app)?;
+            let restart_item  = MenuItemBuilder::with_id("restart-backend", s.restart).build(app)?;
             let quit_item     = MenuItemBuilder::with_id("quit",     s.quit).build(app)?;
             let menu = MenuBuilder::new(app)
                 .items(&[&show_item, &hide_item])
                 .separator()
-                .items(&[&settings_item])
+                .items(&[&settings_item, &restart_item])
                 .separator()
                 .items(&[&quit_item])
                 .build()?;
@@ -562,6 +588,10 @@ pub fn run() {
                         }
                     }
                     "settings" => open_settings_window(app),
+                    "restart-backend" => {
+                        #[cfg(all(feature = "daemon", not(mobile)))]
+                        restart_backend();
+                    }
                     "quit" => {
                         // GUI 셸만 종료 — LaunchAgent 데몬은 계속 실행
                         app.exit(0);

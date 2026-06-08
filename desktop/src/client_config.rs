@@ -107,6 +107,7 @@ pub struct Strings {
     pub open:     &'static str,
     pub hide:     &'static str,
     pub settings: &'static str,
+    pub restart:  &'static str,
     pub quit:     &'static str,
     pub settings_title: &'static str,
     pub tooltip:  &'static str,
@@ -118,6 +119,7 @@ pub fn strings() -> Strings {
             open:     "VEGA 열기",
             hide:     "숨기기",
             settings: "설정…",
+            restart:  "백엔드 재시작",
             quit:     "종료",
             settings_title: "VEGA 설정",
             tooltip:  "VEGA",
@@ -126,6 +128,7 @@ pub fn strings() -> Strings {
             open:     "Open VEGA",
             hide:     "Hide",
             settings: "Settings…",
+            restart:  "Restart backend",
             quit:     "Quit",
             settings_title: "VEGA Settings",
             tooltip:  "VEGA",
@@ -144,11 +147,12 @@ pub fn rebuild_tray(app: &tauri::AppHandle) {
     let Ok(show_item) = MenuItemBuilder::with_id("show", s.open).build(app) else { return };
     let Ok(hide_item) = MenuItemBuilder::with_id("hide", s.hide).build(app) else { return };
     let Ok(settings_item) = MenuItemBuilder::with_id("settings", s.settings).build(app) else { return };
+    let Ok(restart_item) = MenuItemBuilder::with_id("restart-backend", s.restart).build(app) else { return };
     let Ok(quit_item) = MenuItemBuilder::with_id("quit", s.quit).build(app) else { return };
     let Ok(menu) = MenuBuilder::new(app)
         .items(&[&show_item, &hide_item])
         .separator()
-        .items(&[&settings_item])
+        .items(&[&settings_item, &restart_item])
         .separator()
         .items(&[&quit_item])
         .build()
