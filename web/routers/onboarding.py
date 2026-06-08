@@ -313,7 +313,8 @@ _WIZARD_SYSTEM = """당신은 VEGA 설치 마법사를 진행하는 어시스턴
   {"set": {"display_name": "홍길동"}}
   ```
 - Google 연동을 사용자가 원하면: ```vega {"action": "google_auth"} ``` 를 출력.
-- 모든 설정이 끝났으면: ```vega {"action": "finish"} ``` 출력 후 환영 인사.
+  (Google 단계 화면에서 Slack 연동까지 이어서 안내되므로, 너는 google_auth 까지만 트리거하면 된다.)
+- 사용자가 Google 을 원치 않고 곧장 끝내려 하면: ```vega {"action": "finish"} ``` 출력 후 환영 인사.
 - 처음 메시지(사용자 입력 없음)에는 VEGA를 한 줄로 소개하고 이름부터 물어라.
 """
 
@@ -382,6 +383,24 @@ def _apply_directives(directives: list[dict]) -> list[str]:
     if changed:
         save_profile(profile)
     return applied
+
+
+# ── Slack 연동 단계 ───────────────────────────────────────────────────────────
+# OAuth 자체는 server.py의 GET /slack/auth (새 탭) → GET /slack/callback 가 처리한다.
+# 마법사는 아래 상태 엔드포인트를 폴링해 연결 완료를 감지한다.
+
+@router.get("/api/onboarding/slack")
+async def slack_status():
+    """Slack 연동 상태. configured(빌드에 client.json 있음) + authenticated(user token 보유)."""
+    try:
+        from pipeline.auth import slack
+        return JSONResponse({
+            "configured": slack.is_configured(),
+            "authenticated": slack.is_authenticated(),
+            "team": slack.stored_team(),
+        })
+    except Exception as e:
+        return JSONResponse({"configured": False, "authenticated": False, "error": str(e)})
 
 
 # ── Google Cloud OAuth 단계 ──────────────────────────────────────────────────

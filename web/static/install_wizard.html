@@ -59,6 +59,7 @@
     <div class="dot active" id="dot0"></div>
     <div class="dot" id="dot1"></div>
     <div class="dot" id="dot2"></div>
+    <div class="dot" id="dot3"></div>
   </div>
 
   <!-- STEP 0: 프로바이더 선택 + 인증 -->
@@ -121,11 +122,24 @@
       <button class="btn" id="gAuth">브라우저로 인증</button>
     </div>
   </div>
+
+  <!-- STEP 3: Slack 연동 -->
+  <div class="card hidden" id="step3">
+    <h2>Slack 연동 (선택)</h2>
+    <div class="sub">Slack 채널·DM을 읽고 검색하려면 워크스페이스에 연결하세요. 건너뛰어도 나중에 설정할 수 있습니다.</div>
+    <div class="hint">"Slack 연결"을 누르면 새 탭에서 워크스페이스 동의 화면이 열립니다. 동의 후 이 창으로 돌아오면 자동으로 완료 처리됩니다.</div>
+    <div class="msg" id="sMsg"></div>
+    <div class="row">
+      <button class="btn ghost" id="sSkip">건너뛰기</button>
+      <div class="grow"></div>
+      <button class="btn" id="sAuth">Slack 연결</button>
+    </div>
+  </div>
 </div>
 
 <script>
 const $ = id => document.getElementById(id);
-function setStep(n){ [0,1,2].forEach(i=>{ $('step'+i).classList.toggle('hidden', i!==n);
+function setStep(n){ [0,1,2,3].forEach(i=>{ $('step'+i).classList.toggle('hidden', i!==n);
   const d=$('dot'+i); d.classList.toggle('active', i===n); d.classList.toggle('done', i<n); }); }
 async function api(path, body){ const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})}); return r.json(); }
 function gotoChat(){ location.href='/chat'; }
@@ -207,7 +221,9 @@ async function turn(){
   if(res.reply){ addBubble(res.reply,'bot'); history.push({role:'assistant',content:res.reply}); }
   for(const d of (res.directives||[])){
     if(d.action==='google_auth'){ setStep(2); return; }
-    if(d.action==='finish'){ await api('/api/onboarding/finish',{}); addBubble('설정 완료! VEGA로 이동합니다…','bot'); setTimeout(gotoChat,1200); return; }
+    // LLM이 곧장 finish 해도 외부 연동(Google/Slack) 기회를 주기 위해 Google 단계로 보낸다.
+    // Google·Slack 단계의 '건너뛰기'가 최종 finish 를 호출한다.
+    if(d.action==='finish'){ addBubble('좋아요. 마지막으로 외부 서비스 연동을 확인할게요.','bot'); setTimeout(()=>setStep(2), 800); return; }
   }
 }
 function startChat(){ history=[]; turn(); }
@@ -215,7 +231,8 @@ $('chatSend').onclick = async ()=>{ const v=$('chatInput').value.trim(); if(!v) 
 $('chatInput').addEventListener('keydown', e=>{ if(e.key==='Enter') $('chatSend').click(); });
 
 // ── STEP 2: Google ───────────────────────────────────────────────────
-$('gSkip').onclick = async ()=>{ await api('/api/onboarding/finish',{}); gotoChat(); };
+// Google 완료/스킵 → 곧장 끝내지 않고 STEP 3(Slack)로 진행한다.
+$('gSkip').onclick = ()=>{ enterSlackStep(); };
 $('gAuth').onclick = async ()=>{
   const id=$('gId').value.trim(), sec=$('gSecret').value.trim(), msg=$('gMsg');
   if(!id||!sec){ msg.className='msg err'; msg.textContent='Client ID/Secret을 입력하세요.'; return; }
@@ -226,9 +243,47 @@ $('gAuth').onclick = async ()=>{
   const a=await api('/api/onboarding/google/auth',{});
   $('gAuth').disabled=false;
   if(!a.ok){ msg.className='msg err'; msg.textContent=a.error||'인증 실패'; return; }
-  msg.className='msg ok'; msg.textContent='Google 연동 완료!';
-  await api('/api/onboarding/finish',{}); setTimeout(gotoChat,1000);
+  msg.className='msg ok'; msg.textContent='Google 연동 완료! 다음 단계로…';
+  setTimeout(enterSlackStep, 900);
 };
+
+// ── STEP 3: Slack ─────────────────────────────────────────────────────
+let slackPoll = null;
+async function enterSlackStep(){
+  setStep(3);
+  // 빌드에 Slack OAuth 클라이언트가 없으면 단계를 건너뛴다(자체 호스팅 빌드 대비).
+  try{
+    const r = await fetch('/api/onboarding/slack'); const s = await r.json();
+    if(!s.configured){ await finishOnboarding(); return; }
+    if(s.authenticated){ $('sMsg').className='msg ok'; $('sMsg').textContent='이미 연결돼 있습니다.'; }
+  }catch(e){ /* 상태 조회 실패해도 단계는 보여준다 */ }
+}
+function stopSlackPoll(){ if(slackPoll){ clearInterval(slackPoll); slackPoll=null; } }
+$('sSkip').onclick = async ()=>{ stopSlackPoll(); await finishOnboarding(); };
+$('sAuth').onclick = ()=>{
+  const msg=$('sMsg');
+  window.open('/slack/auth', '_blank');   // 새 탭에서 Slack 동의
+  msg.className='msg'; msg.innerHTML='<span class="spinner"></span> 새 탭에서 워크스페이스 동의를 완료해 주세요…';
+  $('sAuth').disabled=true;
+  stopSlackPoll();
+  // 인증 완료까지 폴링 (최대 ~3분)
+  let ticks=0;
+  slackPoll = setInterval(async ()=>{
+    ticks++;
+    try{
+      const r=await fetch('/api/onboarding/slack'); const s=await r.json();
+      if(s.authenticated){
+        stopSlackPoll();
+        msg.className='msg ok'; msg.textContent='Slack 연동 완료!'+(s.team?(' (team: '+s.team+')'):'');
+        setTimeout(finishOnboarding, 1000);
+      }
+    }catch(e){ /* 일시 오류 무시, 계속 폴링 */ }
+    if(ticks>=90){ stopSlackPoll(); $('sAuth').disabled=false;
+      msg.className='msg err'; msg.textContent='시간 초과 — 동의가 끝났으면 다시 "Slack 연결"을 누르거나 건너뛰세요.'; }
+  }, 2000);
+};
+
+async function finishOnboarding(){ await api('/api/onboarding/finish',{}); gotoChat(); }
 
 // ── 초기화 ───────────────────────────────────────────────────────────
 (async ()=>{
