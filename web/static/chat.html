@@ -632,6 +632,17 @@ header button, header button *, header a, header a * { -webkit-app-region: no-dr
 /* ── MCP 관리 ── */
 .mcp-toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
 .mcp-toolbar-spacer { flex: 1; }
+/* Cron 모달 (INT-1407) */
+.cron-form { display: flex; gap: 6px; margin-bottom: 4px; }
+.cron-form input { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 6px 10px; font-size: 12px; }
+.cron-row { display: flex; gap: 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; margin-bottom: 6px; }
+.cron-row-main { flex: 1; min-width: 0; }
+.cron-row-top { display: flex; align-items: center; gap: 8px; }
+.cron-job-label { font-weight: 600; color: var(--text); font-size: 12px; }
+.cron-sched { font-size: 11px; color: var(--accent); background: var(--surface2); padding: 1px 6px; border-radius: 4px; }
+.cron-job-prompt { font-size: 11.5px; color: var(--muted); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cron-job-meta { font-size: 10.5px; color: var(--muted); margin-top: 3px; }
+.cron-row-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .mcp-hint { font-size: 11px; color: var(--muted); }
 .mcp-hint code { background: var(--bg); padding: 1px 5px; border-radius: 3px; font-size: 10px; }
 
@@ -1864,6 +1875,10 @@ button.status-item:hover { background: var(--surface2); color: var(--text); }
     </span>
   </div>
   <div class="status-right">
+    <button class="status-item" id="status-cron" title="예약 작업 (Cron)">
+      <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="6.2"/><path d="M8 4.5V8l2.5 1.5" stroke-linecap="round"/></svg>
+      <span>Cron</span>
+    </button>
     <button class="status-item" id="status-mcp" title="MCP 서버 관리">
       <svg viewBox="0 0 16 16" width="11" height="11" fill="currentColor"><path d="M8 1a7 7 0 100 14A7 7 0 008 1zm0 1.5a5.5 5.5 0 110 11 5.5 5.5 0 010-11zM7 5v2H5v2h2v2h2V9h2V7H9V5H7z"/></svg>
       <span>MCP</span>
@@ -2066,6 +2081,29 @@ button.status-item:hover { background: var(--surface2); color: var(--text); }
           <button class="btn-primary" id="mcp-save-btn">저장</button>
         </div>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- Cron 모달 (INT-1407) -->
+<div id="cron-modal" class="modal hidden" role="dialog" aria-labelledby="cron-modal-title">
+  <div class="modal-backdrop"></div>
+  <div class="modal-window">
+    <div class="modal-header">
+      <h2 id="cron-modal-title">예약 작업 (Cron)</h2>
+      <button class="modal-close" id="cron-modal-close" title="닫기" aria-label="닫기">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="desc" style="margin:0 0 10px;color:var(--muted);font-size:12px">프롬프트를 cron 일정에 맞춰 실행합니다. VEGA가 결과를 새 세션에 기록합니다.</p>
+      <div class="cron-form">
+        <input type="text" id="cron-label" placeholder="이름 (선택)" style="flex:0 0 140px" />
+        <input type="text" id="cron-schedule" placeholder="cron 예: 0 9 * * *" style="flex:0 0 130px" />
+        <input type="text" id="cron-prompt" placeholder="실행할 프롬프트" style="flex:1" />
+        <button class="btn-primary" id="cron-add-btn">+ 추가</button>
+      </div>
+      <div class="cron-hint" style="font-size:11px;color:var(--muted);margin:4px 0 10px">형식: 분 시 일 월 요일 (예: <code>0 9 * * *</code>=매일 9시, <code>*/30 * * * *</code>=30분마다)</div>
+      <span class="status" id="cron-status"></span>
+      <div id="cron-list"><div class="empty">예약된 작업이 없습니다.</div></div>
     </div>
   </div>
 </div>
@@ -4682,6 +4720,71 @@ document.addEventListener('mousedown', (e) => {
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && _plusMenu) hidePlusMenu();
 });
+
+// ── Cron 모달 (INT-1407) ──────────────────────────────────────────────────
+const cronModal = document.getElementById('cron-modal');
+function openCronModal() { cronModal.classList.remove('hidden'); loadCronJobs(); }
+function closeCronModal() { cronModal.classList.add('hidden'); }
+document.getElementById('status-cron')?.addEventListener('click', openCronModal);
+document.getElementById('cron-modal-close')?.addEventListener('click', closeCronModal);
+cronModal?.querySelector('.modal-backdrop')?.addEventListener('click', closeCronModal);
+
+async function loadCronJobs() {
+  const box = document.getElementById('cron-list');
+  box.innerHTML = '<div class="empty">불러오는 중…</div>';
+  try {
+    const r = await fetch('/api/cron', { signal: AbortSignal.timeout(5000) }).then(r => r.json());
+    const jobs = r.jobs || [];
+    if (!jobs.length) { box.innerHTML = '<div class="empty">예약된 작업이 없습니다.</div>'; return; }
+    box.innerHTML = '';
+    for (const j of jobs) {
+      const row = document.createElement('div'); row.className = 'cron-row';
+      const nr = j.next_run ? new Date(j.next_run).toLocaleString() : '—';
+      row.innerHTML = `
+        <div class="cron-row-main">
+          <div class="cron-row-top"><span class="cron-job-label"></span><code class="cron-sched"></code></div>
+          <div class="cron-job-prompt"></div>
+          <div class="cron-job-meta">다음 실행: ${esc(nr)}${j.last_status ? ' · 최근: ' + esc(j.last_status) : ''}</div>
+        </div>
+        <div class="cron-row-actions">
+          <div class="toggle ${j.enabled ? 'on' : ''}" data-id="${esc(j.id)}"></div>
+          <button class="mi-btn danger cron-del" data-id="${esc(j.id)}">삭제</button>
+        </div>`;
+      row.querySelector('.cron-job-label').textContent = j.label || '(이름 없음)';
+      row.querySelector('.cron-sched').textContent = j.schedule;
+      row.querySelector('.cron-job-prompt').textContent = j.prompt;
+      row.querySelector('.toggle').addEventListener('click', (e) => _cronToggle(j.id, !e.currentTarget.classList.contains('on'), e.currentTarget));
+      row.querySelector('.cron-del').addEventListener('click', () => _cronDelete(j.id, row));
+      box.appendChild(row);
+    }
+  } catch (e) { box.innerHTML = '<div class="empty">조회 실패</div>'; }
+}
+document.getElementById('cron-add-btn')?.addEventListener('click', async () => {
+  const prompt = document.getElementById('cron-prompt').value.trim();
+  const schedule = document.getElementById('cron-schedule').value.trim();
+  const label = document.getElementById('cron-label').value.trim();
+  const st = document.getElementById('cron-status'); st.textContent = '추가 중…'; st.style.color = 'var(--muted)';
+  try {
+    const r = await fetch('/api/cron', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({prompt, schedule, label}) }).then(r => r.json());
+    if (r.ok) {
+      st.textContent = '✓ 추가됨'; st.style.color = 'var(--ok)';
+      document.getElementById('cron-prompt').value = ''; document.getElementById('cron-schedule').value = ''; document.getElementById('cron-label').value = '';
+      loadCronJobs();
+    } else { st.textContent = r.error || '실패'; st.style.color = 'var(--error)'; }
+  } catch (e) { st.textContent = '오류: ' + (e.message || e); st.style.color = 'var(--error)'; }
+});
+async function _cronToggle(id, enabled, el) {
+  try {
+    const r = await fetch(`/api/cron/${id}/toggle`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({enabled}) }).then(r => r.json());
+    if (r.ok) el.classList.toggle('on', enabled);
+  } catch (e) {}
+}
+async function _cronDelete(id, row) {
+  try {
+    const r = await fetch(`/api/cron/${id}`, { method:'DELETE' }).then(r => r.json());
+    if (r.ok) row.remove();
+  } catch (e) {}
+}
 
 // ── MCP 관리 모달 ──────────────────────────────────────────────────────────
 const mcpModal = document.getElementById('mcp-modal');

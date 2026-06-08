@@ -156,6 +156,9 @@ async def lifespan(app: FastAPI):
     # YOLO heartbeat — find stalled YOLO sessions in the background and auto-resume
     _hb_task = asyncio.create_task(_yolo_heartbeat())
 
+    # Cron loop — run scheduled prompts at their due time in the background (INT-1407)
+    _cron_task = asyncio.create_task(_cron_loop())
+
     # Docker 코드 샌드박스 자동 확보 (백그라운드) — 기동 시 컨테이너를 띄워두어
     # 첫 bash_exec/python_exec 호출 시 빌드/기동 지연을 없앤다. Docker 없으면 조용히 skip.
     async def _warmup_sandbox():
@@ -193,8 +196,9 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # Cancel heartbeat task on shutdown
+    # Cancel heartbeat·cron tasks on shutdown
     _hb_task.cancel()
+    _cron_task.cancel()
 
 
 app = FastAPI(title="VEGA", lifespan=lifespan)
@@ -209,6 +213,7 @@ from web.routers import run_log as _run_log_router  # noqa: E402
 from web.routers import scheduler as _scheduler_router  # noqa: E402
 from web.routers import memory_inspector as _memory_inspector_router  # noqa: E402
 from web.routers import data_boundary as _data_boundary_router  # noqa: E402
+from web.routers import cron as _cron_router  # noqa: E402
 app.include_router(_llm_router.router)
 app.include_router(_fs_router.router)
 app.include_router(_dashboard_router.router)
@@ -218,6 +223,7 @@ app.include_router(_run_log_router.router)
 app.include_router(_scheduler_router.router)
 app.include_router(_memory_inspector_router.router)
 app.include_router(_data_boundary_router.router)  # local-first data boundary export/wipe (INT-1383)
+app.include_router(_cron_router.router)  # arbitrary-prompt cron jobs CRUD (INT-1407)
 
 # CORS — allow Tauri app origin + localhost only. Wildcard removed to block cross-origin CSRF.
 from fastapi.middleware.cors import CORSMiddleware
@@ -1869,6 +1875,40 @@ def _resume_autopilot_db(sid: str) -> bool:
     _save_autopilot(data)
     print(f"[heartbeat] autopilot DB revive: {sid[:8]} (cumulative {info['resumes']}/{HEARTBEAT_DB_MAX_RESUMES})")
     return True
+
+
+async def _cron_loop() -> None:
+    """Run scheduled cron jobs at their due time (INT-1407). Checks due_jobs every 60s,
+    spawns a new session + prompt via _run_gpt_task for each. Auto-progresses like YOLO."""
+    while True:
+        try:
+            await asyncio.sleep(60)
+            from pipeline import cron_jobs
+            for job in cron_jobs.due_jobs():
+                try:
+                    sid = create_session(f"⏱ {job.get('label', 'cron')}")
+                    append_message(sid, "user", job["prompt"])
+                    history = [{"role": "user", "content": job["prompt"]}]
+                    reg = {
+                        "task": None, "buf": [], "done": False,
+                        "consumer": asyncio.Event(), "approval_queue": asyncio.Queue(),
+                        "last_activity": time.monotonic(), "awaiting_approval": False,
+                        "_cron_job": job["id"],
+                    }
+                    _TASK_REGISTRY[sid] = reg
+                    reg["task"] = asyncio.create_task(_run_gpt_task(sid, history, []))
+                    cron_jobs.mark_run(job["id"], "started")
+                    print(f"[cron] run: {job['label']} → session {sid[:8]}")
+                except Exception as e:
+                    print(f"[cron] job failed({job.get('id')}): {e}")
+                    try:
+                        cron_jobs.mark_run(job["id"], f"error: {e}")
+                    except Exception:
+                        pass
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            print(f"[cron] loop warning: {e}")
 
 
 async def _yolo_heartbeat() -> None:
