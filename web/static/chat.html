@@ -863,7 +863,9 @@ header button, header button *, header a, header a * { -webkit-app-region: no-dr
 #messages {
   flex: 1; overflow-y: auto;
   padding: 24px 0 48px;  /* 마지막 메시지가 입력창 위에 잘리지 않도록 여유 */
-  scroll-behavior: smooth;
+  /* scroll-behavior: smooth 제거 — 스트리밍 자동 스크롤(scrollBottom)이 smooth
+     애니메이션으로 실행되면 진행 중 사용자 스크롤을 압도하고, 애니메이션이 발화시키는
+     scroll 이벤트가 stick 판정을 교란해 위로 올려도 계속 따라가는 버그(INT-1411 계열). */
 }
 .msg-row {
   display: flex;
@@ -2187,7 +2189,11 @@ function _isNearBottom() {
 }
 
 messagesEl.addEventListener('scroll', () => {
-  // 사용자가 스크롤할 때마다 바닥 근접 여부로 stick 상태 갱신
+  // 스크롤 위치의 바닥 근접 여부로 stick 갱신. 자동 스크롤(scrollBottom)은 항상 바닥으로
+  // 가므로 near=true(stick 유지·정상), 사용자가 위로 올리면 near=false(자동 추적 중지).
+  // ⚠️ #messages의 scroll-behavior:smooth를 제거해야 이 판정이 정확하다 — smooth면
+  //    자동 스크롤이 애니메이션으로 진행돼 사용자 스크롤을 압도하고, 애니메이션이 발화시키는
+  //    중간 scroll 이벤트가 계속 바닥 근처값을 보고해 stick이 안 풀린다(INT-1411 계열).
   _stickToBottom = _isNearBottom();
 }, { passive: true });
 
