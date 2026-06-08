@@ -208,6 +208,7 @@ from web.routers import onboarding as _onboarding_router  # noqa: E402
 from web.routers import run_log as _run_log_router  # noqa: E402
 from web.routers import scheduler as _scheduler_router  # noqa: E402
 from web.routers import memory_inspector as _memory_inspector_router  # noqa: E402
+from web.routers import data_boundary as _data_boundary_router  # noqa: E402
 app.include_router(_llm_router.router)
 app.include_router(_fs_router.router)
 app.include_router(_dashboard_router.router)
@@ -216,6 +217,7 @@ app.include_router(_onboarding_router.router)
 app.include_router(_run_log_router.router)
 app.include_router(_scheduler_router.router)
 app.include_router(_memory_inspector_router.router)
+app.include_router(_data_boundary_router.router)  # local-first data boundary export/wipe (INT-1383)
 
 # CORS — allow Tauri app origin + localhost only. Wildcard removed to block cross-origin CSRF.
 from fastapi.middleware.cors import CORSMiddleware
