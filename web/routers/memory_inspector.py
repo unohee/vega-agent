@@ -23,9 +23,31 @@ def _db() -> Path:
         return Path.home() / "Library/Application Support/VEGA/agent.db"
 
 
+def _ensure_tables(conn: sqlite3.Connection) -> None:
+    """Create persona_sections/events/entities if missing (fresh/partial DB).
+    IF NOT EXISTS preserves existing data/schema. Lets Memory Inspector return
+    empty lists instead of 500 on a fresh DB (INT-1395)."""
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS persona_sections (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, section_key TEXT NOT NULL,
+            content TEXT NOT NULL, scope TEXT DEFAULT 'global', version INTEGER DEFAULT 1,
+            is_active INTEGER DEFAULT 1, notes TEXT, updated_at TEXT, user_edited INTEGER DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, event_date TEXT NOT NULL,
+            title TEXT NOT NULL, body TEXT NOT NULL DEFAULT '', tags TEXT, created_at TEXT
+        );
+        CREATE TABLE IF NOT EXISTS entities (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, kind TEXT,
+            canonical_id TEXT, aliases_json TEXT, notes TEXT, first_seen TEXT, last_seen TEXT
+        );
+    """)
+
+
 def _conn() -> sqlite3.Connection:
     conn = sqlite3.connect(str(_db()))
     conn.row_factory = sqlite3.Row
+    _ensure_tables(conn)
     return conn
 
 
