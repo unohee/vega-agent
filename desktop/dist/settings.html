@@ -106,7 +106,9 @@
   .mi-meta { color: var(--muted); font-size: 10.5px; margin-left: auto; }
   .mi-val { color: var(--muted); margin-top: 4px; white-space: pre-wrap; word-break: break-word; }
   .mi-val[contenteditable="true"] { background: var(--surface); border: 1px solid var(--accent); border-radius: 4px; padding: 4px 6px; color: var(--text); outline: none; }
-  .mi-actions { display: flex; gap: 6px; margin-top: 6px; }
+  .mi-sens { font-size: 10px; padding: 1px 6px; border-radius: 8px; background: rgba(248,81,73,.18); color: #f85149; font-weight: 600; }
+  .mi-sens-sel { font-size: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; color: var(--muted); padding: 1px 4px; margin-left: auto; }
+  .mi-actions { display: flex; gap: 6px; margin-top: 6px; align-items: center; }
   .mi-btn { font-size: 11px; padding: 2px 8px; border-radius: 4px; border: 1px solid var(--border); background: transparent; color: var(--muted); cursor: pointer; }
   .mi-btn:hover { color: var(--text); background: var(--surface2); }
   .mi-btn.danger:hover { color: var(--error); border-color: var(--error); }
@@ -918,8 +920,9 @@ function _miRow(row) {
   if (_miTab === 'persona') { key = row.section_key || `#${id}`; val = row.content || ''; meta = row.is_active ? '' : '비활성'; }
   else if (_miTab === 'events') { key = row.title || `이벤트 #${id}`; val = row.body || ''; meta = row.event_date || ''; }
   else { key = row.name || `엔티티 #${id}`; val = row.notes || ''; meta = row.kind || ''; }
+  const sens = row.sensitivity || '';
   el.innerHTML = `
-    <div class="mi-item-head"><span class="mi-key"></span><span class="mi-meta"></span></div>
+    <div class="mi-item-head"><span class="mi-key"></span>${sens ? `<span class="mi-sens">${esc(sens)}</span>` : ''}<span class="mi-meta"></span></div>
     <div class="mi-val"></div>
     <div class="mi-actions"></div>`;
   el.querySelector('.mi-key').textContent = key;
@@ -937,7 +940,37 @@ function _miRow(row) {
     del.addEventListener('click', () => _miDelete(_miTab, id, el));
     acts.appendChild(del);
   }
+  // 민감도 태그 (persona/entities — events는 PATCH 미지원) (INT-1404)
+  if (_miTab === 'persona' || _miTab === 'entities') {
+    const sel = document.createElement('select'); sel.className = 'mi-sens-sel';
+    for (const opt of ['', 'family', 'finance', 'dispute', 'health', 'private']) {
+      const o = document.createElement('option'); o.value = opt; o.textContent = opt || '(민감도 없음)';
+      if (opt === sens) o.selected = true;
+      sel.appendChild(o);
+    }
+    sel.addEventListener('change', () => _miSetSensitivity(_miTab, id, sel.value, el));
+    acts.appendChild(sel);
+  }
   return el;
+}
+async function _miSetSensitivity(tab, id, value, el) {
+  const st = $('mem-insp-status'); st.textContent = '민감도 설정 중…'; st.style.color = 'var(--muted)';
+  const ep = tab === 'persona' ? `/api/memory/persona/${id}` : `/api/memory/entities/${id}`;
+  try {
+    const r = await fetch(provBase() + ep, {
+      method: 'PATCH', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ sensitivity: value }),
+    }).then(r => r.json());
+    if (r.ok || r.error === undefined) {
+      st.textContent = value ? `✓ 민감도: ${value}` : '✓ 민감도 해제'; st.style.color = 'var(--ok)';
+      const head = el.querySelector('.mi-item-head');
+      let badge = head.querySelector('.mi-sens');
+      if (value) {
+        if (!badge) { badge = document.createElement('span'); badge.className = 'mi-sens'; head.querySelector('.mi-meta').before(badge); }
+        badge.textContent = value;
+      } else if (badge) { badge.remove(); }
+    } else { st.textContent = r.error || '실패'; st.style.color = 'var(--error)'; }
+  } catch (e) { st.textContent = '오류: ' + (e.message || e); st.style.color = 'var(--error)'; }
 }
 async function _miEditPersona(id, valEl, btn, el) {
   if (btn.textContent === '편집') {
