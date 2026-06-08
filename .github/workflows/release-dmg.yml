@@ -1,30 +1,35 @@
 name: Release DMG
 
+# main 에 푸시될 때마다 tauri.conf.json 의 버전으로 DMG(arm64 + x86_64)를
+# 빌드·공증하고 GitHub Release 로 배포한다. 버전 bump 는 개발자가 의도적으로
+# tauri.conf.json/Cargo.toml 을 올려야 하며, 같은 버전이면 그 Release 를 갱신한다.
+# 수동 실행(workflow_dispatch)도 지원.
+
 on:
   push:
-    tags:
-      - 'v*.*.*'
+    branches: [main]
   workflow_dispatch:
-    inputs:
-      version:
-        description: '버전 (예: 0.1.8)'
-        required: true
-        type: string
+
+# Release 생성/에셋 업로드에 contents:write 필요.
+permissions:
+  contents: write
+
+# 동시에 여러 빌드가 같은 Release 를 건드리지 않도록 직렬화.
+concurrency:
+  group: release-dmg
+  cancel-in-progress: false
 
 jobs:
   build-and-release:
-    name: Build Universal DMG & Release
+    name: Build DMG (arm64 + x86_64) & Release
     runs-on: [self-hosted, macOS, ARM64]
-    timeout-minutes: 60
+    timeout-minutes: 90
 
     env:
-      # 서명 인증서: org/repo secret 에 저장
       VEGA_SIGN_ID: "Developer ID Application: Heewon Oh (635QK74RYK)"
-      # 공증 자격증명 (notarytool keychain-profile 대신 env var 방식)
       APPLE_ID: ${{ secrets.APPLE_ID }}
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-      # Tauri updater 서명 키
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
@@ -32,41 +37,31 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 버전 결정
+      - name: 버전 읽기 (tauri.conf.json)
         id: version
         run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
-            VERSION="${GITHUB_REF_NAME#v}"
-          else
-            VERSION="${{ inputs.version }}"
-          fi
+          VERSION=$(/usr/bin/python3 -c "import json;print(json.load(open('desktop/tauri.conf.json'))['version'])")
+          if [ -z "$VERSION" ]; then echo "::error::tauri.conf.json 에서 버전을 읽지 못함"; exit 1; fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "빌드 버전: $VERSION"
+
+      - name: build_dmg.sh 버전 동기화
+        run: |
+          # build_dmg.sh 안의 VERSION= 도 tauri.conf 와 맞춘다(혹시 어긋났을 때 대비).
+          sed -i '' "s/^VERSION=\"[^\"]*\"/VERSION=\"$VERSION\"/" scripts/build_dmg.sh
 
       - name: Rust 타겟 확인
-        run: |
-          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
 
-      - name: arm64_vega_env PyInstaller 확인
+      - name: PyInstaller venv 확인 (arm64 + x86_64)
         run: |
           if [ ! -x "$HOME/dev/arm64_vega_env/bin/pyinstaller" ]; then
-            echo "::error::arm64 PyInstaller 없음 — runner에 arm64_vega_env 구성 필요"
-            echo "::error::python3 -m venv ~/dev/arm64_vega_env && pip install pyinstaller uvicorn fastapi ..."
-            exit 1
+            echo "::error::arm64 PyInstaller 없음 — runner에 ~/dev/arm64_vega_env 구성 필요"; exit 1
           fi
-
-      - name: intel64_env PyInstaller 확인
-        run: |
           if [ ! -x "$HOME/dev/intel64_env/bin/pyinstaller" ]; then
-            echo "::error::x86_64 PyInstaller 없음 — runner에 intel64_env 구성 필요"
-            exit 1
+            echo "::error::x86_64 PyInstaller 없음 — runner에 ~/dev/intel64_env 구성 필요"; exit 1
           fi
-
-      - name: 버전 파일 업데이트
-        run: |
-          sed -i '' "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" desktop/tauri.conf.json
-          sed -i '' "s/^version = \"[^\"]*\"/version = \"$VERSION\"/" desktop/Cargo.toml
-          sed -i '' "s/^VERSION=\"[^\"]*\"/VERSION=\"$VERSION\"/" scripts/build_dmg.sh
 
       - name: 공증 프로필 등록 (CI env var → keychain-profile)
         run: |
@@ -77,25 +72,33 @@ jobs:
 
       - name: DMG 빌드 (aarch64 + x86_64 + 공증)
         run: |
-          VEGA_NOTARY_PROFILE=vega-notary-ci bash scripts/build_dmg.sh
-        timeout-minutes: 60
+          VEGA_ARCH=all VEGA_NOTARY_PROFILE=vega-notary-ci bash scripts/build_dmg.sh
+        timeout-minutes: 80
 
-      - name: DMG 검증
+      - name: DMG 검증 (공증·서명)
         run: |
+          FAIL=0
           for ARCH in aarch64 x86_64; do
             DMG="build_output/VEGA-${VERSION}-${ARCH}.dmg"
-            [ -f "$DMG" ] || continue
-            spctl --assess --type open --context context:primary-signature -v "$DMG"
+            if [ ! -f "$DMG" ]; then echo "::error::$DMG 없음"; FAIL=1; continue; fi
+            spctl --assess --type open --context context:primary-signature -v "$DMG" || { echo "::error::$ARCH 공증 검증 실패"; FAIL=1; }
             echo "SHA256 ($ARCH): $(shasum -a 256 "$DMG" | cut -d' ' -f1)"
           done
+          [ "$FAIL" = "0" ] || exit 1
 
-      - name: GitHub Release 생성
+      - name: latest.json 생성 (Tauri updater)
+        run: |
+          /usr/bin/python3 scripts/make_latest_json.py "$VERSION" || {
+            echo "::warning::latest.json 생성 스크립트 없음 — updater 메니페스트는 수동"; }
+
+      - name: GitHub Release 생성/갱신
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name || format('v{0}', inputs.version) }}
+          tag_name: v${{ steps.version.outputs.version }}
           name: VEGA v${{ steps.version.outputs.version }}
           draft: false
           prerelease: false
+          # 같은 태그가 있으면 덮어쓴다(재빌드 대응).
           files: |
             build_output/VEGA-${{ steps.version.outputs.version }}-aarch64.dmg
             build_output/VEGA-${{ steps.version.outputs.version }}-x86_64.dmg
@@ -103,19 +106,17 @@ jobs:
             build_output/updater/VEGA-${{ steps.version.outputs.version }}-aarch64.app.tar.gz.sig
             build_output/updater/VEGA-${{ steps.version.outputs.version }}-x86_64.app.tar.gz
             build_output/updater/VEGA-${{ steps.version.outputs.version }}-x86_64.app.tar.gz.sig
+            build_output/latest.json
           body: |
             ## VEGA v${{ steps.version.outputs.version }}
 
             ### 설치
-            1. `VEGA-${{ steps.version.outputs.version }}.dmg` 다운로드
-            2. VEGA.app을 Applications 폴더로 드래그
-            3. 첫 실행 시 백그라운드 데몬 자동 등록
+            - **Apple Silicon**: `VEGA-${{ steps.version.outputs.version }}-aarch64.dmg`
+            - **Intel Mac**: `VEGA-${{ steps.version.outputs.version }}-x86_64.dmg`
 
-            ### 지원 아키텍처
-            - Apple Silicon (aarch64) — 네이티브
-            - Intel Mac (x86_64) — 네이티브
+            VEGA.app 을 Applications 폴더로 드래그하세요. 첫 실행 시 백그라운드 데몬이 자동 등록됩니다.
 
-            > Universal Binary — 단일 DMG로 모든 macOS 지원
+            > 공증 완료 — Gatekeeper 경고 없이 설치됩니다. 기존 설치본은 자동 업데이트됩니다.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
