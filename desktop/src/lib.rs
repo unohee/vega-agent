@@ -456,6 +456,37 @@ fn restart_backend() {
     }
 }
 
+/// 외부 URL을 OS 기본 브라우저로 연다.
+///
+/// Tauri WebView에는 "새 탭" 개념이 없어 JS의 window.open('...','_blank')은
+/// 아무 일도 하지 않는다(브라우저가 안 뜸). OAuth 동의 화면처럼 외부 브라우저로
+/// 열어야 하는 흐름은 이 커맨드를 invoke 해서 시스템 브라우저로 띄운다.
+/// 마법사 폴링은 WebView에 남아 콜백 완료를 감지한다.
+#[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    // 안전: http(s)만 허용 — 임의 스킴/명령 주입 방지.
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return Err(format!("허용되지 않은 URL 스킴: {url}"));
+    }
+    #[cfg(target_os = "macos")]
+    let prog = "open";
+    #[cfg(target_os = "linux")]
+    let prog = "xdg-open";
+    #[cfg(target_os = "windows")]
+    let prog = "explorer";
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    {
+        // 모바일 등: 외부 브라우저 실행기가 없으므로 에러 반환(호출 측이 폴백 처리).
+        return Err(format!("이 플랫폼에선 외부 URL 열기를 지원하지 않습니다: {url}"));
+    }
+    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+    std::process::Command::new(prog)
+        .arg(&url)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("브라우저 열기 실패: {e}"))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default()
@@ -475,14 +506,16 @@ pub fn run() {
             client_config::set_server_url,
             client_config::get_lang,
             client_config::set_lang,
+            open_url,
         ]);
     }
-    // 데스크탑 daemon 전용 (client/mobile이 아닐 때만): 언어 + 설정창 커맨드.
+    // 데스크탑 daemon 전용 (client/mobile이 아닐 때만): 언어 + 설정창 + URL 열기 커맨드.
     #[cfg(all(feature = "daemon", not(mobile), not(feature = "client")))]
     {
         builder = builder.invoke_handler(tauri::generate_handler![
             client_config::get_lang,
             client_config::set_lang,
+            open_url,
         ]);
     }
 

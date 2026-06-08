@@ -1114,6 +1114,43 @@ async def superthread_callback(request: Request):
     )
 
 
+@app.get("/google/auth")
+async def google_auth_start():
+    """Start Google OAuth in the browser. 내장 client 로 입력 없이 로그인."""
+    try:
+        from pipeline.auth.google import authorize_url
+        return RedirectResponse(url=authorize_url(), status_code=302)
+    except Exception as e:
+        return HTMLResponse(
+            f"<h3>Google OAuth 설정 오류</h3><pre>{str(e)}</pre>",
+            status_code=500,
+        )
+
+
+@app.get("/google/callback")
+async def google_callback(request: Request):
+    """Receive Google OAuth callback → exchange code → store refresh_token."""
+    error = request.query_params.get("error")
+    if error:
+        return HTMLResponse(f"<h3>Google 인증 취소/실패</h3><pre>{error}</pre>", status_code=400)
+
+    code = request.query_params.get("code", "")
+    state = request.query_params.get("state")
+    if not code:
+        return HTMLResponse("<h3>Google 인증 실패</h3><pre>code 파라미터가 없습니다.</pre>", status_code=400)
+
+    from pipeline.auth.google import exchange_code
+    result = exchange_code(code, state=state)
+    if result.get("ok"):
+        email = result.get("email") or "(이메일 미확인)"
+        return HTMLResponse(f"<h3>Google 인증 완료</h3><p>계정: {email}</p>")
+
+    return HTMLResponse(
+        f"<h3>Google 인증 실패</h3><pre>{result.get('error') or 'unknown error'}</pre>",
+        status_code=400,
+    )
+
+
 _UPLOAD_DIR = _uploads_dir()
 
 

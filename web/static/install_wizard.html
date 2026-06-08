@@ -110,17 +110,13 @@
   <!-- STEP 2: Google 연동 -->
   <div class="card hidden" id="step2">
     <h2>Google 연동 (선택)</h2>
-    <div class="sub">Gmail·Calendar·Drive 도구를 쓰려면 Google Cloud OAuth를 연결하세요. 건너뛰어도 나중에 설정할 수 있습니다.</div>
-    <label>Google Client ID</label>
-    <input id="gId" placeholder="...apps.googleusercontent.com" autocomplete="off">
-    <label>Google Client Secret</label>
-    <input id="gSecret" type="password" placeholder="GOCSPX-..." autocomplete="off">
-    <div class="hint">Google Cloud Console → 사용자 인증 정보 → "데스크톱 앱" OAuth 클라이언트.</div>
+    <div class="sub">Gmail·Calendar·Drive 도구를 쓰려면 Google 계정을 연결하세요. 건너뛰어도 나중에 설정할 수 있습니다.</div>
+    <div class="hint">"Google 연결"을 누르면 브라우저에서 로그인 화면이 열립니다. 키 입력은 필요 없습니다. 동의 후 이 창으로 돌아오면 자동으로 완료 처리됩니다.</div>
     <div class="msg" id="gMsg"></div>
     <div class="row">
       <button class="btn ghost" id="gSkip">건너뛰기</button>
       <div class="grow"></div>
-      <button class="btn" id="gAuth">브라우저로 인증</button>
+      <button class="btn" id="gAuth">Google 연결</button>
     </div>
   </div>
 
@@ -128,7 +124,7 @@
   <div class="card hidden" id="step3">
     <h2>Slack 연동 (선택)</h2>
     <div class="sub">Slack 채널·DM을 읽고 검색하려면 워크스페이스에 연결하세요. 건너뛰어도 나중에 설정할 수 있습니다.</div>
-    <div class="hint">"Slack 연결"을 누르면 새 탭에서 워크스페이스 동의 화면이 열립니다. 동의 후 이 창으로 돌아오면 자동으로 완료 처리됩니다.</div>
+    <div class="hint">"Slack 연결"을 누르면 브라우저에서 워크스페이스 동의 화면이 열립니다. 동의 후 이 창으로 돌아오면 자동으로 완료 처리됩니다.</div>
     <div class="msg" id="sMsg"></div>
     <div class="row">
       <button class="btn ghost" id="sSkip">건너뛰기</button>
@@ -141,7 +137,7 @@
   <div class="card hidden" id="step4">
     <h2>Superthread 연동 (선택)</h2>
     <div class="sub">Superthread 보드·카드를 읽고 관리하려면 워크스페이스에 연결하세요. 건너뛰어도 나중에 설정할 수 있습니다.</div>
-    <div class="hint">"Superthread 연결"을 누르면 새 탭에서 동의 화면이 열립니다. 동의 후 이 창으로 돌아오면 자동으로 완료 처리됩니다.</div>
+    <div class="hint">"Superthread 연결"을 누르면 브라우저에서 동의 화면이 열립니다. 동의 후 이 창으로 돌아오면 자동으로 완료 처리됩니다.</div>
     <div class="msg" id="tMsg"></div>
     <div class="row">
       <button class="btn ghost" id="tSkip">건너뛰기</button>
@@ -157,6 +153,20 @@ function setStep(n){ [0,1,2,3,4].forEach(i=>{ $('step'+i).classList.toggle('hidd
   const d=$('dot'+i); d.classList.toggle('active', i===n); d.classList.toggle('done', i<n); }); }
 async function api(path, body){ const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})}); return r.json(); }
 function gotoChat(){ location.href='/chat'; }
+
+// 외부 URL을 OS 기본 브라우저로 연다. Tauri WebView엔 "새 탭"이 없어
+// window.open('_blank')은 아무 일도 안 한다 → Rust open_url 커맨드를 invoke.
+// (브라우저에서 직접 접속한 경우엔 __TAURI__가 없으므로 window.open 폴백.)
+async function openExternal(path){
+  const url = path.startsWith('http') ? path : (location.origin + path);
+  const invoke = window.__TAURI__?.core?.invoke ?? window.__TAURI__?.invoke;
+  if (invoke){
+    try { await invoke('open_url', { url }); return true; }
+    catch(e){ console.error('open_url 실패:', e); }
+  }
+  const w = window.open(url, '_blank');
+  return !!w;
+}
 
 let PROVIDERS = [];
 let selected = null;
@@ -234,10 +244,10 @@ async function turn(){
   if(!res.ok){ addBubble(res.error||'LLM 오류','bot'); return; }
   if(res.reply){ addBubble(res.reply,'bot'); history.push({role:'assistant',content:res.reply}); }
   for(const d of (res.directives||[])){
-    if(d.action==='google_auth'){ setStep(2); return; }
+    if(d.action==='google_auth'){ enterGoogleStep(); return; }
     // LLM이 곧장 finish 해도 외부 연동(Google/Slack) 기회를 주기 위해 Google 단계로 보낸다.
     // Google·Slack 단계의 '건너뛰기'가 최종 finish 를 호출한다.
-    if(d.action==='finish'){ addBubble('좋아요. 마지막으로 외부 서비스 연동을 확인할게요.','bot'); setTimeout(()=>setStep(2), 800); return; }
+    if(d.action==='finish'){ addBubble('좋아요. 마지막으로 외부 서비스 연동을 확인할게요.','bot'); setTimeout(enterGoogleStep, 800); return; }
   }
 }
 function startChat(){ history=[]; turn(); }
@@ -245,20 +255,39 @@ $('chatSend').onclick = async ()=>{ const v=$('chatInput').value.trim(); if(!v) 
 $('chatInput').addEventListener('keydown', e=>{ if(e.key==='Enter') $('chatSend').click(); });
 
 // ── STEP 2: Google ───────────────────────────────────────────────────
-// Google 완료/스킵 → 곧장 끝내지 않고 STEP 3(Slack)로 진행한다.
-$('gSkip').onclick = ()=>{ enterSlackStep(); };
-$('gAuth').onclick = async ()=>{
-  const id=$('gId').value.trim(), sec=$('gSecret').value.trim(), msg=$('gMsg');
-  if(!id||!sec){ msg.className='msg err'; msg.textContent='Client ID/Secret을 입력하세요.'; return; }
-  $('gAuth').disabled=true; msg.className='msg'; msg.innerHTML='<span class="spinner"></span> 저장 중…';
-  const c=await api('/api/onboarding/google/creds',{client_id:id,client_secret:sec});
-  if(!c.ok){ $('gAuth').disabled=false; msg.className='msg err'; msg.textContent=c.error; return; }
-  msg.innerHTML='<span class="spinner"></span> 브라우저에서 동의해 주세요…';
-  const a=await api('/api/onboarding/google/auth',{});
-  $('gAuth').disabled=false;
-  if(!a.ok){ msg.className='msg err'; msg.textContent=a.error||'인증 실패'; return; }
-  msg.className='msg ok'; msg.textContent='Google 연동 완료! 다음 단계로…';
-  setTimeout(enterSlackStep, 900);
+// Slack 패턴: 내장 client로 입력 없이 로그인만. 완료/스킵 → STEP 3(Slack)로.
+let googlePoll = null;
+async function enterGoogleStep(){
+  setStep(2);
+  // 빌드에 Google client.json이 없으면 단계를 건너뛴다(자체 호스팅 빌드 대비).
+  try{
+    const r = await fetch('/api/onboarding/google'); const s = await r.json();
+    if(!s.configured){ enterSlackStep(); return; }
+    if(s.authenticated){ $('gMsg').className='msg ok'; $('gMsg').textContent='이미 연결돼 있습니다.'+(s.email?(' ('+s.email+')'):''); }
+  }catch(e){ /* 상태 조회 실패해도 단계는 보여준다 */ }
+}
+function stopGooglePoll(){ if(googlePoll){ clearInterval(googlePoll); googlePoll=null; } }
+$('gSkip').onclick = ()=>{ stopGooglePoll(); enterSlackStep(); };
+$('gAuth').onclick = ()=>{
+  const msg=$('gMsg');
+  openExternal('/google/auth');   // OS 브라우저에서 Google 로그인
+  msg.className='msg'; msg.innerHTML='<span class="spinner"></span> 브라우저에서 로그인을 완료해 주세요…';
+  $('gAuth').disabled=true;
+  stopGooglePoll();
+  let ticks=0;
+  googlePoll = setInterval(async ()=>{
+    ticks++;
+    try{
+      const r=await fetch('/api/onboarding/google'); const s=await r.json();
+      if(s.authenticated){
+        stopGooglePoll();
+        msg.className='msg ok'; msg.textContent='Google 연동 완료!'+(s.email?(' ('+s.email+')'):'');
+        setTimeout(enterSlackStep, 1000);
+      }
+    }catch(e){ /* 일시 오류 무시, 계속 폴링 */ }
+    if(ticks>=90){ stopGooglePoll(); $('gAuth').disabled=false;
+      msg.className='msg err'; msg.textContent='시간 초과 — 로그인이 끝났으면 다시 "Google 연결"을 누르거나 건너뛰세요.'; }
+  }, 2000);
 };
 
 // ── STEP 3: Slack ─────────────────────────────────────────────────────
@@ -276,8 +305,8 @@ function stopSlackPoll(){ if(slackPoll){ clearInterval(slackPoll); slackPoll=nul
 $('sSkip').onclick = async ()=>{ stopSlackPoll(); enterSuperthreadStep(); };
 $('sAuth').onclick = ()=>{
   const msg=$('sMsg');
-  window.open('/slack/auth', '_blank');   // 새 탭에서 Slack 동의
-  msg.className='msg'; msg.innerHTML='<span class="spinner"></span> 새 탭에서 워크스페이스 동의를 완료해 주세요…';
+  openExternal('/slack/auth');   // OS 브라우저에서 Slack 동의
+  msg.className='msg'; msg.innerHTML='<span class="spinner"></span> 브라우저에서 워크스페이스 동의를 완료해 주세요…';
   $('sAuth').disabled=true;
   stopSlackPoll();
   // 인증 완료까지 폴링 (최대 ~3분)
@@ -312,8 +341,8 @@ function stopStPoll(){ if(stPoll){ clearInterval(stPoll); stPoll=null; } }
 $('tSkip').onclick = async ()=>{ stopStPoll(); await finishOnboarding(); };
 $('tAuth').onclick = ()=>{
   const msg=$('tMsg');
-  window.open('/superthread/auth', '_blank');   // 새 탭에서 Superthread 동의
-  msg.className='msg'; msg.innerHTML='<span class="spinner"></span> 새 탭에서 동의를 완료해 주세요…';
+  openExternal('/superthread/auth');   // OS 브라우저에서 Superthread 동의
+  msg.className='msg'; msg.innerHTML='<span class="spinner"></span> 브라우저에서 동의를 완료해 주세요…';
   $('tAuth').disabled=true;
   stopStPoll();
   // 인증 완료까지 폴링 (최대 ~3분)

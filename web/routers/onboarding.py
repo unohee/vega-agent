@@ -100,9 +100,12 @@ async def get_onboarding():
     """현재 user_profile, 온보딩 여부, 프로바이더 카탈로그, 활성 프로바이더 반환.
     각 프로바이더에는 configured(키/URL/OAuth 보유 여부) 플래그가 붙는다 — 키 값은 노출 안 함."""
     from pipeline.user_profile import load_profile, is_onboarded
-    from pipeline import keychain
     profile = load_profile()
-    has_google = bool(keychain.get_secret("GOOGLE_CLIENT_ID"))
+    try:
+        from pipeline.auth import google as _g
+        has_google = _g.is_authenticated()
+    except Exception:
+        has_google = False
     try:
         from pipeline.llm_gateway import get_active_name
         active = get_active_name()
@@ -420,41 +423,22 @@ async def superthread_status():
         return JSONResponse({"configured": False, "authenticated": False, "error": str(e)})
 
 
-# ── Google Cloud OAuth 단계 ──────────────────────────────────────────────────
+# ── Google 연동 단계 ─────────────────────────────────────────────────────────
+# OAuth 자체는 server.py의 GET /google/auth (브라우저) → GET /google/callback.
+# Slack 과 동일: 내장 google_oauth_client.json 을 쓰므로 사용자는 입력 없이 로그인만.
 
-class GoogleCredsPayload(BaseModel):
-    client_id: str = ""
-    client_secret: str = ""
-
-
-@router.post("/api/onboarding/google/creds")
-async def save_google_creds(payload: GoogleCredsPayload):
-    cid = (payload.client_id or "").strip()
-    csecret = (payload.client_secret or "").strip()
-    if not cid or not csecret:
-        return JSONResponse({"ok": False, "error": "Client ID/Secret 이 필요합니다."}, status_code=400)
-    from pipeline import keychain
-    keychain.set_secret("GOOGLE_CLIENT_ID", cid)
-    keychain.set_secret("GOOGLE_CLIENT_SECRET", csecret)
-    return JSONResponse({"ok": True})
-
-
-@router.post("/api/onboarding/google/auth")
-async def run_google_auth():
-    """Google OAuth 동의 흐름 — 브라우저를 열어 refresh token 발급/저장."""
-    import asyncio
+@router.get("/api/onboarding/google")
+async def google_status():
+    """Google 연동 상태. configured(빌드에 client.json 있음) + authenticated(refresh_token 보유)."""
     try:
-        from scripts.google_oauth import run_oauth_flow
+        from pipeline.auth import google
+        return JSONResponse({
+            "configured": google.is_configured(),
+            "authenticated": google.is_authenticated(),
+            "email": google.stored_email(),
+        })
     except Exception as e:
-        return JSONResponse({"ok": False, "error": f"OAuth 모듈 로드 실패: {e}"}, status_code=500)
-    loop = asyncio.get_event_loop()
-    try:
-        result = await loop.run_in_executor(None, run_oauth_flow)
-    except Exception as e:
-        return JSONResponse({"ok": False, "error": f"인증 흐름 오류: {e}"}, status_code=500)
-    if not result.get("ok"):
-        return JSONResponse({"ok": False, "error": result.get("error", "인증 실패")}, status_code=400)
-    return JSONResponse({"ok": True})
+        return JSONResponse({"configured": False, "authenticated": False, "error": str(e)})
 
 
 # ── 완료 ─────────────────────────────────────────────────────────────────────

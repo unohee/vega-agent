@@ -101,6 +101,14 @@ def slack_oauth_client_path() -> Path:
     return _REPO_DATA / "slack_oauth_client.json"
 
 
+def google_oauth_client_path() -> Path:
+    """Google OAuth client config (내장 Desktop 앱 클라이언트). User data overrides repo default."""
+    user_path = data_dir() / "google_oauth_client.json"
+    if user_path.exists():
+        return user_path
+    return _REPO_DATA / "google_oauth_client.json"
+
+
 def uploads_dir() -> Path:
     p = data_dir() / "uploads"
     p.mkdir(parents=True, exist_ok=True)
