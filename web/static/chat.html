@@ -501,6 +501,26 @@ header button, header button *, header a, header a * { -webkit-app-region: no-dr
 .side-pane.hidden { display: none; }
 .side-pane[data-pane="files"] { /* 기존 #dir-tree가 안쪽 */ }
 
+/* ── 실행 로그 패널 (Run Log) ── */
+#runlog-head { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--border); }
+.runlog-scope { font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 4px; cursor: pointer; flex: 1; }
+#runlog-refresh { background: transparent; border: none; color: var(--muted); cursor: pointer; padding: 2px; border-radius: 4px; }
+#runlog-refresh:hover { color: var(--text); background: var(--surface2); }
+#runlog-list { flex: 1; overflow-y: auto; padding: 4px 0; font-size: 11.5px; }
+.runlog-empty { color: var(--muted); text-align: center; padding: 24px 12px; font-size: 12px; }
+.runlog-row { padding: 6px 10px; border-bottom: 1px solid var(--border); cursor: default; }
+.runlog-row:hover { background: var(--surface); }
+.runlog-row-top { display: flex; align-items: center; gap: 6px; }
+.runlog-status { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.runlog-status.started { background: var(--accent); animation: runlog-pulse 1.2s ease-in-out infinite; }
+.runlog-status.ok { background: #3fb950; }
+.runlog-status.error { background: #f85149; }
+@keyframes runlog-pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+.runlog-tool { font-weight: 600; color: var(--text); }
+.runlog-ms { margin-left: auto; color: var(--muted); font-size: 10.5px; }
+.runlog-args { color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.runlog-err { color: #f85149; margin-top: 2px; word-break: break-word; }
+
 /* ── 컨텍스트 패널 ── */
 #ctx-summary {
   display: flex; align-items: center;
@@ -1786,6 +1806,7 @@ button.status-item:hover { background: var(--surface2); color: var(--text); }
     <div id="side-tabs" role="tablist">
       <button class="side-tab active" data-tab="files" role="tab" aria-selected="true">파일 탐색기</button>
       <button class="side-tab" data-tab="context" role="tab" aria-selected="false">컨텍스트</button>
+      <button class="side-tab" data-tab="runlog" role="tab" aria-selected="false">실행 로그</button>
       <div class="side-tab-spacer"></div>
       <button id="dir-panel-pick" title="다른 폴더 선택" aria-label="다른 폴더 선택">
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h4l2 2h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2z"/><line x1="12" y1="10" x2="12" y2="16"/><line x1="9" y1="13" x2="15" y2="13"/></svg>
@@ -1808,6 +1829,16 @@ button.status-item:hover { background: var(--surface2); color: var(--text); }
         </button>
       </div>
       <div id="ctx-sections"></div>
+    </div>
+    <!-- 탭: 실행 로그 (도구 호출 이력) -->
+    <div class="side-pane hidden" data-pane="runlog">
+      <div id="runlog-head">
+        <label class="runlog-scope"><input type="checkbox" id="runlog-all"> 전체 세션</label>
+        <button id="runlog-refresh" title="새로고침">
+          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+        </button>
+      </div>
+      <div id="runlog-list"><div class="runlog-empty">아직 실행 기록이 없습니다.</div></div>
     </div>
   </div>
 </div>
@@ -4372,12 +4403,48 @@ function setSideTab(tab) {
     p.classList.toggle('hidden', p.dataset.pane !== tab);
   });
   if (tab === 'context') loadContextPreview();
+  if (tab === 'runlog') loadRunLog();
 }
 document.querySelectorAll('.side-tab').forEach(b => {
   b.addEventListener('click', () => setSideTab(b.dataset.tab));
 });
 // 초기 탭 복원
 setSideTab(_activeSideTab);
+
+// ── 실행 로그 (Run Log) — 도구 호출 이력 ──
+const runlogList = document.getElementById('runlog-list');
+const runlogAll  = document.getElementById('runlog-all');
+async function loadRunLog() {
+  if (!runlogList) return;
+  const all = runlogAll && runlogAll.checked;
+  let url = '/api/run-log?limit=100';
+  if (!all && currentSid) url += `&session_uuid=${encodeURIComponent(currentSid)}`;
+  try {
+    const r = await fetch(url, { signal: AbortSignal.timeout(5000) }).then(r => r.json());
+    const rows = r.rows || [];
+    if (!rows.length) { runlogList.innerHTML = '<div class="runlog-empty">아직 실행 기록이 없습니다.</div>'; return; }
+    runlogList.innerHTML = rows.map(row => {
+      const st = row.status || 'started';
+      const ms = row.elapsed_ms != null ? `${row.elapsed_ms}ms` : '…';
+      let args = '';
+      try { const a = JSON.parse(row.args_json || '{}'); args = Object.entries(a).map(([k,v]) => `${k}=${String(v).slice(0,40)}`).join(' '); } catch {}
+      const errLine = (st === 'error' && row.error) ? `<div class="runlog-err">${esc(row.error.slice(0,160))}</div>` : '';
+      return `<div class="runlog-row">
+        <div class="runlog-row-top">
+          <span class="runlog-status ${st}"></span>
+          <span class="runlog-tool">${esc(row.tool_name || '')}</span>
+          <span class="runlog-ms">${ms}</span>
+        </div>
+        ${args ? `<div class="runlog-args">${esc(args)}</div>` : ''}
+        ${errLine}
+      </div>`;
+    }).join('');
+  } catch (e) {
+    runlogList.innerHTML = '<div class="runlog-empty">실행 로그 조회 실패</div>';
+  }
+}
+document.getElementById('runlog-refresh')?.addEventListener('click', loadRunLog);
+runlogAll?.addEventListener('change', loadRunLog);
 
 // ── 컨텍스트 미리보기 ──
 const ctxSections = document.getElementById('ctx-sections');
