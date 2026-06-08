@@ -1,0 +1,119 @@
+#!/bin/bash
+# VEGA CLI — 데몬 관리 (INT-1412)
+# 설치: ln -sf ~/dev/vega-core/bin/vega ~/.local/bin/vega
+# 사용: vega restart | status | logs | stop | start
+
+set -euo pipefail
+
+UID_NUM="$(id -u)"
+DOMAIN="gui/${UID_NUM}"
+# 서버 데몬 후보 — 개발(vega.server) / 배포 앱(vega-backend) 둘 다 시도
+LABELS=("com.unohee.vega.server" "com.unohee.vega-backend")
+REPO="${VEGA_REPO:-$HOME/dev/vega-core}"
+# 로그 위치: 개발은 ${REPO}/logs/, 배포 앱은 ~/Library/Logs/VEGA/. 둘 다 후보로 둔다.
+if [[ -f "${REPO}/logs/server.log" ]]; then
+  LOG="${REPO}/logs/server.log"
+  ERR="${REPO}/logs/server.err"
+else
+  LOG="$HOME/Library/Logs/VEGA/vega-backend.stdout.log"
+  ERR="$HOME/Library/Logs/VEGA/vega-backend.stderr.log"
+fi
+
+_loaded_labels() {
+  # 현재 로드된 vega 서버 데몬만 반환
+  local found=()
+  for lbl in "${LABELS[@]}"; do
+    if launchctl print "${DOMAIN}/${lbl}" >/dev/null 2>&1; then
+      found+=("$lbl")
+    fi
+  done
+  printf '%s\n' "${found[@]}"
+}
+
+cmd_restart() {
+  local purge_pyc=0
+  [[ "${1:-}" == "--purge-pyc" ]] && purge_pyc=1
+  if [[ $purge_pyc -eq 1 ]]; then
+    echo "→ .pyc 캐시 삭제 (코드 반영 강제)"
+    /usr/bin/find "${REPO}/pipeline" "${REPO}/web" -name '*.pyc' -delete 2>/dev/null || true
+    /usr/bin/find "${REPO}/pipeline" "${REPO}/web" -name '__pycache__' -type d -exec rm -rf {} + 2>/dev/null || true
+  fi
+  local any=0
+  for lbl in $(_loaded_labels); do
+    echo "→ 재시작: ${lbl}"
+    launchctl kickstart -k "${DOMAIN}/${lbl}"
+    any=1
+  done
+  if [[ $any -eq 0 ]]; then
+    echo "✗ 로드된 VEGA 서버 데몬이 없습니다. 'vega start'로 등록하세요." >&2
+    exit 1
+  fi
+  echo "✓ 재시작 요청 완료. 기동 확인: vega status"
+}
+
+cmd_status() {
+  echo "VEGA 데몬 상태 (${DOMAIN}):"
+  for lbl in "${LABELS[@]}"; do
+    if launchctl print "${DOMAIN}/${lbl}" >/dev/null 2>&1; then
+      local pid state
+      pid="$(launchctl print "${DOMAIN}/${lbl}" 2>/dev/null | awk -F'= ' '/pid =/{print $2; exit}')"
+      state="$(launchctl print "${DOMAIN}/${lbl}" 2>/dev/null | awk -F'= ' '/state =/{print $2; exit}')"
+      echo "  ● ${lbl}  pid=${pid:-—}  ${state:-}"
+    else
+      echo "  ○ ${lbl}  (미등록)"
+    fi
+  done
+  # 8100 포트 확인
+  if lsof -nP -iTCP:8100 -sTCP:LISTEN >/dev/null 2>&1; then
+    echo "  :8100 LISTEN ✓"
+  else
+    echo "  :8100 응답 없음 ✗"
+  fi
+}
+
+cmd_logs() {
+  local n="${1:-40}"
+  echo "=== server.log (마지막 ${n}줄) ==="
+  tail -n "$n" "$LOG" 2>/dev/null || echo "(로그 없음: $LOG)"
+  if [[ -s "$ERR" ]]; then
+    echo "=== server.err (마지막 ${n}줄) ==="
+    tail -n "$n" "$ERR" 2>/dev/null
+  fi
+}
+
+cmd_stop() {
+  for lbl in $(_loaded_labels); do
+    echo "→ 중지: ${lbl}"
+    launchctl bootout "${DOMAIN}/${lbl}" 2>/dev/null || true
+  done
+  echo "✓ 중지 완료 (재등록: vega start)"
+}
+
+cmd_start() {
+  local any=0
+  for lbl in "${LABELS[@]}"; do
+    local plist="$HOME/Library/LaunchAgents/${lbl}.plist"
+    if [[ -f "$plist" ]]; then
+      launchctl bootstrap "${DOMAIN}" "$plist" 2>/dev/null && { echo "→ 등록: ${lbl}"; any=1; }
+    fi
+  done
+  [[ $any -eq 1 ]] && echo "✓ 시작 완료" || { echo "✗ plist를 찾을 수 없습니다." >&2; exit 1; }
+}
+
+case "${1:-help}" in
+  restart) shift; cmd_restart "${1:-}" ;;
+  status)  cmd_status ;;
+  logs)    shift; cmd_logs "${1:-40}" ;;
+  stop)    cmd_stop ;;
+  start)   cmd_start ;;
+  *)
+    cat <<EOF
+VEGA CLI — 데몬 관리
+  vega restart [--purge-pyc]   백엔드 재시작 (--purge-pyc: 코드 반영 강제)
+  vega status                  데몬·포트 상태
+  vega logs [N]                서버 로그 마지막 N줄 (기본 40)
+  vega stop                    데몬 중지
+  vega start                   데몬 등록·시작
+EOF
+    ;;
+esac

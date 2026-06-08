@@ -8,6 +8,22 @@
 VEGA Core는 **로컬-퍼스트, 모델-비종속 LLM 에이전트 하네스**다. 핵심 추상화는
 "LLM은 액션 레이어, 지식·규칙·기억은 모델 밖 파일/DB에 영속"이다.
 
+제품 관점에서 VEGA는 **쉬운 데스크톱 AI 앱과 개발자 전용 터미널 에이전트 환경 사이의
+빈칸**을 메우는 앱이다. Claude Desktop/ChatGPT Desktop 같은 앱은 접근성은 좋지만
+권한·커스텀·로컬 실행·워크플로우 지속성이 제한되고, Claude Code/Codex/OpenClaw/MCP/CLI
+조합은 강력하지만 터미널·bash·설정 파일·daemon 운영에 익숙하지 않으면 접근하기 어렵다.
+
+따라서 VEGA의 설계 목표는 "터미널 레벨의 AI 작업 능력을 데스크톱 앱 UX로 제공"하는 것이다.
+비개발자 LLM 파워유저 또는 파워유저가 되고 싶은 사람을 1차 사용자로 보고, 개발자에게는
+내부 구조와 확장 지점을 열어둔다.
+
+핵심 제품 원칙:
+- **Local-first is the trust boundary**: 기본 기능은 계정 없이 로컬에서 동작해야 한다.
+- **Bring your models**: 모델은 교체 가능해야 하고, 사용자의 작업 상태는 VEGA에 남아야 한다.
+- **Desktop-simple, terminal-capable**: 도구 실행·파일 접근·MCP·승인 흐름은 강력하되 UI에서 통제 가능해야 한다.
+- **No setup tax for power users**: OpenClaw/MCP/CLI 조합을 직접 설치·운영하지 않아도 비슷한 능력을 제공한다.
+- **Cloud is additive**: 싱크·백업·원격 지원·관리 정책은 유료/클라우드 기능이 될 수 있지만 로컬 코어를 대체하면 안 된다.
+
 핵심 구성:
 - **에이전트 루프** (`pipeline/streaming.py`): SSE tool-use 멀티라운드 루프
 - **멀티 프로바이더** (`pipeline/llm_gateway.py`): ChatGPT/OpenRouter/LM Studio
@@ -126,10 +142,26 @@ event_entities(event_id, entity_id, match_text)
 ## 확장 지점
 
 - **새 도구**: `tools_*.py`에 함수 + `tools.py` TOOL_SCHEMAS/TOOL_FUNCTIONS 등록
+- **STT 프로바이더 추가**: `pipeline/stt_gateway.py`의 `_WELL_KNOWN_ENDPOINTS`에 엔드포인트 등록, `data/llm_providers.json`의 `stt` 섹션에서 `provider`·`model`·`language` 설정
+- **새 UI 언어**: `web/static/chat.html`과 `dashboard.html`의 `VEGA_STRINGS` 객체에 언어 코드+번역 쌍 추가, 언어 토글 버튼 드롭다운 전환(Phase 3 예정)
 - **새 프로바이더**: `data/llm_providers.json`에 추가 (또는 user data dir 사본)
 - **새 MCP 서버**: **user data dir의 `mcp.json`** 에 등록 (repo `data/mcp.json` 아님 — 아래 지뢰 참조)
 - **새 채널**: `channels/`에 어댑터 작성 → `channels.core.run_agent_turn`을 호출하고 자기 SDK로 점진 렌더만 구현
 - **CE 모드 허용 도구**: `tools._CE_ALLOWED_TOOLS`에 추가하거나 prefix 예외(`get_schemas_for_mode` + `dispatch_tool` 양쪽)
+
+## 제품/사업 경계
+
+VEGA는 모델 회사의 앱을 정면 대체하기보다, 여러 모델과 업무 도구를 이어주는 **개인 에이전트
+작업공간**이 되는 쪽이 맞다. Claude, ChatGPT, Codex, OpenRouter, 로컬 모델은 모두 교체 가능한
+액션/추론 엔진이고, VEGA의 자산은 세션, 메모리, 권한, 도구 연결, 실행 기록, 사용자 워크플로우다.
+
+권장 과금 경계:
+- **Free / Local**: 로컬 데스크톱 앱, BYOK/provider 연결, 로컬 세션·메모리, 기본 도구, 자동 업데이트.
+- **Pro**: 계정 로그인, 여러 Mac 간 싱크, 암호화 백업, 원격 접속, 모바일/웹 클라이언트, 관리형 커넥터.
+- **Team / Enterprise**: 조직 워크스페이스, 정책/권한, 감사 로그, SSO, 중앙 커넥터 관리, 원격 지원.
+
+구현상 cloud 기능은 local-first 코어 위의 부가 계층이어야 한다. 라이선스 체크는 오프라인 grace period를
+둬야 하며, 로컬 무료 기능은 계정 검증 실패로 망가지면 안 된다.
 
 ## 금기 / 지뢰
 

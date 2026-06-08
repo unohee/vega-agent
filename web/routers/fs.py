@@ -257,3 +257,58 @@ async def fs_read_image(path: str):
         return JSONResponse({"data": b64, "media_type": media, "name": p.name})
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
+
+
+# ── 외부 에디터로 열기 ────────────────────────────────────────────────────────
+
+_EDITOR_CANDIDATES = ["cursor", "code", "idea", "subl", "zed"]
+
+
+def _find_editor() -> str | None:
+    """PATH에서 사용 가능한 첫 번째 에디터 CLI를 반환."""
+    import shutil
+    for cmd in _EDITOR_CANDIDATES:
+        if shutil.which(cmd):
+            return cmd
+    return None
+
+
+@router.post("/api/fs/open_in_editor")
+async def fs_open_in_editor(request: Request):
+    """파일/폴더를 설치된 코드 에디터로 열기.
+    body: {"path": "/abs/path", "editor": "code"(optional)}
+    editor 미지정 시 cursor → code → idea → subl → zed 순으로 자동 감지."""
+    import subprocess
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    raw = (body.get("path") or "").strip()
+    if not raw:
+        return JSONResponse({"error": "path 필수"}, status_code=400)
+    try:
+        p = _guard_path(raw)
+    except PermissionError as e:
+        return JSONResponse({"error": str(e)}, status_code=403)
+    if not p.exists():
+        return JSONResponse({"error": f"경로 없음: {raw}"}, status_code=404)
+
+    editor = (body.get("editor") or "").strip() or _find_editor()
+    if not editor:
+        return JSONResponse({"error": "설치된 에디터를 찾을 수 없음 (cursor/code/idea/subl/zed)"}, status_code=404)
+
+    try:
+        subprocess.Popen([editor, str(p)], close_fds=True)
+        return JSONResponse({"ok": True, "editor": editor})
+    except FileNotFoundError:
+        return JSONResponse({"error": f"에디터 실행 불가: {editor}"}, status_code=404)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@router.get("/api/fs/available_editors")
+async def fs_available_editors():
+    """설치된 에디터 목록 반환 (UI 버튼 표시용)."""
+    import shutil
+    found = [cmd for cmd in _EDITOR_CANDIDATES if shutil.which(cmd)]
+    return JSONResponse({"editors": found})

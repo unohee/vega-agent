@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "VEGA 메인 창 기본 권한",
+  "description": "VEGA 메인 창 공통 권한 (전 플랫폼)",
   "windows": ["main", "settings"],
   "permissions": [
     "core:default",
@@ -11,11 +11,16 @@
     "core:window:allow-set-focus",
     "core:window:allow-unminimize",
     "core:window:allow-start-dragging",
-    "global-shortcut:allow-register",
-    "global-shortcut:allow-unregister",
+    "core:event:allow-emit",
+    "core:event:allow-listen",
     "dialog:allow-open"
   ],
   "remote": {
-    "urls": ["http://localhost:8100", "http://localhost:8100/*"]
+    "urls": [
+      "http://localhost:8100",
+      "http://localhost:8100/*",
+      "http://*",
+      "https://*"
+    ]
   }
 }

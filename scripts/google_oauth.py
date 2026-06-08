@@ -38,7 +38,7 @@ import webbrowser
 from pathlib import Path
 
 
-ENV_PATH = Path("/Users/unohee/dev/intrect-platform/.env")
+ENV_PATH = Path(os.environ.get("VEGA_ENV_PATH", str(Path.home() / ".vega.env")))
 KEYCHAIN_SERVICE = "vega-google-oauth"
 REDIRECT_PORT = 9876
 REDIRECT_URI = f"http://localhost:{REDIRECT_PORT}/callback"

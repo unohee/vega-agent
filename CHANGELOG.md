@@ -6,7 +6,25 @@
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-06-04
+
+### Added (VEGA 백포트 — 채팅/대시보드 UX)
+- **재방문 인터리빙 복원** (`web/server.py`, `pipeline/session_store.py`, `chat.html`) — 어시스턴트 메시지에 텍스트↔도구 실행을 시간순으로 기록하는 `events` 구조 도입. `messages` 테이블에 `events TEXT` 컬럼 추가(마이그레이션), 도구가 쓰인 응답은 events를 영속화해 세션 재방문 시 라이브와 동일한 순서로 복원. 순수 텍스트 응답은 텍스트 폴백.
+- **도구별 완료 요약 + 명령어 중심 배지** (`web/server.py`) — `_exec_summary`로 host_exec/bash_exec 결과를 '무엇을 했는지'(명령어+rc) 한 줄로 요약, `_tool_summary`가 call_id별 실행 명령어를 배지에 반영. 출력은 터미널 블럭에서 분리 표시.
+- **중단 응답 영속화** (`web/server.py`) — `_build_aborted_message`로 응답이 중단돼도 도구 실행 흔적을 보존, 재방문 시 사라지지 않음.
+- **메시지 편집** (`chat.html`) — 사용자 메시지를 편집해 재전송.
+- **작업 과정 투명성 (Claude Code 스타일)** (`data/agents/_default.md`) — 도구를 쓰며 진행 과정을 본문 텍스트로 자연스럽게 보여주는 에이전트 지침 추가.
+- **대시보드 메모리 생태계 뷰** (`dashboard.html`, `web/routers/memory_inspector.py`) — 홈을 히어로(VEGA가 기억하는 것) + 탭(최근 기억·인물/엔티티·타임라인·페르소나·규칙/스킬·오늘) 구조로 전면 재설계.
+- **파일 뷰어 드래그 인용 + 외부 에디터로 열기** (`web/routers/fs.py`, `chat.html`) — 파일 뷰어에서 텍스트를 드래그해 채팅에 인용, 외부 에디터로 바로 열기.
+
 ### Added
+- **STT(음성→텍스트) 지원** (`pipeline/stt_gateway.py`) — OpenAI Whisper API 호환 엔드포인트 공통 게이트웨이. 지원 프로바이더: OpenAI (`whisper-1`), Groq, 로컬 faster-whisper-server, LM Studio. `LocalSTTUnavailable` 예외로 사이드카 미실행 시 503 조용히 반환. `data/llm_providers.json`에 `stt` 섹션 추가 (`provider`, `model`, `language`, `response_format`). `/api/stt`, `/api/stt/config` 엔드포인트 추가.
+- **채팅 UI 마이크 버튼** (`chat.html`) — 입력창에 🎙 버튼 추가. MediaRecorder로 브라우저 내 녹음 → `/api/stt` 전송 → 텍스트를 커서 위치에 삽입. `+` 팝오버 메뉴에도 "음성 입력" 항목 추가. 로컬 STT 미실행 시 "로컬 STT 미실행" 토스트 표시.
+- **UI 언어 선택 (한국어/English)** (`chat.html`, `dashboard.html`) — 헤더에 `KO`/`EN` 토글 버튼 추가. `VEGA_STRINGS` i18n 객체 + `applyLang()` + `data-i18n` 속성 패턴으로 정적 UI 텍스트 교체. `localStorage['vega_lang']`으로 선택 언어 지속화.
+- **다국어 지원 로드맵** (`docs/I18N_ROADMAP.md`) — Phase 1(문자열 완전 번역) → Phase 2(외부 JSON 외부화) → Phase 3(일본어·중국어 추가) → Phase 4(에이전트 응답 언어 연동) 4단계 로드맵 문서화.
+- **비전공자용 사용자 설명서** (`README.md`) — 전면 재작성. 설치부터 음성 입력·파일 첨부·슬래시 명령어·MCP까지 스크린샷 없이도 따라할 수 있는 위키 수준 설명서.
+
+### Added (이전 미기록)
 - **멀티 프로바이더 설치 마법사 + Anthropic 네이티브 어댑터** — 설치 마법사가 OpenRouter 전용에서 프로바이더 목록(Anthropic·OpenAI·OpenRouter API 키 / ChatGPT PKCE 로그인 / 로컬·온프레미스 URL) → 선택 → 해당 인증 흐름으로 확장. 키는 라이브 검증(`/models` 200) 후 Keychain 저장 + `llm_providers.json`에 `upsert_provider`로 등록 후 활성화. 추론 백엔드도 동일하게 멀티 프로바이더 지원:
   - **Anthropic 네이티브 어댑터** (`llm_gateway` `kind=anthropic`) — OpenAI 호환이 아닌 `/v1/messages`를 직접 호출. `x-api-key`+`anthropic-version` 헤더, system을 cache_control 블록으로, Responses↔Anthropic 메시지/tool 스키마(`input_schema`) 변환, `max_tokens` 필수. `streaming._stream_sse`에 Anthropic SSE 파싱(`message_start`/`content_block_delta` text_delta·input_json_delta/`message_delta` usage/`message_stop`) 추가. `auth_type`: `anthropic_key`(콘솔 키) / `claude_oauth`(보류 — client_id 비공개, import 가드).
   - **OpenAI 직접 API** 프로바이더(`api.openai.com`, bearer) 추가.

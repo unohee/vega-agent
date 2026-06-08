@@ -21,6 +21,7 @@ datas += [
     (os.path.join(REPO_ROOT, "data", "llm_providers.json"), "data"),
     (os.path.join(REPO_ROOT, "data", "tool_groups.json"), "data"),
     (os.path.join(REPO_ROOT, "data", "mcp.json"), "data"),
+    (os.path.join(REPO_ROOT, "data", "slack_oauth_client.json"), "data"),
     # Docker 코드 샌드박스 정의 — 설치본에서 ensure_sandbox_ready 가 compose build/up 하려면 필요
     (os.path.join(REPO_ROOT, "sandbox", "Dockerfile"), "sandbox"),
     (os.path.join(REPO_ROOT, "sandbox", "docker-compose.yml"), "sandbox"),

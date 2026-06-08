@@ -284,7 +284,7 @@ TOOL_SCHEMAS: list[dict] = [
             "properties": {
                 "message_id": {"type": "string", "description": "메시지 ID"},
                 "attachment_id": {"type": "string", "description": "attachment_id (gmail_list_attachments 결과의 attachment_id)"},
-                "save_path": {"type": "string", "description": "저장할 절대경로 (예: /Users/unohee/Downloads/kb_card_2026_05.xlsx)"},
+                "save_path": {"type": "string", "description": "저장할 절대경로 (예: ~/Downloads/report.xlsx)"},
                 "account": {"type": "string", "enum": ["personal", "intrect"], "default": "personal"},
             },
             "required": ["message_id", "attachment_id", "save_path"],
@@ -1326,7 +1326,16 @@ def image_generate(
 
 # ── Rule (RULES.md) management tools ─────────────────────────────────────────
 
-_RULES_PATH = Path(__file__).parent.parent / "data" / "agents" / "RULES.md"
+# 사용자 정의 규칙 — 영속 데이터 루트에 둔다(읽기·쓰기 동일 경로).
+# 번들 상대경로(_MEIPASS)는 onefile 에서 읽기전용/임시라 rule_save 가 깨진다.
+def _rules_path() -> Path:
+    try:
+        from pipeline.data_paths import data_dir
+        return data_dir() / "agents" / "RULES.md"
+    except Exception:
+        return Path(__file__).parent.parent / "data" / "agents" / "RULES.md"
+
+_RULES_PATH = _rules_path()
 
 
 def _rules_load() -> dict[str, dict]:

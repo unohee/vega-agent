@@ -35,9 +35,15 @@ CALLBACK_HOST     = "localhost"
 LOGIN_TIMEOUT_S   = 120
 REFRESH_BUFFER_S  = 300  # refresh 5 minutes before expiry
 
-# Token storage path (data/ is gitignored)
-_VEGA_ROOT = Path(__file__).parent.parent.parent
-TOKEN_PATH = _VEGA_ROOT / "data" / "openai_oauth.json"
+# Token storage path — 영속 사용자 데이터 루트(~/Library/Application Support/VEGA 등).
+# 과거엔 Path(__file__) 기준 레포 상대 경로였으나, PyInstaller onefile 번들에선
+# __file__ 이 매 실행마다 새로 만들어지는 임시 _MEIPASS 를 가리켜 로그인 직후
+# 토큰이 사라졌다("No OAuth profile found"). data_paths 로 통일한다.
+from pipeline.data_paths import data_dir
+
+TOKEN_PATH = data_dir() / "openai_oauth.json"
+# 레거시(repo/data) 위치 — 구버전에서 업그레이드 시 _load_profile에서 자동 마이그레이션.
+_LEGACY_TOKEN_PATH = Path(__file__).parent.parent.parent / "data" / "openai_oauth.json"
 
 
 def _generate_code_verifier() -> str:
@@ -200,6 +206,14 @@ def _exchange_code(
 
 
 def _load_profile() -> Optional[dict]:
+    # 레거시 위치(repo/data)에만 있으면 새 위치(VEGA_DATA_DIR)로 1회 마이그레이션.
+    if not TOKEN_PATH.exists() and _LEGACY_TOKEN_PATH != TOKEN_PATH and _LEGACY_TOKEN_PATH.exists():
+        try:
+            TOKEN_PATH.parent.mkdir(parents=True, exist_ok=True)
+            TOKEN_PATH.write_text(_LEGACY_TOKEN_PATH.read_text())
+            TOKEN_PATH.chmod(0o600)
+        except Exception:
+            pass
     if not TOKEN_PATH.exists():
         return None
     try:

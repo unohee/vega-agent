@@ -17,7 +17,7 @@ import time
 from pathlib import Path
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -153,6 +153,12 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(_warmup_local_llm())
 
+    # YOLO heartbeat — find stalled YOLO sessions in the background and auto-resume
+    _hb_task = asyncio.create_task(_yolo_heartbeat())
+
+    # Cron loop — run scheduled prompts at their due time in the background (INT-1407)
+    _cron_task = asyncio.create_task(_cron_loop())
+
     # Docker 코드 샌드박스 자동 확보 (백그라운드) — 기동 시 컨테이너를 띄워두어
     # 첫 bash_exec/python_exec 호출 시 빌드/기동 지연을 없앤다. Docker 없으면 조용히 skip.
     async def _warmup_sandbox():
@@ -190,6 +196,10 @@ async def lifespan(app: FastAPI):
 
     yield
 
+    # Cancel heartbeat·cron tasks on shutdown
+    _hb_task.cancel()
+    _cron_task.cancel()
+
 
 app = FastAPI(title="VEGA", lifespan=lifespan)
 
@@ -202,6 +212,8 @@ from web.routers import onboarding as _onboarding_router  # noqa: E402
 from web.routers import run_log as _run_log_router  # noqa: E402
 from web.routers import scheduler as _scheduler_router  # noqa: E402
 from web.routers import memory_inspector as _memory_inspector_router  # noqa: E402
+from web.routers import data_boundary as _data_boundary_router  # noqa: E402
+from web.routers import cron as _cron_router  # noqa: E402
 app.include_router(_llm_router.router)
 app.include_router(_fs_router.router)
 app.include_router(_dashboard_router.router)
@@ -210,6 +222,8 @@ app.include_router(_onboarding_router.router)
 app.include_router(_run_log_router.router)
 app.include_router(_scheduler_router.router)
 app.include_router(_memory_inspector_router.router)
+app.include_router(_data_boundary_router.router)  # local-first data boundary export/wipe (INT-1383)
+app.include_router(_cron_router.router)  # arbitrary-prompt cron jobs CRUD (INT-1407)
 
 # CORS — allow Tauri app origin + localhost only. Wildcard removed to block cross-origin CSRF.
 from fastapi.middleware.cors import CORSMiddleware
@@ -242,12 +256,143 @@ _PLAN_MODE: dict[str, bool] = {}
 # Volatile: cleared on session end.
 _RESEARCH_MODE: dict[str, bool] = {}
 
-# /yolo mode toggle — sid → bool. When True, auto-reruns host_exec with ask="off"
-# immediately upon receiving a __needs_approval__ response.
-# Hard-block list (_HOST_HARD_BLOCKED) and secret checks apply regardless of yolo.
-# AskUserQuestion, exit_plan_mode, improvement_pending still require user approval.
-# Volatile: cleared on session end.
+# YOLO mode — auto-reruns host_exec with ask="off" on a __needs_approval__ response.
+# Hard-block list + secret checks apply regardless. AskUserQuestion/exit_plan_mode/
+# improvement_pending still require user approval.
+#
+# YOLO is global (_YOLO_GLOBAL) — desktop is 1 machine = 1 user, so "auto-approve is on for
+# this machine" is natural. Once on, it persists across all sessions (new chat, switch) and
+# across restarts (flag file). plan/research stay per-session; yolo is machine-global.
+# _YOLO_MODE (per-session) is also honored for back-compat.
 _YOLO_MODE: dict[str, bool] = {}
+
+
+def _yolo_flag_path():
+    """YOLO global flag persistence file — survives restart (unattended long-running)."""
+    try:
+        from pipeline.data_paths import data_dir
+        return data_dir() / "yolo_global.flag"
+    except Exception:
+        from pathlib import Path
+        return Path(__file__).parent.parent / "data" / "yolo_global.flag"
+
+
+def _load_yolo_global() -> bool:
+    try:
+        return _yolo_flag_path().exists()
+    except Exception:
+        return False
+
+
+def _save_yolo_global(on: bool) -> None:
+    try:
+        p = _yolo_flag_path()
+        if on:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text("1")
+        elif p.exists():
+            p.unlink()
+    except Exception:
+        pass
+
+
+_YOLO_GLOBAL: bool = _load_yolo_global()  # restored from disk on restart
+
+
+def _yolo_on(sid: str) -> bool:
+    """Is YOLO auto-approval on for this session — global OR per-session."""
+    return _YOLO_GLOBAL or bool(_YOLO_MODE.get(sid))
+
+# /goal long-running mode — sid → bool. Enabled on /goal. Multi-turn long work has
+# legitimately long tool chains, so the hang watchdog threshold is extended. Volatile.
+_GOAL_MODE: dict[str, bool] = {}
+
+# Hang watchdog threshold (seconds). If no token/tool event arrives for this long
+# after the last event, the task is treated as hung and cancelled. Long-running
+# modes (yolo/goal/research) get a longer threshold.
+WATCHDOG_IDLE_DEFAULT = 60.0    # normal — cut a stall fast so the user can retry
+WATCHDOG_IDLE_LONG = 300.0      # yolo/goal/research — matches host_exec's own 300s timeout
+
+
+def _watchdog_idle_for(sid: str) -> float:
+    """Hang watchdog threshold (seconds) for the session's current mode."""
+    if _yolo_on(sid) or _GOAL_MODE.get(sid) or _RESEARCH_MODE.get(sid):
+        return WATCHDOG_IDLE_LONG
+    return WATCHDOG_IDLE_DEFAULT
+
+
+# ── YOLO heartbeat — find stalled YOLO sessions in the background and auto-resume ──
+# Covers cases self-wake (one in-task resume) misses — disconnected, fully terminated, or
+# genuinely stalled >5min sessions. Desktop is 1 machine = 1 user, so only this machine's
+# _TASK_REGISTRY matters. A per-session resume cap prevents infinite re-resume.
+HEARTBEAT_INTERVAL = 120.0       # scan period (seconds)
+HEARTBEAT_STALL_SEC = 300.0      # idle longer than this → treated as stalled (seconds)
+HEARTBEAT_MAX_RESUMES = 3        # memory-reg stall — per-session auto-resume cap
+HEARTBEAT_DB_MAX_RESUMES = 20    # autopilot tracked session — cumulative cap (prevents infinite revive)
+_heartbeat_resumes: dict[str, int] = {}   # sid → number of heartbeat resumes
+
+
+# ── Autopilot tracked sessions — explicitly registered "push to completion" sessions ──
+# Heartbeat revives them by DB even after a restart wipes the memory reg (unattended long-run).
+# Persisted to file. Tracking ends when the work completes or the user unregisters.
+def _autopilot_path():
+    try:
+        from pipeline.data_paths import data_dir
+        return data_dir() / "autopilot_sessions.json"
+    except Exception:
+        from pathlib import Path
+        return Path(__file__).parent.parent / "data" / "autopilot_sessions.json"
+
+
+def _load_autopilot() -> dict:
+    """{sid: {"resumes": int}} form."""
+    try:
+        import json as _json
+        p = _autopilot_path()
+        if p.exists():
+            return _json.loads(p.read_text())
+    except Exception:
+        pass
+    return {}
+
+
+def _save_autopilot(data: dict) -> None:
+    try:
+        import json as _json
+        p = _autopilot_path()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(_json.dumps(data, ensure_ascii=False))
+    except Exception:
+        pass
+
+
+def _autopilot_register(sid: str) -> None:
+    data = _load_autopilot()
+    if sid not in data:
+        data[sid] = {"resumes": 0}
+        _save_autopilot(data)
+
+
+def _autopilot_unregister(sid: str) -> None:
+    data = _load_autopilot()
+    if sid in data:
+        data.pop(sid, None)
+        _save_autopilot(data)
+
+
+def _is_stalled_yolo(sid: str, reg: dict, now_monotonic: float) -> bool:
+    """Is this a heartbeat resume target — YOLO + not done + idle over threshold + not awaiting + under cap."""
+    if not _yolo_on(sid):
+        return False
+    if reg.get("done"):
+        return False
+    if reg.get("awaiting_approval"):        # awaiting user input is normal — not stalled
+        return False
+    if _heartbeat_resumes.get(sid, 0) >= HEARTBEAT_MAX_RESUMES:
+        return False
+    idle = now_monotonic - reg.get("last_activity", now_monotonic)
+    return idle > HEARTBEAT_STALL_SEC
+
 
 _RESEARCH_MODE_GUIDE = """## 연구 모드 (Research Mode) 활성화
 
@@ -297,18 +442,23 @@ def _is_loopback(request: Request) -> bool:
 
 
 def _get_access_level(request: Request) -> str:
-    """Return request access level: 'local' | 'enterprise' | 'ce'"""
+    """요청의 접근 레벨 반환: 'local' | 'enterprise'
+
+    CE 모드 제거(2026-06-02): 비-loopback·키 없는 원격 접속도 더 이상 'ce'로
+    강등하지 않는다. 모든 세션이 로컬 시스템 도구 전체를 받는다.
+    """
     if _is_loopback(request):
         return "local"
     key = request.headers.get("x-vega-key", "").strip()
     if key and key in _load_enterprise_keys():
         return "enterprise"
-    return "ce"
+    # 과거엔 "ce"(로컬 도구 차단)였으나 CE 모드 폐지로 local과 동일 취급.
+    return "local"
 
 
-# Backward compat — used where a ce_mode bool is required
+# 하위 호환 — ce_mode bool이 필요한 곳에서 사용. CE 모드 폐지로 항상 False.
 def _ce_mode_from_access(level: str) -> bool:
-    return level == "ce"
+    return False
 
 
 _PLAN_MODE_GUIDE = """## 🔒 Plan 모드 활성
@@ -337,6 +487,20 @@ _PLAN_MODE_GUIDE = """## 🔒 Plan 모드 활성
    사용자가 `/plan-off`를 명시적으로 입력하면 즉시 plan 모드가 해제된다.
 """
 
+# /goal long-running protocol — injected into system once (not resent as a user
+# message every turn). Compressed from goal.md to cut token accumulation + self-echo.
+_GOAL_MODE_GUIDE = """## 장기작업 모드 (Goal Mode) 활성
+
+이 세션은 멀티턴 장기작업이다. 끝까지 이어가되 **간결하게** 진행한다.
+
+1. 도구 호출 직전: 무엇을 왜 하는지 **한 줄로만** 말한다. 장황한 상황 재설명 금지.
+2. 이미 한 작업·이미 말한 맥락을 매 턴 반복하지 마라. 새로 바뀐 것만 말한다.
+3. 도구 결과는 1~3줄로 해석하고 바로 다음 행동으로 넘어간다.
+4. 턴을 끝낼 때만 짧은 체크포인트(완료/남은 것/다음)를 남긴다. 매 도구마다 카드 재작성 금지.
+5. 완료조건: 산출물 생성·검증·이어받기 가능 상태·최종 요약. 충족 전 완료 선언 금지.
+
+핵심: **직전에 한 말을 되풀이하지 않는다.** 진척만 보고한다."""
+
 # ── Task registry — tasks run to completion regardless of connection state ─────────────────────
 # key: session_id
 # value: {
@@ -356,9 +520,43 @@ def _get_history(sid: str) -> list[dict]:
 
 # ── Tool status labels ────────────────────────────────────────────────────────
 
+def _core_command(command: str) -> str:
+    """Extract the actual core program name from a shell command.
+    'cd X && find . -name ...' → 'find', 'FOO=1 python3 - <<PY' → 'python3'.
+    Skips prep tokens (cd/export/pure env assignments) and returns the first real
+    command's basename. Pipelines use the first real command. Full command stays in
+    the UI accordion (args)."""
+    import re as _re
+    if not command:
+        return ""
+    segments = _re.split(r"\s*(?:&&|\|\||;|\|)\s*", command.strip())
+    seg_skip = {"cd", "export", "set", "source", "."}          # whole segment is prep → next segment
+    wrap_skip = {"sudo", "env", "time", "nohup", "exec", "command", "xargs", "nice"}  # wrapper → next token
+    for seg in segments:
+        toks = seg.strip().split()
+        i = 0
+        while i < len(toks):
+            if _re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", toks[i]):  # env assignment prefix
+                i += 1
+                continue
+            base = toks[i].rsplit("/", 1)[-1]
+            if base in wrap_skip:
+                i += 1
+                while i < len(toks) and toks[i].startswith("-"):
+                    i += 1
+                    if i < len(toks) and toks[i].isdigit():
+                        i += 1
+                continue
+            if base in seg_skip:
+                break
+            return base
+    first = segments[0].strip().split()
+    return (first[0].rsplit("/", 1)[-1] if first else "")
+
+
 def _tool_label(name: str, args: dict) -> str:
     query = args.get("query", "")
-    cmd = args.get("command", "")[:80]
+    core = _core_command(args.get("command", ""))
     return {
         "web_search":            f"🔍 검색 중: {query}",
         "web_fetch":             f"🌐 페이지 읽는 중: {args.get('url', '')[:60]}",
@@ -369,8 +567,8 @@ def _tool_label(name: str, args: dict) -> str:
         "calendar_create_event": f"📅 일정 추가 중: {args.get('summary', '')}",
         "drive_search":          f"📂 Drive 검색 중: {query}",
         "drive_read":            f"📂 Drive 파일 읽는 중…",
-        "host_exec":             f"🖥️  호스트 실행 중: `{cmd}`",
-        "bash_exec":             f"⚙️  실행 중: `{cmd}`",
+        "host_exec":             f"🖥️  실행 중: `{core}`" if core else "🖥️  호스트 실행 중…",
+        "bash_exec":             f"⚙️  실행 중: `{core}`" if core else "⚙️  실행 중…",
         "python_exec":           f"🐍 Python 실행 중…",
         "chart_matplotlib":      f"📊 차트 그리는 중…",
         "chart_plotly":          f"📊 인터랙티브 차트 그리는 중…",
@@ -395,12 +593,57 @@ def _tool_label(name: str, args: dict) -> str:
     }.get(name, f"🔧 {name} 실행 중…")
 
 
-def _tool_summary(name: str, result: str) -> tuple[str, dict | None]:
-    """Return (summary text, chart meta dict | None)."""
+def _exec_summary(command: str, stdout: str, err: str, rc) -> str:
+    """host_exec / bash_exec 결과 한 줄 요약 — '무엇을 했는지'(명령어)를 표현.
+    출력은 terminal 블럭에서 담당하므로 여기엔 명령어 + rc만."""
+    cmd = " ".join((command or "").split())  # 개행/연속공백 압축
+    if len(cmd) > 70:
+        cmd = cmd[:70] + "…"
+    failed = rc not in (0, None)
+    prefix = "✗" if failed else "✓"
+    if cmd:
+        tail = f" · {err.splitlines()[0][:50]}" if (failed and err) else (f" rc={rc}" if failed else "")
+        return f"{prefix} {cmd}{tail}"
+    # 명령어 미상 폴백
+    if err:
+        return f"✗ {err.splitlines()[0][:80]}"
+    return f"{prefix} 완료 (rc={rc})"
+
+
+_EXEC_TERMINAL_MAX_LINES = 20  # 이보다 긴 출력은 terminal 블럭 생략 (긴 파일 목록 등)
+
+
+def _build_aborted_message(partial_text: str, tool_trace: list[str]) -> str:
+    """중단된 응답을 DB에 영속화할 텍스트로 조합.
+    텍스트 토큰이 없어도 도구 실행 흔적이 있으면 보존 → 재방문 시 사라지지 않음.
+    아무것도 없으면 빈 문자열(저장 안 함)."""
+    parts = []
+    if tool_trace:
+        parts.append("\n".join(f"- {t}" for t in tool_trace))
+    if partial_text.strip():
+        parts.append(partial_text.strip())
+    combined = "\n\n".join(parts).strip()
+    if not combined:
+        return ""
+    return (combined + "\n\n_⏹ 응답이 중단됐습니다._").strip()
+
+
+def _tool_summary(name: str, result: str, command: str = "") -> tuple[str, dict | None]:
+    """(요약 텍스트, 차트 메타 dict | None) 반환.
+    command: host_exec/bash_exec일 때 실행한 명령어 (summary에 표시)."""
     try:
         parsed = json.loads(result)
     except Exception:
-        return ("✓ 완료", None)
+        # 문자열을 직접 반환하는 도구(web_fetch/drive_read/file_read 등) — 이름 기반 요약.
+        str_summaries = {
+            "web_fetch":  "🌐 페이지 읽음",
+            "drive_read": "📂 Drive 파일 읽음",
+            "file_read":  "📄 파일 읽음",
+            "file_edit":  "✏️ 파일 편집됨",
+        }
+        if isinstance(result, str) and result.lstrip().startswith(("실패", "fetch 실패", "오류", "error")):
+            return (f"✗ {result.strip()[:80]}", None)
+        return (f"✓ {str_summaries.get(name, name + ' 완료')}", None)
 
     if isinstance(parsed, dict) and parsed.get("__type") == "image":
         path = parsed.get("path", "")
@@ -423,15 +666,94 @@ def _tool_summary(name: str, result: str) -> tuple[str, dict | None]:
 
     if isinstance(parsed, dict) and "stdout" in parsed:
         out = parsed["stdout"].strip()
-        base = out[:200] if out else f"(exit code {parsed.get('returncode', '?')})"
+        rc = parsed.get("returncode", 0)
+        # 명령어를 요약으로, 출력은 terminal 블럭에서 표시
+        err = parsed.get("stderr", "").strip() if rc not in (0, None) else ""
+        cmd = command or parsed.get("command", "")
+        summary = _exec_summary(cmd, out, err, rc)
         if parsed.get("warnings"):
-            base = "⚠️ " + " | ".join(parsed["warnings"]) + "\n" + base
-        return (f"✓ {base}", None)
+            summary = "⚠️ " + " | ".join(parsed["warnings"][:2]) + " · " + summary
+        return (summary, None)
+
+    # 도구별 의미있는 완료 요약 — "무엇을 했고 결과가 뭔지" (rc=0 도배 방지).
+    summary = _named_tool_summary(name, parsed)
+    if summary:
+        return (summary, None)
 
     if isinstance(parsed, list):
         return (f"✓ {len(parsed)}건", None)
 
     return ("✓ 완료", None)
+
+
+# 도구 이름별 완료 요약 — result(파싱된 dict/list)에서 정량 정보를 뽑아 한 줄로.
+# host_exec/bash_exec(stdout 분기)·차트·에러는 위에서 이미 처리되므로 여기선 나머지.
+def _named_tool_summary(name: str, parsed) -> str | None:
+    n = len(parsed) if isinstance(parsed, list) else None
+    def pick(*keys):
+        if isinstance(parsed, dict):
+            for k in keys:
+                if parsed.get(k) is not None:
+                    return parsed[k]
+        return None
+    table = {
+        "web_search":            lambda: f"🔍 검색 결과 {n}건" if n is not None else "🔍 검색 완료",
+        "gmail_search":          lambda: f"📧 메일 {n}건" if n is not None else "📧 메일 검색 완료",
+        "gmail_read":            lambda: f"📧 메일 읽음: {str(pick('subject') or '').strip()[:40]}",
+        "gmail_send":            lambda: "📤 메일 전송됨",
+        "gmail_draft":           lambda: "📝 초안 저장됨",
+        "gmail_batch_modify":    lambda: f"🏷️ 메일 {pick('modified') or '?'}건 라벨 변경",
+        "calendar_list_events":  lambda: f"📅 일정 {n}건" if n is not None else "📅 일정 확인 완료",
+        "calendar_create_event": lambda: f"📅 일정 추가됨: {str(pick('summary') or '').strip()[:30]}",
+        "calendar_delete_event": lambda: "📅 일정 삭제됨",
+        "drive_search":          lambda: f"📂 Drive {n}건" if n is not None else "📂 Drive 검색 완료",
+        "memory_persona_update": lambda: f"🧠 페르소나 저장 (v{pick('version') or '?'})",
+        "memory_event_add":      lambda: f"📝 이벤트 기록됨 (#{pick('id') or '?'})",
+        "memory_entity_upsert":  lambda: f"🗂️ 엔티티 {('생성' if pick('action')=='created' else '갱신')}됨",
+        "skill_save":            lambda: f"🧩 skill 저장됨: /{str(pick('name') or '').strip()}",
+        "skill_delete":          lambda: "🗑️ skill 삭제됨",
+        "widget_save":           lambda: "📊 위젯 저장됨",
+        "widget_delete":         lambda: "🗑️ 위젯 삭제됨",
+        "xlsx_read":             lambda: f"📊 엑셀 읽음 ({pick('total_rows') or '?'}행)",
+        "xlsx_create":           lambda: f"📊 엑셀 생성됨 ({pick('rows_written') or '?'}행)",
+        "docx_read":             lambda: "📄 문서 읽음",
+        "docx_create":           lambda: "📄 문서 생성됨",
+        "pptx_read":             lambda: f"📑 슬라이드 {pick('slide_count') or '?'}장",
+        "self_edit_file":        lambda: f"✏️ 파일 {('작성' if pick('action')=='write' else '편집')}됨",
+        "system_info":           lambda: "💻 시스템 상태 확인됨",
+        "session_list":          lambda: "📋 세션 목록 조회됨",
+    }
+    fn = table.get(name)
+    if fn:
+        try:
+            return "✓ " + fn()
+        except Exception:
+            pass
+    # 매핑 없는 도구: ok 키나 list 길이로 최소한의 정보 제공
+    if isinstance(parsed, dict) and parsed.get("ok") is True:
+        return f"✓ {name} 완료"
+    if n is not None:
+        return f"✓ {name}: {n}건"
+    return None
+
+
+import re as _re
+
+# Tool progress narration lines — emitted by the model in-body or re-generated by mimicking
+# the previous turn. e.g. "- ✓ 완료", "- ✗ ", "- ✓ browser_evaluate 완료", "- ✓ cd ... && find ...".
+# Left in history, the model mimics them again next turn → self-echo snowball.
+_TOOL_NARRATION_RE = _re.compile(r"^\s*[-*]\s*[✓✗⟳⏹]\s.*$")
+
+
+def _slim_assistant_content(text: str) -> str:
+    """Strip tool progress narration lines from an assistant reply to slim the next-turn prompt.
+    Keep the model's explanation/conclusion text; remove only tool completion/command-echo lines.
+    Removes the source of self-echo (mimicking the previous turn's tool summary) from history."""
+    if not text or ("✓" not in text and "✗" not in text and "⟳" not in text and "⏹" not in text):
+        return text
+    kept = [ln for ln in text.split("\n") if not _TOOL_NARRATION_RE.match(ln)]
+    slimmed = "\n".join(kept)
+    return slimmed.strip("\n") if slimmed.strip() else text
 
 
 def _format_db_context(hits: list[dict]) -> str:
@@ -445,6 +767,7 @@ def _format_db_context(hits: list[dict]) -> str:
 
 def handle_slash(user_text: str, sid: str) -> dict | None:
     """Handle slash command → {"text": str} or {"text": str, "switch_session": sid} or None."""
+    global _YOLO_GLOBAL  # /yolo, /yolo-off toggle global
     parts = user_text.split(None, 1)
     cmd = parts[0].lower()
     args = parts[1].strip() if len(parts) > 1 else ""
@@ -619,16 +942,21 @@ def handle_slash(user_text: str, sid: str) -> dict | None:
         return {"text": "🔬 Research 모드 " + ("해제됨." if was else "이미 꺼져있었음.")}
 
     if cmd == "/yolo":
-        _YOLO_MODE[sid] = True
+        _YOLO_GLOBAL = True
+        _save_yolo_global(True)
         return {"text": (
-            "⚡ **YOLO 모드 켜짐.** 이제 host_exec의 allowlist 외 명령도 사용자 승인 없이 "
-            "자동 실행한다. 단, 하드 차단(rm -rf /, mkfs, > /dev/ 등)과 시크릿 검사는 그대로 적용.\n\n"
+            "⚡ **YOLO 모드 켜짐 (전역).** 이제 모든 세션에서 host_exec의 allowlist 외 명령도 "
+            "사용자 승인 없이 자동 실행한다. 단, 하드 차단(rm -rf /, mkfs, > /dev/ 등)과 시크릿 "
+            "검사는 그대로 적용.\n\n"
             "AskUserQuestion(선택지), exit_plan_mode, self_improve 패치는 여전히 사용자 승인 필요.\n\n"
             "`/yolo-off`로 해제."
         )}
 
     if cmd == "/yolo-off":
-        was = _YOLO_MODE.pop(sid, False)
+        was = _YOLO_GLOBAL or bool(_YOLO_MODE)
+        _YOLO_GLOBAL = False
+        _YOLO_MODE.clear()
+        _save_yolo_global(False)
         return {"text": "⚡ YOLO 모드 " + ("해제됨." if was else "이미 꺼져있었음.")}
 
     if cmd == "/help":
@@ -707,6 +1035,120 @@ async def install_page():
 async def chat_page():
     return HTMLResponse((STATIC_DIR / "chat.html").read_text(encoding="utf-8"))
 
+
+@app.get("/slack/auth")
+async def slack_auth_start():
+    """Start Slack OAuth in the browser."""
+    try:
+        from pipeline.auth.slack import authorize_url
+        return RedirectResponse(url=authorize_url(), status_code=302)
+    except Exception as e:
+        return HTMLResponse(
+            f"<h3>Slack OAuth 설정 오류</h3><pre>{str(e)}</pre>",
+            status_code=500,
+        )
+
+
+@app.get("/slack/callback")
+async def slack_callback(request: Request):
+    """Receive Slack OAuth callback and exchange code for a user token."""
+    error = request.query_params.get("error")
+    if error:
+        return HTMLResponse(f"<h3>Slack 인증 취소/실패</h3><pre>{error}</pre>", status_code=400)
+
+    code = request.query_params.get("code", "")
+    state = request.query_params.get("state")
+    if not code:
+        return HTMLResponse("<h3>Slack 인증 실패</h3><pre>code 파라미터가 없습니다.</pre>", status_code=400)
+
+    from pipeline.auth.slack import exchange_code
+    result = exchange_code(code, state=state)
+    if result.get("ok"):
+        team = result.get("team") or "(unknown team)"
+        user = result.get("user") or "(unknown user)"
+        return HTMLResponse(f"<h3>Slack 인증 완료</h3><p>team: {team}<br>user: {user}</p>")
+
+    return HTMLResponse(
+        f"<h3>Slack 인증 실패</h3><pre>{result.get('error') or 'unknown error'}</pre>",
+        status_code=400,
+    )
+
+
+@app.get("/superthread/auth")
+async def superthread_auth_start():
+    """Start Superthread OAuth (PKCE) in the browser."""
+    try:
+        from pipeline.auth.superthread import authorize_url
+        return RedirectResponse(url=authorize_url(), status_code=302)
+    except Exception as e:
+        return HTMLResponse(
+            f"<h3>Superthread OAuth 설정 오류</h3><pre>{str(e)}</pre>",
+            status_code=500,
+        )
+
+
+@app.get("/callback")
+async def superthread_callback(request: Request):
+    """Receive Superthread OAuth callback → exchange code → issue + store PAT.
+
+    경로는 반드시 /callback — Superthread client(ocstcli)의 사전 등록 패턴.
+    """
+    error = request.query_params.get("error")
+    if error:
+        return HTMLResponse(f"<h3>Superthread 인증 취소/실패</h3><pre>{error}</pre>", status_code=400)
+
+    code = request.query_params.get("code", "")
+    state = request.query_params.get("state")
+    if not code:
+        return HTMLResponse("<h3>Superthread 인증 실패</h3><pre>code 파라미터가 없습니다.</pre>", status_code=400)
+
+    from pipeline.auth.superthread import exchange_code
+    result = exchange_code(code, state=state)
+    if result.get("ok"):
+        exp = result.get("expires_at") or "(만료 정보 없음)"
+        return HTMLResponse(f"<h3>Superthread 인증 완료</h3><p>PAT 발급됨 · 만료: {exp}</p>")
+
+    return HTMLResponse(
+        f"<h3>Superthread 인증 실패</h3><pre>{result.get('error') or 'unknown error'}</pre>",
+        status_code=400,
+    )
+
+
+@app.get("/google/auth")
+async def google_auth_start():
+    """Start Google OAuth in the browser. 내장 client 로 입력 없이 로그인."""
+    try:
+        from pipeline.auth.google import authorize_url
+        return RedirectResponse(url=authorize_url(), status_code=302)
+    except Exception as e:
+        return HTMLResponse(
+            f"<h3>Google OAuth 설정 오류</h3><pre>{str(e)}</pre>",
+            status_code=500,
+        )
+
+
+@app.get("/google/callback")
+async def google_callback(request: Request):
+    """Receive Google OAuth callback → exchange code → store refresh_token."""
+    error = request.query_params.get("error")
+    if error:
+        return HTMLResponse(f"<h3>Google 인증 취소/실패</h3><pre>{error}</pre>", status_code=400)
+
+    code = request.query_params.get("code", "")
+    state = request.query_params.get("state")
+    if not code:
+        return HTMLResponse("<h3>Google 인증 실패</h3><pre>code 파라미터가 없습니다.</pre>", status_code=400)
+
+    from pipeline.auth.google import exchange_code
+    result = exchange_code(code, state=state)
+    if result.get("ok"):
+        email = result.get("email") or "(이메일 미확인)"
+        return HTMLResponse(f"<h3>Google 인증 완료</h3><p>계정: {email}</p>")
+
+    return HTMLResponse(
+        f"<h3>Google 인증 실패</h3><pre>{result.get('error') or 'unknown error'}</pre>",
+        status_code=400,
+    )
 
 
 _UPLOAD_DIR = _uploads_dir()
@@ -792,21 +1234,125 @@ async def upload_image_base64(request: Request):
     return JSONResponse({"path": str(dest), "filename": safe_name})
 
 
+@app.post("/api/stt")
+async def stt_transcribe(request: Request):
+    """
+    Speech-to-Text transcription endpoint.
+    Accepts multipart/form-data with a 'file' field (audio: webm/mp4/wav/ogg/mp3/flac).
+    Optional 'language' field overrides the config language (e.g. 'ko', 'en').
+    Returns: {"text": str}
+    """
+    MAX_AUDIO_SIZE = 25 * 1024 * 1024  # 25 MB (Whisper API limit)
+
+    form = await request.form()
+    upload = form.get("file")
+    if upload is None:
+        return JSONResponse({"error": "file 필드가 없습니다"}, status_code=400)
+
+    raw = await upload.read()
+    if len(raw) > MAX_AUDIO_SIZE:
+        return JSONResponse({"error": f"오디오 파일이 너무 큽니다 ({len(raw)//1024//1024}MB, 최대 25MB)"}, status_code=413)
+
+    filename = getattr(upload, "filename", None) or "audio.webm"
+    language_override = (form.get("language") or "").strip() or None
+
+    try:
+        from pipeline.stt_gateway import transcribe as _transcribe, LocalSTTUnavailable
+        text = _transcribe(raw, filename=filename, language_override=language_override)
+        return JSONResponse({"text": text})
+    except LocalSTTUnavailable as e:
+        return JSONResponse({"error": str(e), "code": "local_stt_unavailable"}, status_code=503)
+    except RuntimeError as e:
+        return JSONResponse({"error": str(e)}, status_code=502)
+    except Exception as e:
+        return JSONResponse({"error": f"STT 처리 실패: {e}"}, status_code=500)
+
+
+@app.get("/api/stt/config")
+async def stt_get_config():
+    """Returns current STT configuration."""
+    from pipeline.stt_gateway import get_stt_config
+    return JSONResponse(get_stt_config())
+
+
+@app.post("/api/stt/config")
+async def stt_set_config(request: Request):
+    """Updates STT configuration. Body: {provider, model, language, response_format, endpoint?}"""
+    from pipeline.stt_gateway import set_stt_config
+    body = await request.json()
+    allowed = {"provider", "model", "language", "response_format", "endpoint", "api_key_env"}
+    cleaned = {k: v for k, v in body.items() if k in allowed}
+    set_stt_config(cleaned)
+    return JSONResponse({"ok": True})
+
+
 @app.get("/api/health")
 async def health():
+    # 인증 상태는 *현재 active 프로바이더의 auth_type 에 맞춰* 판정한다.
+    # 예전엔 프로바이더와 무관하게 ChatGPT OAuth 토큰만 봐서, OpenRouter 등
+    # 키 기반 프로바이더를 써도 "No OAuth profile found" 가 떴다.
+    auth_status = "ok"
+    auth_remaining_min = 0
+    active_name = ""
     try:
-        from pipeline.auth.chatgpt import ensure_valid_token, _load_profile
-        ensure_valid_token()  # auto-refresh if expiry is near
-        profile = _load_profile()
-        remains = profile.get("expires_at", 0) - int(time.time())
-        auth_status = "ok"
-        auth_remaining_min = max(0, remains // 60)
+        from pipeline.llm_gateway import get_active_provider
+        prov = get_active_provider()
+        active_name = prov.get("name", "")
+        auth_type = prov.get("auth_type", "")
+
+        if auth_type == "chatgpt_oauth":
+            from pipeline.auth.chatgpt import ensure_valid_token, _load_profile
+            ensure_valid_token()  # 만료 임박 시 자동 갱신
+            profile = _load_profile() or {}
+            remains = profile.get("expires_at", 0) - int(time.time())
+            auth_status = "ok"
+            auth_remaining_min = max(0, remains // 60)
+        elif auth_type in ("bearer", "anthropic_key"):
+            from pipeline import keychain
+            key_env = prov.get("api_key_env", "")
+            has_key = bool(key_env and keychain.get(key_env))
+            auth_status = "ok" if has_key else "API 키 미설정"
+        elif auth_type == "none":
+            auth_status = "ok"  # 로컬/온프레미스 — 키 불필요
+        else:
+            auth_status = "ok"
     except Exception as e:
-        auth_status = str(e).split("\n")[0]  # first line only
+        auth_status = str(e).split("\n")[0]  # 첫 줄만
         auth_remaining_min = 0
     from pipeline.mcp_client import _tool_server
     mcp_tools = len(_tool_server)
-    return JSONResponse({"status": "ok", "auth": auth_status, "auth_remaining_min": auth_remaining_min, "mcp_tools": mcp_tools})
+
+    # 샌드박스(Docker) 가용성 — 꺼져 있으면 bash_exec/python_exec/sandbox 가
+    # 등록돼 있어도 실제 실행이 안 된다. "도구가 몇 개 안 보인다"의 흔한 원인이라
+    # health 에 노출해 진단을 쉽게 한다.
+    sandbox_status = "unknown"
+    try:
+        from pipeline.sandbox import docker_available, _container_running
+        if not docker_available():
+            sandbox_status = "docker_off"   # Docker Desktop 미기동/미설치
+        elif _container_running():
+            sandbox_status = "ok"
+        else:
+            sandbox_status = "container_down"  # Docker 는 떠 있으나 컨테이너 미기동
+    except Exception:
+        sandbox_status = "unknown"
+
+    # 전체 도구 개수(office/sandbox 포함) — TOOL_SCHEMAS 기준.
+    try:
+        from pipeline.tools import TOOL_SCHEMAS
+        total_tools = len(TOOL_SCHEMAS)
+    except Exception:
+        total_tools = 0
+
+    return JSONResponse({
+        "status": "ok",
+        "auth": auth_status,
+        "auth_remaining_min": auth_remaining_min,
+        "active_provider": active_name,
+        "mcp_tools": mcp_tools,
+        "total_tools": total_tools,
+        "sandbox": sandbox_status,
+    })
 
 
 @app.post("/api/approve")
@@ -841,6 +1387,13 @@ async def approve_command(req: Request):
 
     if approve_type == "plan":
         # /plan exit_plan_mode approval/rejection
+        reg = _TASK_REGISTRY.get(sid)
+        if reg and "approval_queue" in reg:
+            await reg["approval_queue"].put({"approved": bool(approved)})
+        return JSONResponse({"ok": True, "approved": bool(approved)})
+
+    if approve_type == "consent":
+        # Permission consent gate (INT-1386) — only the approval decision; streaming dispatches.
         reg = _TASK_REGISTRY.get(sid)
         if reg and "approval_queue" in reg:
             await reg["approval_queue"].put({"approved": bool(approved)})
@@ -949,8 +1502,87 @@ async def get_research_mode(sid: str):
 
 @app.get("/api/sessions/{sid}/yolo-mode")
 async def get_yolo_mode(sid: str):
-    """Query current session YOLO mode state — for header badge update."""
-    return JSONResponse({"yolo_mode": bool(_YOLO_MODE.get(sid, False))})
+    """Query YOLO mode — global. Any session's query sees the global state."""
+    return JSONResponse({"yolo_mode": _yolo_on(sid)})
+
+
+# ── Mode toggles (called from inline input chips) ──
+# Turn modes on/off via UI chips without slash commands (/plan, /research, /yolo).
+# body: {"enabled": bool}. If omitted, flips the current state (toggle).
+async def _toggle_mode(request: Request, sid: str, store: dict, key: str) -> JSONResponse:
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    if "enabled" in body:
+        enabled = bool(body["enabled"])
+    else:
+        enabled = not store.get(sid, False)
+    if enabled:
+        store[sid] = True
+    else:
+        store.pop(sid, None)
+    return JSONResponse({key: enabled})
+
+
+@app.post("/api/sessions/{sid}/plan-mode")
+async def set_plan_mode_ep(sid: str, request: Request):
+    return await _toggle_mode(request, sid, _PLAN_MODE, "plan_mode")
+
+
+@app.post("/api/sessions/{sid}/research-mode")
+async def set_research_mode_ep(sid: str, request: Request):
+    return await _toggle_mode(request, sid, _RESEARCH_MODE, "research_mode")
+
+
+@app.post("/api/sessions/{sid}/yolo-mode")
+async def set_yolo_mode_ep(sid: str, request: Request):
+    """YOLO toggle — global. sid is path-compat only; flips the global flag."""
+    global _YOLO_GLOBAL
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    if "enabled" in body:
+        _YOLO_GLOBAL = bool(body["enabled"])
+    else:
+        _YOLO_GLOBAL = not _YOLO_GLOBAL
+    if not _YOLO_GLOBAL:
+        _YOLO_MODE.clear()
+    _save_yolo_global(_YOLO_GLOBAL)  # survive restart
+    return JSONResponse({"yolo_mode": _YOLO_GLOBAL})
+
+
+@app.post("/api/sessions/{sid}/resume")
+async def resume_session_ep(sid: str, request: Request):
+    """Resume a stalled session with 'continue' — manual trigger (autopilot bootstrap/debug).
+    Skips if a task is already live (not done + recent activity).
+    body {"autopilot": true} registers it for autopilot — heartbeat keeps pushing across restarts."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    if body.get("autopilot"):
+        _autopilot_register(sid)
+    reg = _TASK_REGISTRY.get(sid)
+    if reg and not reg.get("done"):
+        idle = time.monotonic() - reg.get("last_activity", time.monotonic())
+        if idle < HEARTBEAT_STALL_SEC:
+            return JSONResponse({"resumed": False, "reason": f"already running (idle {int(idle)}s)",
+                                 "autopilot": bool(body.get("autopilot"))})
+    try:
+        _resume_stalled_session(sid)
+        return JSONResponse({"resumed": True, "resume_count": _heartbeat_resumes.get(sid, 0),
+                             "autopilot": bool(body.get("autopilot"))})
+    except Exception as e:
+        return JSONResponse({"resumed": False, "reason": str(e)}, status_code=500)
+
+
+@app.post("/api/sessions/{sid}/autopilot-off")
+async def autopilot_off_ep(sid: str):
+    """Stop autopilot tracking — heartbeat no longer auto-resumes this session."""
+    _autopilot_unregister(sid)
+    return JSONResponse({"autopilot": False})
 
 
 # Grace timeout for approval wait (seconds). Sessions exceeding this without response are treated as zombies.
@@ -1197,6 +1829,162 @@ def _push_event(reg: dict, event: dict) -> None:
     reg["consumer"].set()
 
 
+def _resume_stalled_session(sid: str) -> None:
+    """Resume a stalled YOLO session with a 'continue' turn on a fresh task.
+    Discard the old reg and replace — cleanly replaces a dead/disconnected task."""
+    history = _get_history(sid)
+    resume_msg = ("(시스템: 이 작업이 한동안 멈춰 있었다. 중단 지점부터 이어서 계속 진행해. "
+                  "이미 끝난 작업을 반복하지 말고 남은 것만 마저 하고, 다 끝나면 완료를 명시해.)")
+    if not (history and history[-1].get("role") == "user" and history[-1].get("content") == resume_msg):
+        history.append({"role": "user", "content": resume_msg})
+    _heartbeat_resumes[sid] = _heartbeat_resumes.get(sid, 0) + 1
+    reg = {
+        "task": None,
+        "buf": [],
+        "done": False,
+        "consumer": asyncio.Event(),
+        "approval_queue": asyncio.Queue(),
+        "last_activity": time.monotonic(),
+        "awaiting_approval": False,
+        "_heartbeat_resumed": True,
+    }
+    _TASK_REGISTRY[sid] = reg
+    reg["task"] = asyncio.create_task(_run_gpt_task(sid, history, []))
+    print(f"[heartbeat] resumed stalled YOLO session: {sid[:8]} "
+          f"(resume {_heartbeat_resumes[sid]}/{HEARTBEAT_MAX_RESUMES})")
+
+
+# Whole-task done signals — the work itself is finished. Plain '완료.' is excluded
+# (prevents reading a partial-completion report as full completion).
+_DONE_MARKERS = [
+    "모든 작업 완료", "모든 작업을 완료", "작업 전체 완료", "전체 작업 완료",
+    "모든 chunk 완료", "전부 완료했", "전부 끝냈", "모두 끝냈", "모두 완료했",
+    "최종 완료", "작업을 마쳤", "작업 종료", "더 할 일 없", "더 이상 할 일",
+    "남은 작업 없", "남은 게 없", "all done", "all complete", "fully complete",
+    "✅ 전체", "🎉 완료",
+]
+# Progress signals — if present, it's partial/in-progress, not finished.
+_PROGRESS_MARKERS = [
+    "남은", "남았", "다음", "이어서", "계속", "아직", "진행 중", "진행중",
+    "todo", "to-do", "chunk0", "chunk 0", "part0", "next:", "남겨", "마저",
+    "이제", "재개", "중단 지점", "checkpoint", "체크포인트",
+]
+
+
+def _autopilot_looks_done(sid: str) -> bool:
+    """True if the autopilot session finished the WHOLE task. Prevents infinite revive.
+    Avoids false positives: a 'chunk01/02 done, rest remaining' report is NOT full completion.
+    → done only when an explicit whole-task signal is present AND no progress signal."""
+    try:
+        from pipeline.session_store import load_history
+        hist = load_history(sid)
+    except Exception:
+        return False
+    for m in reversed(hist):
+        if m.get("role") == "assistant":
+            text = (m.get("content") or "")[-500:].lower()
+            has_done = any(mk.lower() in text for mk in _DONE_MARKERS)
+            if not has_done:
+                return False
+            has_progress = any(mk.lower() in text for mk in _PROGRESS_MARKERS)
+            return not has_progress
+    return False
+
+
+def _resume_autopilot_db(sid: str) -> bool:
+    """Revive an autopilot session by DB without a memory reg. Core of restart-surviving autonomy.
+    Returns True if actually resumed."""
+    data = _load_autopilot()
+    info = data.get(sid)
+    if info is None:
+        return False
+    if info.get("resumes", 0) >= HEARTBEAT_DB_MAX_RESUMES:
+        _autopilot_unregister(sid)
+        print(f"[heartbeat] autopilot {sid[:8]} hit resume cap → untracked")
+        return False
+    if _autopilot_looks_done(sid):
+        _autopilot_unregister(sid)
+        print(f"[heartbeat] autopilot {sid[:8]} looks done → untracked")
+        return False
+    _resume_stalled_session(sid)
+    info["resumes"] = info.get("resumes", 0) + 1
+    data[sid] = info
+    _save_autopilot(data)
+    print(f"[heartbeat] autopilot DB revive: {sid[:8]} (cumulative {info['resumes']}/{HEARTBEAT_DB_MAX_RESUMES})")
+    return True
+
+
+async def _cron_loop() -> None:
+    """Run scheduled cron jobs at their due time (INT-1407). Checks due_jobs every 60s,
+    spawns a new session + prompt via _run_gpt_task for each. Auto-progresses like YOLO."""
+    while True:
+        try:
+            await asyncio.sleep(60)
+            from pipeline import cron_jobs
+            for job in cron_jobs.due_jobs():
+                try:
+                    sid = create_session(f"⏱ {job.get('label', 'cron')}")
+                    append_message(sid, "user", job["prompt"])
+                    history = [{"role": "user", "content": job["prompt"]}]
+                    reg = {
+                        "task": None, "buf": [], "done": False,
+                        "consumer": asyncio.Event(), "approval_queue": asyncio.Queue(),
+                        "last_activity": time.monotonic(), "awaiting_approval": False,
+                        "_cron_job": job["id"],
+                    }
+                    _TASK_REGISTRY[sid] = reg
+                    reg["task"] = asyncio.create_task(_run_gpt_task(sid, history, []))
+                    cron_jobs.mark_run(job["id"], "started")
+                    print(f"[cron] run: {job['label']} → session {sid[:8]}")
+                except Exception as e:
+                    print(f"[cron] job failed({job.get('id')}): {e}")
+                    try:
+                        cron_jobs.mark_run(job["id"], f"error: {e}")
+                    except Exception:
+                        pass
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            print(f"[cron] loop warning: {e}")
+
+
+async def _yolo_heartbeat() -> None:
+    """Periodically find stalled YOLO sessions and auto-resume. Started once from lifespan.
+    self-wake refreshes last_activity inside the live task, so it won't hit the 5min idle
+    condition → heartbeat only catches dead or truly stalled sessions (no double resume).
+    Two layers: (1) memory-reg stalled YOLO sessions (2) autopilot sessions revive by DB
+    even without a reg (survives restart)."""
+    while True:
+        try:
+            await asyncio.sleep(HEARTBEAT_INTERVAL)
+            now = time.monotonic()
+            # (1) memory-reg based — live-then-stalled YOLO sessions
+            stalled = [
+                sid for sid, reg in list(_TASK_REGISTRY.items())
+                if _is_stalled_yolo(sid, reg, now)
+            ]
+            for sid in stalled:
+                try:
+                    _resume_stalled_session(sid)
+                except Exception as e:
+                    print(f"[heartbeat] resume failed {sid[:8]}: {e}")
+            # (2) autopilot sessions — revive by DB if not running in memory (survives restart)
+            for sid in list(_load_autopilot().keys()):
+                reg = _TASK_REGISTRY.get(sid)
+                live = reg and not reg.get("done") and \
+                    (now - reg.get("last_activity", now)) < HEARTBEAT_STALL_SEC
+                if live:
+                    continue
+                try:
+                    _resume_autopilot_db(sid)
+                except Exception as e:
+                    print(f"[heartbeat] autopilot revive failed {sid[:8]}: {e}")
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            print(f"[heartbeat] scan error: {e}")
+
+
 async def _run_gpt_task(sid: str, history: list[dict], images: list[dict]) -> None:
     """
     Background GPT task fully decoupled from the connection.
@@ -1205,20 +1993,39 @@ async def _run_gpt_task(sid: str, history: list[dict], images: list[dict]) -> No
     """
     reg = _TASK_REGISTRY[sid]
     partial: list[str] = []
+    # 인터리빙 events — 텍스트 세그먼트와 도구 호출을 시간순으로 누적.
+    # 콜백 호출 순서 = 라이브 SSE 순서이므로 재방문 복원이 라이브와 일치.
+    events: list[dict] = []
+
+    def _append_text_event(tok: str):
+        """마지막 event가 텍스트면 이어붙이고, 아니면(도구 뒤면) 새 텍스트 세그먼트를 연다."""
+        if events and events[-1].get("type") == "text":
+            events[-1]["data"] += tok
+        else:
+            events.append({"type": "text", "data": tok})
 
     async def on_waiting():
         _push_event(reg, {"event": "thinking", "data": {"label": "생각 중…"}})
 
     async def on_token(tok: str):
         partial.append(tok)
+        _append_text_event(tok)
         _push_event(reg, {"event": "token", "data": {"token": tok}})
 
     async def on_tool_start(name: str, args: dict, call_id: str = ""):
         label = _tool_label(name, args)
         reg["tool_count"] = reg.get("tool_count", 0) + 1
-        # Compact args for UI expand view — truncate if too long
+        # call_id → args 매핑 저장 (on_tool_done에서 명령어 요약에 사용)
+        if call_id:
+            reg.setdefault("_tool_args", {})[call_id] = args
+        # args를 압축해서 전달 (UI 펼쳐보기용) — 긴 값은 자름
         try:
-            args_preview = json.dumps(args, ensure_ascii=False, indent=2)
+            _MAX_VAL = 200
+            clipped = {
+                k: (v[:_MAX_VAL] + "…(생략)" if isinstance(v, str) and len(v) > _MAX_VAL else v)
+                for k, v in args.items()
+            }
+            args_preview = json.dumps(clipped, ensure_ascii=False, indent=2)
             if len(args_preview) > 2000:
                 args_preview = args_preview[:2000] + "\n… (생략)"
         except Exception:
@@ -1227,7 +2034,13 @@ async def _run_gpt_task(sid: str, history: list[dict], images: list[dict]) -> No
             "name": name, "label": label, "call_id": call_id,
             "step": reg["tool_count"], "args": args_preview,
         }})
-        # Register real-time output streaming callback for host_exec
+        # 인터리빙 events에 도구 항목 추가 (on_tool_done에서 summary/status 채움)
+        events.append({
+            "type": "tool", "name": name, "label": label,
+            "call_id": call_id, "step": reg["tool_count"],
+            "args": args_preview, "status": "started",
+        })
+        # host_exec 실시간 출력 스트리밍 콜백 등록
         if name == "host_exec":
             loop = asyncio.get_event_loop()
             def _host_line_cb(tag: str, line: str):
@@ -1251,6 +2064,35 @@ async def _run_gpt_task(sid: str, history: list[dict], images: list[dict]) -> No
         except Exception:
             pass
 
+    async def on_consent(name: str, args: dict, call_id: str = "") -> bool:
+        """Permission consent gate (INT-1386). Pushes a consent card with a level badge
+        and awaits the decision via approval_queue. Auto-approves in YOLO mode."""
+        if _yolo_on(sid):
+            return True
+        try:
+            from pipeline.permission import level_meta
+            meta = level_meta(name)
+        except Exception:
+            meta = {"level": "WRITE", "label": "쓰기", "color": "#3b82f6", "badge": "W"}
+        try:
+            args_preview = json.dumps(args, ensure_ascii=False)[:400]
+        except Exception:
+            args_preview = str(args)[:400]
+        _push_event(reg, {"event": "consent", "data": {
+            "call_id": call_id, "name": name, "label": _tool_label(name, args),
+            "args": args_preview, "level": meta,
+        }})
+        reg["awaiting_approval"] = True
+        reg["awaiting_since"] = time.time()
+        try:
+            decision = await reg["approval_queue"].get()
+        finally:
+            reg["awaiting_approval"] = False
+            reg.pop("awaiting_since", None)
+        if decision.get("__aborted__"):
+            raise asyncio.CancelledError()
+        return bool(decision.get("approved", False))
+
     async def on_tool_done(name: str, result: str, call_id: str = "") -> str | None:
         try:
             parsed = json.loads(result)
@@ -1258,7 +2100,7 @@ async def _run_gpt_task(sid: str, history: list[dict], images: list[dict]) -> No
                 command = parsed.get("command", "")
                 # YOLO mode: skip approval wait and re-run immediately with ask="off".
                 # Hard-block and secret checks apply inside host_exec regardless of ask mode — safe.
-                if _YOLO_MODE.get(sid):
+                if _yolo_on(sid):
                     from pipeline.tools_code import host_exec as _host_exec
                     _push_event(reg, {"event": "tool_start", "data": {
                         "call_id": f"{call_id}-yolo", "name": "host_exec",
@@ -1268,8 +2110,8 @@ async def _run_gpt_task(sid: str, history: list[dict], images: list[dict]) -> No
                     yolo_result = await loop.run_in_executor(None, _host_exec, command, "off")
                     actual = json.dumps(yolo_result, ensure_ascii=False)
                     stdout = (yolo_result.get("stdout") or "").strip()
-                    err = yolo_result.get("error", "")
-                    summary = f"✓ {stdout[:120]}" if stdout else (f"✗ {err[:120]}" if err else f"✓ 완료 (rc={yolo_result.get('returncode','?')})")
+                    err = yolo_result.get("error") or yolo_result.get("stderr") or ""
+                    summary = _exec_summary(command, stdout, err.strip(), yolo_result.get("returncode", 0))
                     _push_event(reg, {"event": "tool_done", "data": {
                         "call_id": f"{call_id}-yolo", "name": "host_exec",
                         "summary": summary,
@@ -1300,17 +2142,20 @@ async def _run_gpt_task(sid: str, history: list[dict], images: list[dict]) -> No
                 # Update tool_done badge
                 if approved and exec_result:
                     stdout = (exec_result.get("stdout") or "").strip()
-                    err = exec_result.get("error", "")
-                    summary = f"✓ {stdout[:120]}" if stdout else (f"✗ {err[:120]}" if err else f"✓ 완료 (rc={exec_result.get('returncode','?')})")
+                    err = exec_result.get("error") or exec_result.get("stderr") or ""
+                    summary = _exec_summary(command, stdout, err.strip(), exec_result.get("returncode", 0))
                 else:
                     summary = "✗ 거절됨"
                 done_data: dict = {"name": name, "summary": summary, "has_chart": False, "call_id": call_id}
                 if approved and exec_result and ("stdout" in exec_result or "stderr" in exec_result):
                     stdout = (exec_result.get("stdout") or "").strip()
                     stderr = (exec_result.get("stderr") or "").strip()
-                    if stdout or stderr:
-                        done_data["terminal"] = (stdout + ("\n" + stderr if stderr else "")).strip()
-                        done_data["returncode"] = exec_result.get("returncode")
+                    combined = (stdout + ("\n" + stderr if stderr else "")).strip()
+                    rc = exec_result.get("returncode", 0)
+                    n_lines = combined.count("\n") + 1 if combined else 0
+                    if combined and (rc not in (0, None) or n_lines <= _EXEC_TERMINAL_MAX_LINES):
+                        done_data["terminal"] = combined
+                        done_data["returncode"] = rc
                 _push_event(reg, {"event": "tool_done", "data": done_data})
                 return actual  # streaming.py uses this as function_call_output
             if isinstance(parsed, dict) and parsed.get("__improvement_pending__"):
@@ -1322,7 +2167,16 @@ async def _run_gpt_task(sid: str, history: list[dict], images: list[dict]) -> No
                     "test_output": parsed.get("test_output", ""),
                 }})
                 return
-            # AskUserQuestion — convert to UI widget and wait for response
+            # 자동 적용 완료 통지 (auditor 통과 후 자동 적용 — 승인 대기 아님)
+            if isinstance(parsed, dict) and parsed.get("__improvement_applied__"):
+                _push_event(reg, {"event": "improvement_applied", "data": {
+                    "tool_name": parsed["tool_name"],
+                    "diff": parsed.get("diff", ""),
+                    "failures": parsed.get("failures", 0),
+                    "audit_reason": parsed.get("audit_reason", ""),
+                }})
+                return
+            # AskUserQuestion — UI 위젯으로 변환 후 응답 대기
             if isinstance(parsed, dict) and parsed.get("__needs_user_answer__"):
                 questions = parsed.get("questions", [])
                 _push_event(reg, {"event": "question", "data": {
@@ -1384,22 +2238,47 @@ async def _run_gpt_task(sid: str, history: list[dict], images: list[dict]) -> No
         # __improve__<name> virtual tool events are not shown in the UI
         if name.startswith("__improve__"):
             return
-        summary, chart = _tool_summary(name, result)
+        # 실행한 명령어 복원 (summary에 표시)
+        _cmd = ""
+        _saved_args = reg.get("_tool_args", {}).get(call_id) if call_id else None
+        if isinstance(_saved_args, dict):
+            _cmd = _saved_args.get("command", "")
+        summary, chart = _tool_summary(name, result, command=_cmd)
         done_data: dict = {"name": name, "summary": summary, "has_chart": chart is not None, "call_id": call_id}
         if chart:
             done_data["chart_type"] = chart["type"]
             done_data["chart_url"] = chart["url"]
-        # Forward code execution stdout/stderr (displayed as terminal snippet in UI)
+        # 코드 실행 stdout/stderr 전달 — 짧은 출력만 터미널 블럭으로 (긴 파일 목록 등은 생략)
         try:
             parsed = json.loads(result)
             if isinstance(parsed, dict) and ("stdout" in parsed or "stderr" in parsed):
                 stdout = (parsed.get("stdout") or "").strip()
                 stderr = (parsed.get("stderr") or "").strip()
-                if stdout or stderr:
-                    done_data["terminal"] = (stdout + ("\n" + stderr if stderr else "")).strip()
-                    done_data["returncode"] = parsed.get("returncode")
+                combined = (stdout + ("\n" + stderr if stderr else "")).strip()
+                # 에러(rc≠0)면 항상 표시, 정상이면 짧을 때만
+                rc = parsed.get("returncode", 0)
+                n_lines = combined.count("\n") + 1 if combined else 0
+                show = combined and (rc not in (0, None) or n_lines <= _EXEC_TERMINAL_MAX_LINES)
+                if show:
+                    done_data["terminal"] = combined
+                    done_data["returncode"] = rc
         except Exception:
             pass
+        # 중단 시 부분 응답 복원용 — 완료된 도구 요약을 누적
+        reg.setdefault("_tool_trace", []).append(summary)
+        # 인터리빙 events의 해당 도구 항목을 완료 상태로 업데이트 (call_id 매칭).
+        # 재방문 시 도구 배지가 완료 모습(요약·터미널·차트)으로 복원되도록.
+        for _ev in reversed(events):
+            if _ev.get("type") == "tool" and _ev.get("call_id") == call_id:
+                _ev["summary"] = summary
+                _ev["status"] = "error" if summary.startswith("✗") else "done"
+                if done_data.get("terminal") is not None:
+                    _ev["terminal"] = done_data["terminal"]
+                    _ev["returncode"] = done_data.get("returncode")
+                if chart:
+                    _ev["chart_type"] = chart["type"]
+                    _ev["chart_url"] = chart["url"]
+                break
         _push_event(reg, {"event": "tool_done", "data": done_data})
         # Deregister host_exec callback
         try:
@@ -1420,7 +2299,13 @@ async def _run_gpt_task(sid: str, history: list[dict], images: list[dict]) -> No
     # Watchdog: if no activity after last event for a long time, treat as hang and cancel main task.
     # Exempt while awaiting approval (indefinite user input is normal). Even long-running tools
     # keep producing token/tool events — only genuine stuck states are caught.
-    WATCHDOG_IDLE = 180.0  # seconds
+    # Threshold is mode-dependent (normal 60s / yolo·goal·research 300s).
+    #
+    # YOLO is unattended auto-run, so the user can't press retry. So even when a hang is cut,
+    # don't end with error immediately — self-wake once to auto-resume and let it tell whether
+    # it was a transient delay or a real stuck. If it hangs again after resume, then end.
+    WATCHDOG_IDLE = _watchdog_idle_for(sid)
+    SELF_WAKE_MAX = 1 if _yolo_on(sid) else 0  # only yolo allows auto-resume
 
     async def _watchdog(target_task: asyncio.Task):
         while not target_task.done():
@@ -1429,6 +2314,16 @@ async def _run_gpt_task(sid: str, history: list[dict], images: list[dict]) -> No
                 continue
             idle = time.monotonic() - reg.get("last_activity", time.monotonic())
             if idle > WATCHDOG_IDLE and not target_task.done():
+                woke = reg.get("_self_wake_count", 0)
+                if SELF_WAKE_MAX and woke < SELF_WAKE_MAX:
+                    # yolo self-wake: cut but leave a resume signal. Don't end with error.
+                    reg["_self_wake_count"] = woke + 1
+                    reg["_self_wake_pending"] = int(idle)
+                    _push_event(reg, {"event": "thinking", "data": {
+                        "label": f"{int(idle)}초 멈춰서 자동 재개 중…"}})
+                    reg["last_activity"] = time.monotonic()  # avoid immediate re-cut after resume
+                    target_task.cancel()
+                    return
                 _push_event(reg, {"event": "error", "data": {
                     "message": f"응답이 {int(idle)}초간 멈춰서 중단했어. 다시 시도해줘."}})
                 target_task.cancel()
@@ -1442,32 +2337,65 @@ async def _run_gpt_task(sid: str, history: list[dict], images: list[dict]) -> No
             system_prompt = _PLAN_MODE_GUIDE + "\n\n---\n\n" + system_prompt
         if _RESEARCH_MODE.get(sid):
             system_prompt = _RESEARCH_MODE_GUIDE + "\n\n---\n\n" + system_prompt
+        if _GOAL_MODE.get(sid):
+            system_prompt = _GOAL_MODE_GUIDE + "\n\n---\n\n" + system_prompt
         usage_stats: dict = {}
-        _gpt_task = asyncio.ensure_future(stream_gpt(
-            messages=history,
-            system=system_prompt,
-            on_token=on_token,
-            on_tool_start=on_tool_start,
-            on_tool_done=on_tool_done,
-            on_waiting=on_waiting,
-            images=images or None,
-            working_dir=wdir,
-            stats=usage_stats,
-            plan_mode=_PLAN_MODE.get(sid, False),
-            ce_mode=_ce_mode_from_access(_ACCESS.get(sid, "local")),
-            research_mode=_RESEARCH_MODE.get(sid, False),
-        ))
-        _wd = asyncio.ensure_future(_watchdog(_gpt_task))
-        try:
-            full_text = await _gpt_task
-        finally:
-            _wd.cancel()
-        history.append({"role": "assistant", "content": full_text})
+        # Wrap stream_gpt in a resume loop. yolo self-wake: when the watchdog cuts a hang
+        # and sets _self_wake_pending, put the partial result into history and add a
+        # "continue" turn to run once more. A transient delay finishes; a real stuck cuts
+        # again next round, exceeds SELF_WAKE_MAX, and ends with error.
+        full_text = ""
+        while True:
+            _gpt_task = asyncio.ensure_future(stream_gpt(
+                messages=history,
+                system=system_prompt,
+                on_token=on_token,
+                on_tool_start=on_tool_start,
+                on_tool_done=on_tool_done,
+                on_consent=on_consent,
+                on_waiting=on_waiting,
+                images=images or None,
+                working_dir=wdir,
+                stats=usage_stats,
+                plan_mode=_PLAN_MODE.get(sid, False),
+                ce_mode=_ce_mode_from_access(_ACCESS.get(sid, "local")),
+                research_mode=_RESEARCH_MODE.get(sid, False),
+            ))
+            _wd = asyncio.ensure_future(_watchdog(_gpt_task))
+            try:
+                full_text = await _gpt_task
+            except asyncio.CancelledError:
+                # Was this a self-wake cancel? If so resume; otherwise (user abort etc.) propagate.
+                if reg.pop("_self_wake_pending", None) is not None:
+                    partial_so_far = _slim_assistant_content("".join(partial))
+                    if partial_so_far.strip():
+                        history.append({"role": "assistant", "content": partial_so_far})
+                    history.append({"role": "user", "content":
+                        "(시스템: 직전 응답이 무활동으로 자동 중단됐다. 중단 지점부터 "
+                        "이어서 계속 진행해. 이미 끝난 작업을 반복하지 말고 남은 것만 마저 해.)"})
+                    partial.clear()
+                    _push_event(reg, {"event": "thinking", "data": {"label": "이어서 계속하는 중…"}})
+                    continue
+                raise
+            finally:
+                _wd.cancel()
+            break
+        # Slim version with tool narration stripped — into both next-turn history and DB text.
+        # UI tool display is restored from events, so slimming text keeps the revisit screen intact.
+        slim_text = _slim_assistant_content(full_text)
+        history.append({"role": "assistant", "content": slim_text})
         # Cost calculation + model identification — must finish before DB save so it's persisted in usage_meta
         _llm_router.enrich_usage_stats(usage_stats)
         if full_text:
-            append_message(sid, "assistant", full_text, usage_meta=dict(usage_stats) if usage_stats else None)
-            # Auto-generate title on first round-trip completion (background)
+            # 도구가 하나라도 쓰였으면 인터리빙 events 저장 → 재방문 시 시간순 복원.
+            # 순수 텍스트 응답은 events 불필요(텍스트 폴백이 더 가벼움).
+            has_tool = any(e.get("type") == "tool" for e in events)
+            append_message(
+                sid, "assistant", slim_text,
+                usage_meta=dict(usage_stats) if usage_stats else None,
+                events=events if has_tool else None,
+            )
+            # 첫 왕복 완료 시 제목 자동 생성 (백그라운드)
             session_meta = get_session(sid)
             if session_meta and session_meta.get("msg_count", 0) == 2:
                 asyncio.create_task(_auto_title_session(sid))
@@ -1484,11 +2412,15 @@ async def _run_gpt_task(sid: str, history: list[dict], images: list[dict]) -> No
         _push_event(reg, {"event": "done", "data": {"session_id": sid, "usage": usage_stats}})
 
     except asyncio.CancelledError:
-        # Explicit cancellation (user requested /abort etc.) — preserve partial response
-        text = "".join(partial).strip()
-        if text:
-            history.append({"role": "assistant", "content": text})
-            append_message(sid, "assistant", text)
+        # 명시적 취소 (사용자가 /abort 등으로 요청한 경우만) — 부분 응답 보존.
+        # 텍스트 토큰이 없어도 도구가 실행됐으면 그 흔적을 남겨야 재방문 시 사라지지 않는다.
+        saved = _build_aborted_message("".join(partial), reg.get("_tool_trace", []))
+        if saved:
+            history.append({"role": "assistant", "content": saved})
+            # 도구가 쓰였으면 events도 저장 — 중단 마커를 끝에 붙여 재방문 시 ⏹ 복원.
+            has_tool = any(e.get("type") == "tool" for e in events)
+            saved_events = (events + [{"type": "aborted"}]) if has_tool else None
+            append_message(sid, "assistant", saved, events=saved_events)
         elif history and history[-1]["role"] == "user":
             history.pop()
         _push_event(reg, {"event": "error", "data": {"message": "응답이 취소됐어."}})
@@ -1560,9 +2492,19 @@ async def chat_stream(request: Request):
         _cargs = _parts[1].strip() if len(_parts) > 1 else ""
         _cmd = get_command(_cname)
         if _cmd is not None:
-            # Pass expanded instruction to GPT (GPT path below processes user_text)
-            user_text = expand_command(_cmd, _cargs)
-            # Keep display_text as original (/commit ...) — stored cleanly in UI/DB
+            if _cname == "goal":
+                # /goal is multi-turn long-running mode. Resending the protocol (604 tokens)
+                # as a user message every turn wastes tokens + bloats history → instead just
+                # enable the session mode and inject the protocol into system_prompt once
+                # (_GOAL_MODE_GUIDE, see _run_gpt_task). Only the user's actual goal goes to GPT.
+                # The hang watchdog threshold also extends to 300s.
+                _GOAL_MODE[sid] = True
+                user_text = _cargs or user_text
+                display_text = user_text
+            else:
+                # Pass expanded instruction to GPT (GPT path below processes user_text)
+                user_text = expand_command(_cmd, _cargs)
+                # Keep display_text as original (/commit ...) — stored cleanly in UI/DB
 
     last_event_id: int = data.get("last_event_id", 0)
 
@@ -1595,6 +2537,7 @@ async def chat_stream(request: Request):
         history = _get_history(sid)
         history.append({"role": "user", "content": augmented})
         append_message(sid, "human", display_text)
+        _heartbeat_resumes.pop(sid, None)  # user sent a new message → reset heartbeat resume count
 
         reg = {
             "task": None,

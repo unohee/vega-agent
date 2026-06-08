@@ -47,6 +47,11 @@ venv/
 # Logs
 logs/
 *.log
+# Claude Code 세션 로그 (YYYY-MM-DD*.txt) — 커밋 노이즈
+20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]*.txt
+
+# 삭제 경유 디렉터리 (CLAUDE.md 규칙 — rm 대신 trash/로 이동)
+trash/
 
 # Desktop app build artifacts
 desktop/target/
@@ -58,7 +63,9 @@ build_output/
 # PyInstaller 백엔드 빌드 산출물 (소스 spec/launcher 만 커밋)
 bin/.venv/
 bin/dist/
+bin/dist_*/
 bin/build_pyinstaller/
+bin/build_pyinstaller_*/
 bin/vega-backend
 bin/vega-backend-*
 !bin/vega-backend.spec

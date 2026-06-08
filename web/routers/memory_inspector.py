@@ -23,9 +23,42 @@ def _db() -> Path:
         return Path.home() / "Library/Application Support/VEGA/agent.db"
 
 
+def _ensure_tables(conn: sqlite3.Connection) -> None:
+    """Create persona_sections/events/entities if missing (fresh/partial DB).
+    IF NOT EXISTS preserves existing data/schema. Lets Memory Inspector return
+    empty lists instead of 500 on a fresh DB (INT-1395)."""
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS persona_sections (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, section_key TEXT NOT NULL,
+            content TEXT NOT NULL, scope TEXT DEFAULT 'global', version INTEGER DEFAULT 1,
+            is_active INTEGER DEFAULT 1, notes TEXT, updated_at TEXT, user_edited INTEGER DEFAULT 0,
+            sensitivity TEXT
+        );
+        CREATE TABLE IF NOT EXISTS events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, event_date TEXT NOT NULL,
+            title TEXT NOT NULL, body TEXT NOT NULL DEFAULT '', tags TEXT, created_at TEXT,
+            sensitivity TEXT
+        );
+        CREATE TABLE IF NOT EXISTS entities (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, kind TEXT,
+            canonical_id TEXT, aliases_json TEXT, notes TEXT, first_seen TEXT, last_seen TEXT,
+            sensitivity TEXT
+        );
+    """)
+    # 민감도 태그 마이그레이션 (INT-1404)
+    for tbl in ("persona_sections", "events", "entities"):
+        try:
+            cols = {r[1] for r in conn.execute(f"PRAGMA table_info({tbl})").fetchall()}
+            if "sensitivity" not in cols:
+                conn.execute(f"ALTER TABLE {tbl} ADD COLUMN sensitivity TEXT")
+        except Exception:
+            pass
+
+
 def _conn() -> sqlite3.Connection:
     conn = sqlite3.connect(str(_db()))
     conn.row_factory = sqlite3.Row
+    _ensure_tables(conn)
     return conn
 
 
@@ -57,6 +90,7 @@ class PersonaUpdate(BaseModel):
     content: Optional[str] = None
     is_active: Optional[bool] = None
     notes: Optional[str] = None
+    sensitivity: Optional[str] = None  # family/finance/dispute/health etc. — empty clears (INT-1404)
 
 
 @router.patch("/api/memory/persona/{section_id}")
@@ -74,6 +108,8 @@ async def update_persona(section_id: int, payload: PersonaUpdate):
             updates.append("is_active=?"); params.append(1 if payload.is_active else 0)
         if payload.notes is not None:
             updates.append("notes=?"); params.append(payload.notes)
+        if payload.sensitivity is not None:
+            updates.append("sensitivity=?"); params.append(payload.sensitivity or None)
         if not updates:
             return JSONResponse({"ok": False, "error": "no fields to update"}, status_code=400)
         updates.append("user_edited=1")
@@ -152,11 +188,12 @@ async def list_entities(
 class EntityUpdate(BaseModel):
     notes: Optional[str] = None
     aliases_json: Optional[str] = None
+    sensitivity: Optional[str] = None  # 민감도 태그 (INT-1404)
 
 
 @router.patch("/api/memory/entities/{entity_id}")
 async def update_entity(entity_id: int, payload: EntityUpdate):
-    """Edit entity notes and aliases."""
+    """Edit entity notes, aliases, sensitivity."""
     with _conn() as conn:
         row = conn.execute("SELECT id FROM entities WHERE id=?", (entity_id,)).fetchone()
         if not row:
@@ -167,12 +204,32 @@ async def update_entity(entity_id: int, payload: EntityUpdate):
             updates.append("notes=?"); params.append(payload.notes)
         if payload.aliases_json is not None:
             updates.append("aliases_json=?"); params.append(payload.aliases_json)
+        if payload.sensitivity is not None:
+            updates.append("sensitivity=?"); params.append(payload.sensitivity or None)
         if not updates:
             return JSONResponse({"ok": False, "error": "no fields to update"}, status_code=400)
         params.append(entity_id)
         conn.execute(f"UPDATE entities SET {', '.join(updates)} WHERE id=?", params)
         conn.commit()
     return JSONResponse({"ok": True, "id": entity_id})
+
+
+# ── Sensitive items bulk view (INT-1404) ─────────────────────────
+@router.get("/api/memory/sensitive")
+async def list_sensitive():
+    """Items tagged with sensitivity, across persona/events/entities."""
+    out = {"persona": [], "events": [], "entities": []}
+    with _conn() as conn:
+        for tbl, key in (("persona_sections", "persona"), ("events", "events"), ("entities", "entities")):
+            try:
+                rows = conn.execute(
+                    f"SELECT * FROM {tbl} WHERE sensitivity IS NOT NULL AND sensitivity != ''"
+                ).fetchall()
+                out[key] = [dict(r) for r in rows]
+            except Exception:
+                pass
+    total = sum(len(v) for v in out.values())
+    return JSONResponse({**out, "total": total})
 
 
 @router.delete("/api/memory/entities/{entity_id}")
@@ -184,6 +241,18 @@ async def delete_entity(entity_id: int):
         if r.rowcount == 0:
             return JSONResponse({"ok": False, "error": "not found"}, status_code=404)
     return JSONResponse({"ok": True, "deleted_id": entity_id})
+
+
+# ── Rules & Skills (에이전트 자기진화 산물) ──────────────────────
+
+@router.get("/api/memory/rules")
+async def list_rules():
+    """저장된 행동 규칙 목록 (RULES.md)."""
+    try:
+        from pipeline.tools import _rule_list
+        return JSONResponse(_rule_list())
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e), "rules": []}, status_code=500)
 
 
 # ── Summary ──────────────────────────────────────────────────────
@@ -199,8 +268,14 @@ async def memory_summary():
         entity_kinds = conn.execute(
             "SELECT kind, count(*) as cnt FROM entities GROUP BY kind ORDER BY cnt DESC"
         ).fetchall()
+        # 세션 메모리(narrative) 카운트도 — 테이블 없을 수 있어 방어적
+        try:
+            sessions_total = conn.execute("SELECT count(*) FROM session_digest").fetchone()[0]
+        except Exception:
+            sessions_total = 0
     return JSONResponse({
         "persona": {"total": persona_total, "active": persona_active},
         "events": {"total": events_total},
         "entities": {"total": entities_total, "by_kind": [dict(r) for r in entity_kinds]},
+        "sessions": {"total": sessions_total},
     })

@@ -69,6 +69,10 @@ def _ensure_schema() -> None:
         msg_cols = {r[1] for r in conn.execute("PRAGMA table_info(messages)").fetchall()}
         if "usage_meta" not in msg_cols:
             conn.execute("ALTER TABLE messages ADD COLUMN usage_meta TEXT")
+        # events: assistant 메시지의 인터리빙 구조(텍스트 세그먼트 + 도구 호출)를
+        # JSON으로 저장 → 재방문 시 라이브와 동일한 시간순 복원. 구 메시지는 NULL(텍스트 폴백).
+        if "events" not in msg_cols:
+            conn.execute("ALTER TABLE messages ADD COLUMN events TEXT")
 
 
 _ensure_schema()
@@ -168,22 +172,27 @@ def get_working_dir(session_uuid: str) -> str | None:
 def append_message(
     session_uuid: str, role: str, text: str,
     usage_meta: dict | None = None,
+    events: list | None = None,
 ) -> str:
     """
     Save a message and return the message_uuid.
     role: 'human' | 'assistant'
-    usage_meta: LLM usage stats for assistant messages (model/tokens/cost/tok_per_sec/ttft_sec).
-                Stored as NULL if None.
+    usage_meta: assistant 메시지의 LLM usage stats (model/tokens/cost/tok_per_sec/ttft_sec).
+                None이면 컬럼은 NULL로 저장.
+    events: assistant 메시지의 인터리빙 구조 — [{"type":"text","data":...},
+            {"type":"tool", "name", "label", "summary", "args", "status", ...}] 순서 배열.
+            재방문 시 라이브와 동일한 시간순 복원에 사용. None이면 텍스트 폴백.
     """
     import json as _json
     mid = str(uuid.uuid4())
     now = _now()
     usage_str = _json.dumps(usage_meta, ensure_ascii=False) if usage_meta else None
+    events_str = _json.dumps(events, ensure_ascii=False) if events else None
     with _conn() as conn:
         conn.execute(
-            """INSERT INTO messages (uuid, source, conv_uuid, sender, text, char_len, created_at, updated_at, usage_meta)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (mid, SOURCE, session_uuid, role, text, len(text), now, now, usage_str),
+            """INSERT INTO messages (uuid, source, conv_uuid, sender, text, char_len, created_at, updated_at, usage_meta, events)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (mid, SOURCE, session_uuid, role, text, len(text), now, now, usage_str, events_str),
         )
         conn.execute(
             """UPDATE conversations SET msg_count=msg_count+1, updated_at=?
@@ -213,29 +222,39 @@ def load_history(session_uuid: str) -> list[dict]:
 
 
 def load_history_with_meta(session_uuid: str) -> list[dict]:
-    """History for UI. Parses usage_meta JSON and includes it in the result."""
+    """UI용 히스토리. usage_meta·events JSON 파싱해서 함께 반환.
+    events가 있으면 재방문 시 인터리빙(텍스트↔도구 시간순) 복원, 없으면 텍스트 폴백."""
     import json as _json
     with _conn() as conn:
         rows = conn.execute(
-            """SELECT sender, text, created_at, usage_meta FROM messages
+            """SELECT sender, text, created_at, usage_meta, events FROM messages
                WHERE source=? AND conv_uuid=?
                ORDER BY created_at ASC""",
             (SOURCE, session_uuid),
         ).fetchall()
     out: list[dict] = []
     for r in rows:
-        meta_raw = r["usage_meta"] if "usage_meta" in r.keys() else None
+        keys = r.keys()
         meta: dict | None = None
+        meta_raw = r["usage_meta"] if "usage_meta" in keys else None
         if meta_raw:
             try:
                 meta = _json.loads(meta_raw)
             except Exception:
                 meta = None
+        events: list | None = None
+        events_raw = r["events"] if "events" in keys else None
+        if events_raw:
+            try:
+                events = _json.loads(events_raw)
+            except Exception:
+                events = None
         out.append({
             "role": "human" if r["sender"] == "human" else "assistant",
             "content": r["text"],
             "ts": r["created_at"],
             "usage": meta,
+            "events": events,
         })
     return out
 

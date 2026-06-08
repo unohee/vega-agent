@@ -68,14 +68,23 @@ def _load_one(path: Path) -> Command | None:
 
 
 def load_commands() -> dict[str, Command]:
-    """Load all data/commands/*.md → {name: Command}. Re-scans disk on every call (hot-reload)."""
+    """Load *.md → {name: Command}. Re-scans disk on every call (hot-reload).
+    user 디렉터리(영속)를 먼저 스캔해 같은 이름이면 사용자 정의가 번들 기본을 덮어쓴다."""
     out: dict[str, Command] = {}
-    if not COMMANDS_DIR.is_dir():
-        return out
-    for p in sorted(COMMANDS_DIR.glob("*.md")):
-        cmd = _load_one(p)
-        if cmd and cmd.name not in BUILTIN_NAMES and cmd.name not in out:
-            out[cmd.name] = cmd
+    dirs = []
+    try:
+        from pipeline.data_paths import user_commands_dir
+        dirs.append(user_commands_dir())   # 영속 user 커맨드 우선
+    except Exception:
+        pass
+    dirs.append(COMMANDS_DIR)              # 번들 기본 커맨드
+    for d in dirs:
+        if not d.is_dir():
+            continue
+        for p in sorted(d.glob("*.md")):
+            cmd = _load_one(p)
+            if cmd and cmd.name not in BUILTIN_NAMES and cmd.name not in out:
+                out[cmd.name] = cmd
     return out
 
 
@@ -114,8 +123,12 @@ def save_command(name: str, description: str, body: str,
     if not (body or "").strip():
         return {"ok": False, "error": "body(본문)는 필수"}
 
-    COMMANDS_DIR.mkdir(parents=True, exist_ok=True)
-    dest = COMMANDS_DIR / f"{name}.md"
+    # 사용자 커맨드는 영속 user 디렉터리에 쓴다 — 번들 내 COMMANDS_DIR 은
+    # onefile 에서 읽기전용/임시(_MEIPASS)라 mkdir/write 가 깨진다.
+    from pipeline.data_paths import user_commands_dir
+    write_dir = user_commands_dir()
+    write_dir.mkdir(parents=True, exist_ok=True)
+    dest = write_dir / f"{name}.md"
     if dest.exists() and not overwrite:
         return {"ok": False, "error": f"'/{name}' 이미 존재. 덮어쓰려면 overwrite=true"}
 
@@ -131,10 +144,11 @@ def save_command(name: str, description: str, body: str,
 def delete_command(name: str) -> dict:
     """Delete a custom command (routed through trash directory)."""
     name = (name or "").strip().lower().lstrip("/")
-    dest = COMMANDS_DIR / f"{name}.md"
+    from pipeline.data_paths import user_commands_dir, data_dir
+    dest = user_commands_dir() / f"{name}.md"
     if not dest.exists():
         return {"ok": False, "error": f"'/{name}' 없음"}
-    trash = COMMANDS_DIR.parent / ".commands_trash"
+    trash = data_dir() / ".commands_trash"
     trash.mkdir(exist_ok=True)
     dest.rename(trash / f"{name}.md")
     return {"ok": True, "name": name}

@@ -1,0 +1,77 @@
+<!doctype html>
+<!-- Created: 2026-06-08
+     Purpose: chat.html stick-to-bottom 자동 스크롤(scrollBottom/_stickToBottom)을 실제 DOM으로 검증.
+              응답 생성 중 위로 올려 읽으면 자동 스크롤 멈춤, 바닥 복귀 시 재개, force는 무조건 바닥.
+     Usage: Chrome --headless --dump-dom → #result-sink 의 RESULT_JSON. -->
+<html><head><meta charset="utf-8"></head><body>
+<div id="messages" style="height:200px; overflow-y:auto;"></div>
+<div id="result-sink"></div>
+<script>
+async function loadScrollFns() {
+  const html = await fetch('../../web/static/chat.html').then(r => r.text());
+  const scripts = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)].map(m => m[1]);
+  const script = scripts.reduce((a, b) => b.length > a.length ? b : a, '');
+
+  // stick-to-bottom 블록: 상태 변수 + 헬퍼 + 리스너 등록 + scrollBottom 함수까지 통째로 추출
+  const block = script.match(/let _stickToBottom = true;[\s\S]*?function scrollBottom\(force = false\) \{[\s\S]*?\n\}/);
+  if (!block) throw new Error('stick-to-bottom 블록 추출 실패');
+
+  let src = 'const messagesEl = document.getElementById("messages");\n';
+  src += block[0] + '\n';
+  src += 'window._scroll = { scrollBottom, isNear: _isNearBottom, getStick: () => _stickToBottom, setStick: (v) => { _stickToBottom = v; } };';
+  (0, eval)(src);
+}
+
+function addContent(px) {
+  // 콘텐츠를 px만큼 키워 scrollHeight 증가시키는 블록 추가
+  const d = document.createElement('div');
+  d.style.height = px + 'px';
+  d.textContent = '.';
+  document.getElementById('messages').appendChild(d);
+}
+
+async function run() {
+  const results = {};
+  await loadScrollFns();
+  const el = document.getElementById('messages');
+  const S = window._scroll;
+
+  // 초기: 콘텐츠를 바닥 넘게 채우고 바닥으로
+  addContent(1000);
+  S.scrollBottom(true);
+
+  // 1) 바닥에 있을 때 새 콘텐츠 추가 → 따라 내려감
+  addContent(300);
+  S.scrollBottom();
+  results.follows_when_at_bottom = S.isNear();  // 바닥 근처 유지
+
+  // 2) 사용자가 위로 스크롤 → stick 꺼짐
+  el.scrollTop = 0;
+  el.dispatchEvent(new Event('scroll'));
+  results.stick_off_after_scroll_up = (S.getStick() === false);
+
+  // 3) stick 꺼진 상태에서 새 콘텐츠 → 위치 유지(안 내려감)
+  const beforeTop = el.scrollTop;
+  addContent(500);
+  S.scrollBottom();
+  results.holds_position_when_scrolled_up = (el.scrollTop === beforeTop);
+
+  // 4) 사용자가 다시 바닥으로 → stick 재개
+  el.scrollTop = el.scrollHeight;
+  el.dispatchEvent(new Event('scroll'));
+  results.stick_on_after_return = (S.getStick() === true);
+
+  // 5) force=true는 stick 꺼져 있어도 바닥으로 + stick 재개
+  el.scrollTop = 0;
+  el.dispatchEvent(new Event('scroll'));        // stick off
+  S.scrollBottom(true);                          // force
+  results.force_scrolls_to_bottom = S.isNear() && (S.getStick() === true);
+
+  results.ok = Object.entries(results).every(([k, v]) => k === 'ok' || v === true);
+  document.getElementById('result-sink').textContent = 'RESULT_JSON:' + JSON.stringify(results);
+}
+run().catch(e => {
+  document.getElementById('result-sink').textContent = 'RESULT_JSON:' + JSON.stringify({ ok: false, error: String(e) });
+});
+</script>
+</body></html>

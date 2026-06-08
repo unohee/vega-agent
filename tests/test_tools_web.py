@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from pipeline.tools_web import (
-    SEARXNG_URL,
+    _get_searxng_url,
     _pw_get_text,
     web_fetch,
     web_search,
@@ -21,6 +21,17 @@ from pipeline.tools_web import (
 
 class TestWebSearch:
     """웹 검색 함수 테스트 — SearXNG API mock."""
+
+    def test_searxng_url_resolution(self, monkeypatch):
+        """런타임 URL 해석: Keychain > env > 기본값."""
+        monkeypatch.setattr("pipeline.keychain.get_secret", lambda *a, **k: None)
+        monkeypatch.delenv("VEGA_SEARXNG_URL", raising=False)
+        assert _get_searxng_url() == "http://localhost:18888"
+        monkeypatch.setenv("VEGA_SEARXNG_URL", "http://envhost:9/")
+        assert _get_searxng_url() == "http://envhost:9"
+        monkeypatch.setattr("pipeline.keychain.get_secret",
+                            lambda key, **k: "https://kc.example.com/" if key == "VEGA_SEARXNG_URL" else None)
+        assert _get_searxng_url() == "https://kc.example.com"
 
     def test_web_search_success(self):
         """SearXNG 검색 성공."""

@@ -14,8 +14,19 @@ from fastapi.responses import JSONResponse
 
 router = APIRouter()
 
-_AGENT_MD_DIR = Path(__file__).parent.parent.parent / "data" / "agents"
-_MCP_JSON_PATH = Path(__file__).parent.parent.parent / "data" / "mcp.json"
+def _agent_md_dir() -> Path:
+    try:
+        from pipeline.data_paths import data_dir
+        return data_dir() / "agents"
+    except Exception:
+        return Path(__file__).parent.parent.parent / "data" / "agents"
+
+def _mcp_json_path() -> Path:
+    try:
+        from pipeline.data_paths import data_dir
+        return data_dir() / "mcp.json"
+    except Exception:
+        return Path(__file__).parent.parent.parent / "data" / "mcp.json"
 
 # ── Per-provider model catalog (5-minute cache) ───────────────────────────────
 _MODELS_CACHE: dict[str, tuple[float, list[dict]]] = {}
@@ -87,6 +98,50 @@ async def llm_test_provider(request: Request):
     loop = asyncio.get_event_loop()
     result = await loop.run_in_executor(None, test_provider, name)
     return JSONResponse(result)
+
+
+# ── GPT OAuth 상태 / 재로그인 ────────────────────────────────────────────────
+
+@router.get("/api/llm/gpt-auth")
+async def gpt_auth_status():
+    """ChatGPT OAuth 프로파일 상태 — UI 재로그인 버튼 표시 판단용.
+    {ok: bool, remaining_min: int, account_id: str|None}"""
+    import time as _t
+    try:
+        from pipeline.auth.chatgpt import _load_profile
+        profile = _load_profile()
+        if not profile:
+            return JSONResponse({"ok": False, "reason": "프로파일 없음"})
+        remains = profile.get("expires_at", 0) - int(_t.time())
+        return JSONResponse({
+            "ok": True,
+            "remaining_min": max(0, remains // 60),
+            "account_id": profile.get("account_id"),
+            "has_refresh": bool(profile.get("refresh_token")),
+        })
+    except Exception as e:
+        return JSONResponse({"ok": False, "reason": str(e).split(chr(10))[0]})
+
+
+@router.post("/api/llm/gpt-relogin")
+async def gpt_relogin():
+    """ChatGPT OAuth 재로그인 — 시스템 브라우저로 OpenAI 로그인 흐름을 띄운다.
+    login()이 브라우저를 열고 로컬 콜백(포트 1455)으로 토큰을 받아 저장한다(블로킹).
+    사용자가 브라우저에서 로그인을 마칠 때까지 대기(최대 ~120초)."""
+    loop = asyncio.get_event_loop()
+    try:
+        from pipeline.auth.chatgpt import login
+        profile = await loop.run_in_executor(None, login)
+        return JSONResponse({
+            "ok": True,
+            "account_id": profile.get("account_id"),
+            "message": "GPT OAuth 재로그인 완료",
+        })
+    except Exception as e:
+        return JSONResponse(
+            {"ok": False, "error": str(e).split(chr(10))[0]},
+            status_code=500,
+        )
 
 
 # ── Model catalog ────────────────────────────────────────────────────────────
@@ -241,7 +296,7 @@ async def llm_agent_md_get(name: str):
     """Return data/agents/{name}.md. name='_default' is also valid. Returns empty string if file is absent."""
     if "/" in name or ".." in name:
         return JSONResponse({"error": "invalid name"}, status_code=400)
-    p = _AGENT_MD_DIR / f"{name}.md"
+    p = _agent_md_dir() / f"{name}.md"
     if not p.exists():
         return JSONResponse({"name": name, "exists": False, "text": ""})
     try:
@@ -262,8 +317,8 @@ async def llm_agent_md_set(request: Request):
         return JSONResponse({"error": "text must be string"}, status_code=400)
     if len(text) > 200_000:
         return JSONResponse({"error": "too large (>200KB)"}, status_code=400)
-    _AGENT_MD_DIR.mkdir(parents=True, exist_ok=True)
-    p = _AGENT_MD_DIR / f"{name}.md"
+    _agent_md_dir().mkdir(parents=True, exist_ok=True)
+    p = _agent_md_dir() / f"{name}.md"
     p.write_text(text, encoding="utf-8")
     return JSONResponse({"ok": True})
 
@@ -271,10 +326,10 @@ async def llm_agent_md_set(request: Request):
 # ── MCP server management ────────────────────────────────────────────────────
 
 def _read_mcp_json() -> dict:
-    if not _MCP_JSON_PATH.exists():
+    if not _mcp_json_path().exists():
         return {"mcpServers": {}}
     try:
-        return json.loads(_MCP_JSON_PATH.read_text(encoding="utf-8"))
+        return json.loads(_mcp_json_path().read_text(encoding="utf-8"))
     except Exception:
         return {"mcpServers": {}}
 
@@ -282,7 +337,7 @@ def _read_mcp_json() -> dict:
 def _write_mcp_json(data: dict) -> None:
     if "mcpServers" not in data or not isinstance(data["mcpServers"], dict):
         data["mcpServers"] = {}
-    _MCP_JSON_PATH.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    _mcp_json_path().write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def _validate_mcp_entry(name: str, entry: dict) -> str | None:

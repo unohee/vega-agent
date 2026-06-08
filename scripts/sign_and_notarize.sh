@@ -81,7 +81,7 @@ fi
 sign_one() {
     local target="$1"
     codesign --force --options runtime --timestamp \
-        "${KC_ARGS[@]}" \
+        "${KC_ARGS[@]+"${KC_ARGS[@]}"}" \
         --entitlements "$ENT" \
         --sign "$SIGN_ID" \
         "$target"
@@ -114,7 +114,7 @@ if [ "$ARTIFACT_ONLY" -eq 0 ]; then
     # 2. 앱 번들 전체를 마지막에 deep 서명.
     echo "  서명: $(basename "$APP_PATH") (deep)"
     codesign --force --deep --options runtime --timestamp \
-        "${KC_ARGS[@]}" \
+        "${KC_ARGS[@]+"${KC_ARGS[@]}"}" \
         --entitlements "$ENT" \
         --sign "$SIGN_ID" \
         "$APP_PATH"
@@ -137,7 +137,7 @@ fi
 # 4. 산출물(DMG/PKG)이 주어졌으면 그것도 서명.
 if [ -n "$ARTIFACT" ] && [ -f "$ARTIFACT" ]; then
     echo "=== 산출물 서명: $(basename "$ARTIFACT") ==="
-    codesign --force --timestamp "${KC_ARGS[@]}" --sign "$SIGN_ID" "$ARTIFACT"
+    codesign --force --timestamp "${KC_ARGS[@]+"${KC_ARGS[@]}"}" --sign "$SIGN_ID" "$ARTIFACT"
     codesign --verify --verbose=2 "$ARTIFACT"
 fi
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import os
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -69,13 +69,43 @@ def _catalog_entry(pid: str) -> dict | None:
 
 # ── 현재 상태 ────────────────────────────────────────────────────────────────
 
+def _provider_configured(entry: dict) -> bool:
+    """프로바이더가 사용 가능하게 설정돼 있는지(키/URL/OAuth 보유). 키 값은 보지 않는다."""
+    from pipeline import keychain
+    auth = entry.get("auth")
+    if auth == "key":
+        key_env = entry.get("key_env", "")
+        if not key_env:
+            return False
+        # keychain.get: Keychain → .env → 환경변수 순으로 탐색
+        return bool(keychain.get(key_env))
+    if auth == "pkce":  # ChatGPT — OAuth 프로필 파일 존재 여부
+        try:
+            from pipeline.auth.chatgpt import _load_profile
+            return _load_profile() is not None
+        except Exception:
+            return False
+    if auth == "local":  # llm_providers.json 에 local base_url 이 등록됐는지
+        try:
+            from pipeline.llm_gateway import _provider_by_name
+            prov = _provider_by_name("local")
+            return bool(prov and prov.get("base_url"))
+        except Exception:
+            return False
+    return False
+
+
 @router.get("/api/onboarding")
 async def get_onboarding():
-    """현재 user_profile, 온보딩 여부, 프로바이더 카탈로그, 활성 프로바이더 반환."""
+    """현재 user_profile, 온보딩 여부, 프로바이더 카탈로그, 활성 프로바이더 반환.
+    각 프로바이더에는 configured(키/URL/OAuth 보유 여부) 플래그가 붙는다 — 키 값은 노출 안 함."""
     from pipeline.user_profile import load_profile, is_onboarded
-    from pipeline import keychain
     profile = load_profile()
-    has_google = bool(keychain.get_secret("GOOGLE_CLIENT_ID"))
+    try:
+        from pipeline.auth import google as _g
+        has_google = _g.is_authenticated()
+    except Exception:
+        has_google = False
     try:
         from pipeline.llm_gateway import get_active_name
         active = get_active_name()
@@ -85,12 +115,39 @@ async def get_onboarding():
         "onboarded": is_onboarded(),
         "profile": profile,
         "providers": [
-            {k: v for k, v in p.items() if not k.startswith("verify")}
+            {
+                **{k: v for k, v in p.items() if not k.startswith("verify")},
+                "configured": _provider_configured(p),
+            }
             for p in PROVIDER_CATALOG
         ],
         "active_provider": active,
         "has_google": has_google,
     })
+
+
+# ── 키 출처 진단 ──────────────────────────────────────────────────────────────
+
+@router.get("/api/onboarding/key-source")
+async def key_source():
+    """각 프로바이더 키가 Keychain/.env/환경변수 중 어디서 오는지 진단(값은 마스킹).
+    배포본(.app)에서 '키가 왜 안 잡히나'를 추적하기 위한 용도."""
+    from pipeline import keychain
+    out = {}
+    for entry in PROVIDER_CATALOG:
+        key_env = entry.get("key_env")
+        if not key_env:
+            continue
+        out[entry["id"]] = {"key_env": key_env, **keychain.describe_source(key_env)}
+    # Google OAuth 클라이언트도 함께 진단
+    out["google"] = {"key_env": "GOOGLE_CLIENT_ID", **keychain.describe_source("GOOGLE_CLIENT_ID")}
+    # 탐색 중인 .env 경로(존재 여부 포함)
+    import os as _os
+    env_paths = [
+        {"path": str(p), "exists": _os.path.exists(p)}
+        for p in keychain._env_file_paths()
+    ]
+    return JSONResponse({"keys": out, "env_paths": env_paths})
 
 
 # ── 프로바이더 설정 (키/URL/PKCE) ─────────────────────────────────────────────
@@ -259,7 +316,8 @@ _WIZARD_SYSTEM = """당신은 VEGA 설치 마법사를 진행하는 어시스턴
   {"set": {"display_name": "홍길동"}}
   ```
 - Google 연동을 사용자가 원하면: ```vega {"action": "google_auth"} ``` 를 출력.
-- 모든 설정이 끝났으면: ```vega {"action": "finish"} ``` 출력 후 환영 인사.
+  (Google 단계 화면에서 Slack 연동까지 이어서 안내되므로, 너는 google_auth 까지만 트리거하면 된다.)
+- 사용자가 Google 을 원치 않고 곧장 끝내려 하면: ```vega {"action": "finish"} ``` 출력 후 환영 인사.
 - 처음 메시지(사용자 입력 없음)에는 VEGA를 한 줄로 소개하고 이름부터 물어라.
 """
 
@@ -330,41 +388,57 @@ def _apply_directives(directives: list[dict]) -> list[str]:
     return applied
 
 
-# ── Google Cloud OAuth 단계 ──────────────────────────────────────────────────
+# ── Slack 연동 단계 ───────────────────────────────────────────────────────────
+# OAuth 자체는 server.py의 GET /slack/auth (새 탭) → GET /slack/callback 가 처리한다.
+# 마법사는 아래 상태 엔드포인트를 폴링해 연결 완료를 감지한다.
 
-class GoogleCredsPayload(BaseModel):
-    client_id: str = ""
-    client_secret: str = ""
-
-
-@router.post("/api/onboarding/google/creds")
-async def save_google_creds(payload: GoogleCredsPayload):
-    cid = (payload.client_id or "").strip()
-    csecret = (payload.client_secret or "").strip()
-    if not cid or not csecret:
-        return JSONResponse({"ok": False, "error": "Client ID/Secret 이 필요합니다."}, status_code=400)
-    from pipeline import keychain
-    keychain.set_secret("GOOGLE_CLIENT_ID", cid)
-    keychain.set_secret("GOOGLE_CLIENT_SECRET", csecret)
-    return JSONResponse({"ok": True})
-
-
-@router.post("/api/onboarding/google/auth")
-async def run_google_auth():
-    """Google OAuth 동의 흐름 — 브라우저를 열어 refresh token 발급/저장."""
-    import asyncio
+@router.get("/api/onboarding/slack")
+async def slack_status():
+    """Slack 연동 상태. configured(빌드에 client.json 있음) + authenticated(user token 보유)."""
     try:
-        from scripts.google_oauth import run_oauth_flow
+        from pipeline.auth import slack
+        return JSONResponse({
+            "configured": slack.is_configured(),
+            "authenticated": slack.is_authenticated(),
+            "team": slack.stored_team(),
+        })
     except Exception as e:
-        return JSONResponse({"ok": False, "error": f"OAuth 모듈 로드 실패: {e}"}, status_code=500)
-    loop = asyncio.get_event_loop()
+        return JSONResponse({"configured": False, "authenticated": False, "error": str(e)})
+
+
+# ── Superthread 연동 단계 ─────────────────────────────────────────────────────
+# OAuth 자체는 server.py의 GET /superthread/auth (새 탭) → GET /superthread/callback.
+# Superthread 는 public client(ocstcli)라 빌드 종속 client.json 이 없어 항상 configured.
+
+@router.get("/api/onboarding/superthread")
+async def superthread_status():
+    """Superthread 연동 상태. authenticated(유효 PAT 보유) 여부."""
     try:
-        result = await loop.run_in_executor(None, run_oauth_flow)
+        from pipeline.auth import superthread
+        return JSONResponse({
+            "configured": True,
+            "authenticated": superthread.is_authenticated(),
+        })
     except Exception as e:
-        return JSONResponse({"ok": False, "error": f"인증 흐름 오류: {e}"}, status_code=500)
-    if not result.get("ok"):
-        return JSONResponse({"ok": False, "error": result.get("error", "인증 실패")}, status_code=400)
-    return JSONResponse({"ok": True})
+        return JSONResponse({"configured": False, "authenticated": False, "error": str(e)})
+
+
+# ── Google 연동 단계 ─────────────────────────────────────────────────────────
+# OAuth 자체는 server.py의 GET /google/auth (브라우저) → GET /google/callback.
+# Slack 과 동일: 내장 google_oauth_client.json 을 쓰므로 사용자는 입력 없이 로그인만.
+
+@router.get("/api/onboarding/google")
+async def google_status():
+    """Google 연동 상태. configured(빌드에 client.json 있음) + authenticated(refresh_token 보유)."""
+    try:
+        from pipeline.auth import google
+        return JSONResponse({
+            "configured": google.is_configured(),
+            "authenticated": google.is_authenticated(),
+            "email": google.stored_email(),
+        })
+    except Exception as e:
+        return JSONResponse({"configured": False, "authenticated": False, "error": str(e)})
 
 
 # ── 완료 ─────────────────────────────────────────────────────────────────────
@@ -413,6 +487,130 @@ async def finish_onboarding(payload: OnboardingPayload):
         pass
 
     return JSONResponse({"ok": True, "profile": load_profile()})
+
+
+@router.post("/api/onboarding/reset")
+async def reset_onboarding(request: Request):
+    """온보딩 상태를 초기화해 다음 실행 시 설치 마법사로 되돌린다 — 빌드 디버깅용.
+
+    confirm:true 필수. trash 경유(복구 가능, 직접 rm 금지 원칙).
+    mode:
+      "soft" (기본) — user_profile.json 만 제거. onboarded=False 가 되어 마법사 재진입.
+                       DB·메모리·LLM 토큰·연동(Slack/Superthread)은 보존.
+      "full"        — soft + LLM 프로바이더 설정·OAuth 토큰까지 제거. 완전한 첫 실행 상태.
+    """
+    import shutil
+    import subprocess
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    if not body.get("confirm"):
+        return JSONResponse(
+            {"ok": False, "error": "confirm:true 필요 — 온보딩 상태를 되돌립니다"},
+            status_code=400,
+        )
+    mode = (body.get("mode") or "soft").strip().lower()
+
+    from pipeline.data_paths import data_dir
+    d = data_dir()
+
+    # soft: 온보딩 완료 플래그가 든 프로필만. full: + 프로바이더/토큰.
+    targets = ["user_profile.json"]
+    if mode == "full":
+        targets += ["llm_providers.json", "chatgpt_token.json", "openai_oauth.json"]
+
+    trash_bin = shutil.which("trash")
+    removed, skipped = [], []
+    for name in targets:
+        p = d / name
+        if not p.exists():
+            continue
+        try:
+            if trash_bin:
+                r = subprocess.run([trash_bin, str(p)], capture_output=True, text=True, timeout=30)
+                (removed if r.returncode == 0 else skipped).append(name)
+            else:
+                skipped.append(name)
+        except Exception:
+            skipped.append(name)
+
+    from pipeline.user_profile import is_onboarded
+    return JSONResponse({
+        "ok": not is_onboarded(),
+        "mode": mode,
+        "removed": removed,
+        "skipped": skipped,
+        "onboarded": is_onboarded(),
+        "note": "다음 실행 시 설치 마법사로 시작합니다" if not is_onboarded()
+                else ("trash CLI 없음 — 수동 삭제 필요" if skipped else "리셋 실패"),
+    })
+
+
+# ── 검색 엔드포인트 (SearXNG) — 설정 창 Tools & Keys + 첫 실행 안내 ──
+class SearchEndpointPayload(BaseModel):
+    url: str = ""
+    key: str = ""
+
+
+def _searxng_reachable(url: str, key: str) -> tuple[bool, str]:
+    """SearXNG /search JSON 1회 호출로 도달성·인증 확인. (ok, detail)."""
+    import urllib.parse
+    import urllib.request
+
+    base = url.rstrip("/")
+    if not base:
+        return False, "URL이 비어 있음"
+    params = urllib.parse.urlencode({"q": "vega ping", "format": "json", "engines": "google"})
+    headers = {"Accept": "application/json", "User-Agent": "VEGA/1.0"}
+    if key:
+        headers["X-VEGA-Key"] = key
+    req = urllib.request.Request(f"{base}/search?{params}", headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            if r.status == 200:
+                return True, "연결 성공"
+            return False, f"HTTP {r.status}"
+    except Exception as e:
+        return False, str(e)[:200]
+
+
+@router.get("/api/onboarding/search")
+async def get_search_endpoint():
+    """현재 검색 엔드포인트 설정 상태. 키 값 자체는 노출하지 않는다(저장 여부만)."""
+    from pipeline.tools_web import _DEFAULT_SEARXNG_URL, _get_searxng_key, _get_searxng_url
+
+    url = _get_searxng_url()
+    return JSONResponse({
+        "url": url,
+        "has_key": bool(_get_searxng_key()),
+        "is_default": url.rstrip("/") == _DEFAULT_SEARXNG_URL,
+    })
+
+
+@router.post("/api/onboarding/search")
+async def configure_search_endpoint(payload: SearchEndpointPayload):
+    """검색 엔드포인트 URL/키를 Keychain에 저장(런타임 즉시 반영). 저장 전 연결 테스트.
+    키를 비워 보내면 기존 키 유지."""
+    from pipeline import keychain
+    from pipeline.tools_web import _get_searxng_key
+
+    url = (payload.url or "").strip().rstrip("/")
+    if not url:
+        return JSONResponse({"ok": False, "error": "URL이 필요합니다."}, status_code=400)
+    key = (payload.key or "").strip() or (_get_searxng_key() or "")
+
+    ok, detail = _searxng_reachable(url, key)
+    if not ok:
+        return JSONResponse({"ok": False, "error": f"연결 실패: {detail}"}, status_code=400)
+
+    keychain.set_secret("VEGA_SEARXNG_URL", url)
+    os.environ["VEGA_SEARXNG_URL"] = url
+    if (payload.key or "").strip():
+        keychain.set_secret("VEGA_SEARXNG_KEY", key)
+        os.environ["VEGA_SEARXNG_KEY"] = key
+    return JSONResponse({"ok": True, "url": url, "detail": detail})
 
 
 def _bootstrap_db() -> None:

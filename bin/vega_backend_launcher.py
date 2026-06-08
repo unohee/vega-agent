@@ -30,6 +30,49 @@ except Exception as _e:
 os.chdir(BUNDLE_ROOT)
 sys.path.insert(0, str(BUNDLE_ROOT))
 
+# ── 영속 파일 로깅 ────────────────────────────────────────────────────────────
+# 배포본은 콘솔이 없어 버그 추적이 어렵다. 루트 로거에 회전 파일 핸들러를 달아
+# 모든 모듈(getLogger(__name__))·uvicorn·예외 트레이스백을 ~/Library/Logs/VEGA/ 에 남긴다.
+import logging  # noqa: E402
+import logging.handlers  # noqa: E402
+import traceback  # noqa: E402
+from pipeline.data_paths import log_dir  # noqa: E402
+
+LOG_FILE = log_dir() / "vega-backend.log"
+
+_handler = logging.handlers.RotatingFileHandler(
+    LOG_FILE, maxBytes=5 * 1024 * 1024, backupCount=5, encoding="utf-8"
+)
+_fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+_handler.setFormatter(_fmt)
+
+_root = logging.getLogger()
+_root.setLevel(logging.INFO)
+_root.addHandler(_handler)
+# stdout 으로도 계속 보내 LaunchAgent/Rust 리다이렉트 로그와 콘솔 실행 모두 커버.
+_console = logging.StreamHandler(sys.stdout)
+_console.setFormatter(_fmt)
+_root.addHandler(_console)
+
+# uvicorn 자체 로거들도 루트 핸들러를 타게 한다(자기 핸들러 비우고 propagate).
+for _n in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+    _lg = logging.getLogger(_n)
+    _lg.handlers.clear()
+    _lg.propagate = True
+
+# 잡히지 않은 예외도 파일에 남긴다(배포본에서 침묵 크래시 방지).
+def _log_uncaught(exc_type, exc_value, exc_tb):
+    logging.getLogger("vega.uncaught").critical(
+        "Uncaught exception:\n%s",
+        "".join(traceback.format_exception(exc_type, exc_value, exc_tb)),
+    )
+
+sys.excepthook = _log_uncaught
+
+logging.getLogger("vega.boot").info(
+    "VEGA backend 시작 — bundle_root=%s log_file=%s", BUNDLE_ROOT, LOG_FILE
+)
+
 PORT = int(os.environ.get("VEGA_PORT", "8100"))
 
 import uvicorn  # noqa: E402
@@ -38,4 +81,5 @@ import uvicorn  # noqa: E402
 from web.server import app  # noqa: E402
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=PORT, log_level="info")
+    # log_config=None : uvicorn 의 기본 dictConfig 가 우리 루트 핸들러를 덮어쓰지 않게 한다.
+    uvicorn.run(app, host="127.0.0.1", port=PORT, log_level="info", log_config=None)

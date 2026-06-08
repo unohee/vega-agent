@@ -44,18 +44,19 @@ def _sanitize_mcp_description(desc: str, qualified_name: str) -> str:
 # sse:   url (+ optional headers)
 
 def _load_env() -> None:
-    """Load environment variables from the VEGA .env file (only for keys not already set)."""
-    env_path = Path(__file__).parent.parent / ".env"
-    if not env_path.exists():
+    """Load environment variables from the VEGA .env file (only for keys not already set).
+
+    경로 해석은 keychain 과 공유한다 — 배포본(.app)에선 번들 임시경로가 아니라
+    영속 사용자 데이터 루트(data_dir()/.env)를 본다.
+    """
+    try:
+        from pipeline.keychain import _load_env_file
+        env = _load_env_file()
+    except Exception:
         return
-    for line in env_path.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        k, _, v = line.partition("=")
-        k = k.strip()
+    for k, v in env.items():
         if k not in os.environ:
-            os.environ[k] = v.strip().strip('"').strip("'")
+            os.environ[k] = v
 
 _load_env()
 

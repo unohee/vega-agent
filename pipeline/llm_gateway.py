@@ -336,16 +336,23 @@ def build_request(input_items: list, system: str, tool_schemas: list[dict], rese
             key = keychain.get_secret(key_env) or ""
         if not key:
             raise RuntimeError(
-                f"{prov['name']}: {key_env} 키가 없음. 설치 마법사나 .env에서 설정해."
+                f"{prov['name']}: API 키가 설정되지 않았습니다. "
+                f"설정 창의 'AI 프로바이더'에서 {prov['name']} 키를 입력하세요."
             )
         headers["x-api-key"] = key
         headers.setdefault("anthropic-version", "2023-06-01")
     elif auth_type == "bearer":
         key_env = prov.get("api_key_env", "")
         key = os.getenv(key_env, "") if key_env else ""
+        if not key and key_env:
+            # 배포본은 키를 Keychain(서비스 VEGA)에 저장한다 — 환경변수만 보면
+            # 프로세스 재시작 후 키를 못 찾는다. anthropic_key 분기와 동일하게 폴백.
+            from pipeline import keychain
+            key = keychain.get_secret(key_env) or ""
         if not key:
             raise RuntimeError(
-                f"{prov['name']}: 환경변수 {key_env}가 비어있음. .env에 API 키를 설정해."
+                f"{prov['name']}: API 키가 설정되지 않았습니다. "
+                f"설정 창의 'AI 프로바이더'에서 {prov['name']} 키를 입력하세요."
             )
         headers["Authorization"] = f"Bearer {key}"
     # auth_type == "none" → no additional headers (local provider)
@@ -639,9 +646,13 @@ def test_provider(name: str) -> dict:
     url = base_url.rstrip("/") + "/models"
     headers = {"Accept": "application/json"}
     if auth_type == "bearer":
-        key = os.getenv(prov.get("api_key_env", ""), "")
+        key_env = prov.get("api_key_env", "")
+        key = os.getenv(key_env, "") if key_env else ""
+        if not key and key_env:
+            from pipeline import keychain
+            key = keychain.get_secret(key_env) or ""
         if not key:
-            return {"ok": False, "error": f"환경변수 {prov.get('api_key_env')} 없음"}
+            return {"ok": False, "error": "API 키 미설정 — 설정 창에서 키를 입력하세요"}
         headers["Authorization"] = f"Bearer {key}"
 
     try:
