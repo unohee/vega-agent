@@ -2101,8 +2101,24 @@ function esc(str) {
     .replace(/"/g,'&quot;');
 }
 
-function scrollBottom() {
-  messagesEl.scrollTop = messagesEl.scrollHeight;
+// 자동 스크롤: 사용자가 바닥 근처에 있을 때만 따라 내려간다(stick-to-bottom).
+// 응답 생성 중 위로 올려 읽으면 자동 스크롤을 멈추고, 다시 바닥으로 내려오면 재개.
+let _stickToBottom = true;
+const _SCROLL_THRESHOLD = 80;  // 바닥에서 이 px 이내면 "바닥에 붙음"으로 간주
+
+function _isNearBottom() {
+  return messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight <= _SCROLL_THRESHOLD;
+}
+
+messagesEl.addEventListener('scroll', () => {
+  // 사용자가 스크롤할 때마다 바닥 근접 여부로 stick 상태 갱신
+  _stickToBottom = _isNearBottom();
+}, { passive: true });
+
+// force=true면 stick 상태와 무관하게 바닥으로(예: 내가 보낸 메시지). 그리고 stick을 다시 켠다.
+function scrollBottom(force = false) {
+  if (force) _stickToBottom = true;
+  if (_stickToBottom) messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
 // ── 이미지 첨부 처리 ──
@@ -2498,7 +2514,7 @@ function addUserMessage(text, images) {
   bub.appendChild(textNode);
   row.appendChild(bub);
   messagesEl.appendChild(row);
-  scrollBottom();
+  scrollBottom(true);  // 내가 보낸 메시지는 읽던 위치와 무관하게 바닥으로 + stick 재개
   return row;
 }
 
