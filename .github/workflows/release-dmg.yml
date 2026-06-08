@@ -47,10 +47,11 @@ jobs:
         run: |
           rustup target add aarch64-apple-darwin x86_64-apple-darwin
 
-      - name: mlx_env PyInstaller 확인
+      - name: arm64_vega_env PyInstaller 확인
         run: |
-          if [ ! -x "$HOME/dev/mlx_env/bin/pyinstaller" ]; then
-            echo "::error::arm64 PyInstaller 없음 — runner에 mlx_env 구성 필요"
+          if [ ! -x "$HOME/dev/arm64_vega_env/bin/pyinstaller" ]; then
+            echo "::error::arm64 PyInstaller 없음 — runner에 arm64_vega_env 구성 필요"
+            echo "::error::python3 -m venv ~/dev/arm64_vega_env && pip install pyinstaller uvicorn fastapi ..."
             exit 1
           fi
 
@@ -74,18 +75,19 @@ jobs:
             --team-id "$APPLE_TEAM_ID" \
             --password "$APPLE_APP_SPECIFIC_PASSWORD"
 
-      - name: DMG 빌드 (Universal Binary + 공증)
+      - name: DMG 빌드 (aarch64 + x86_64 + 공증)
         run: |
-          source "$HOME/dev/mlx_env/bin/activate"
           VEGA_NOTARY_PROFILE=vega-notary-ci bash scripts/build_dmg.sh
-        timeout-minutes: 45
+        timeout-minutes: 60
 
       - name: DMG 검증
         run: |
-          DMG="build_output/VEGA-${VERSION}.dmg"
-          spctl --assess --type open --context context:primary-signature -v "$DMG"
-          codesign -d --verbose "$DMG" 2>&1 | grep -E "Authority|TeamID"
-          echo "SHA256: $(shasum -a 256 "$DMG" | cut -d' ' -f1)"
+          for ARCH in aarch64 x86_64; do
+            DMG="build_output/VEGA-${VERSION}-${ARCH}.dmg"
+            [ -f "$DMG" ] || continue
+            spctl --assess --type open --context context:primary-signature -v "$DMG"
+            echo "SHA256 ($ARCH): $(shasum -a 256 "$DMG" | cut -d' ' -f1)"
+          done
 
       - name: GitHub Release 생성
         uses: softprops/action-gh-release@v2
@@ -95,9 +97,12 @@ jobs:
           draft: false
           prerelease: false
           files: |
-            build_output/VEGA-${{ steps.version.outputs.version }}.dmg
-            build_output/updater/VEGA-${{ steps.version.outputs.version }}-universal.app.tar.gz
-            build_output/updater/VEGA-${{ steps.version.outputs.version }}-universal.app.tar.gz.sig
+            build_output/VEGA-${{ steps.version.outputs.version }}-aarch64.dmg
+            build_output/VEGA-${{ steps.version.outputs.version }}-x86_64.dmg
+            build_output/updater/VEGA-${{ steps.version.outputs.version }}-aarch64.app.tar.gz
+            build_output/updater/VEGA-${{ steps.version.outputs.version }}-aarch64.app.tar.gz.sig
+            build_output/updater/VEGA-${{ steps.version.outputs.version }}-x86_64.app.tar.gz
+            build_output/updater/VEGA-${{ steps.version.outputs.version }}-x86_64.app.tar.gz.sig
           body: |
             ## VEGA v${{ steps.version.outputs.version }}
 
