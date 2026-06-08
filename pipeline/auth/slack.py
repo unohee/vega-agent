@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import secrets
 import subprocess
@@ -19,6 +21,15 @@ _AUTHORIZE_URL = "https://slack.com/oauth/v2/authorize"
 _TOKEN_URL = "https://slack.com/api/oauth.v2.access"
 
 _pending_state: dict[str, str] = {}
+
+
+def _pkce_pair() -> tuple[str, str]:
+    """(code_verifier, code_challenge) 생성. S256 방식."""
+    verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b"=").decode()
+    challenge = base64.urlsafe_b64encode(
+        hashlib.sha256(verifier.encode()).digest()
+    ).rstrip(b"=").decode()
+    return verifier, challenge
 
 
 class SlackOAuthNotConfigured(RuntimeError):
@@ -97,12 +108,16 @@ def authorize_url() -> str:
     """브라우저로 열 Slack 동의 URL. user_scope 로 user token(xoxp) 을 요청한다."""
     client = _load_client()
     state = secrets.token_urlsafe(16)
+    verifier, challenge = _pkce_pair()
     _pending_state["state"] = state
+    _pending_state["code_verifier"] = verifier
     params = urllib.parse.urlencode({
         "client_id": client["client_id"],
         "user_scope": ",".join(client["user_scopes"]),
         "redirect_uri": client["redirect_uri"],
         "state": state,
+        "code_challenge": challenge,
+        "code_challenge_method": "S256",
     })
     return f"{_AUTHORIZE_URL}?{params}"
 
@@ -117,12 +132,16 @@ def exchange_code(code: str, state: str | None = None) -> dict:
     except SlackOAuthNotConfigured as e:
         return {"ok": False, "user": None, "team": None, "error": str(e)}
 
-    data = urllib.parse.urlencode({
+    token_params: dict[str, str] = {
         "client_id": client["client_id"],
         "client_secret": client["client_secret"],
         "code": code,
         "redirect_uri": client["redirect_uri"],
-    }).encode("utf-8")
+    }
+    verifier = _pending_state.get("code_verifier")
+    if verifier:
+        token_params["code_verifier"] = verifier
+    data = urllib.parse.urlencode(token_params).encode("utf-8")
     req = urllib.request.Request(
         _TOKEN_URL, data=data,
         headers={"Content-Type": "application/x-www-form-urlencoded"},
@@ -156,6 +175,7 @@ def exchange_code(code: str, state: str | None = None) -> dict:
     if user_id:
         keychain_save("user_id", user_id)
     _pending_state.pop("state", None)
+    _pending_state.pop("code_verifier", None)
     return {"ok": True, "user": user_id, "team": team_id, "error": None}
 
 
