@@ -232,6 +232,9 @@ async def fs_reveal(request: Request):
 _IMG_MEDIA = {
     ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
     ".gif": "image/gif", ".webp": "image/webp", ".bmp": "image/bmp",
+    ".heic": "image/heic", ".heif": "image/heif",
+    ".tiff": "image/tiff", ".tif": "image/tiff",
+    ".avif": "image/avif",
 }
 _MAX_IMG_BYTES = 20 * 1024 * 1024
 

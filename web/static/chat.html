@@ -2465,9 +2465,16 @@ async function addFileToPreview(file) {
 }
 
 // ── 파일 라우팅 (이미지 vs 일반 파일) ──
+// HEIC/HEIF 등 일부 포맷은 브라우저가 f.type을 ""로 반환 — 확장자로 보완
+const _IMG_FILE_EXTS = new Set(['png','jpg','jpeg','gif','webp','bmp','heic','heif','tiff','tif','avif']);
+function _isImageFile(f) {
+  if (f.type.startsWith('image/')) return true;
+  const ext = (f.name || '').split('.').pop().toLowerCase();
+  return _IMG_FILE_EXTS.has(ext);
+}
 function handleFiles(files) {
   for (const f of files) {
-    if (f.type.startsWith('image/')) addImageToPreview(f);
+    if (_isImageFile(f)) addImageToPreview(f);
     else addFileToPreview(f);
   }
 }
@@ -2588,7 +2595,7 @@ async function addBase64Image(dataUrl, base64, mediaType, name, existingPath = '
 async function handleTauriPaths(paths) {
   for (const path of paths) {
     const name = path.split('/').pop();
-    const isImg = /\.(png|jpe?g|gif|webp|bmp)$/i.test(name);
+    const isImg = /\.(png|jpe?g|gif|webp|bmp|heic|heif|tiff?|avif)$/i.test(name);
     if (isImg) {
       // 서버에서 base64로 읽어 GPT 비전 첨부로 (WebView는 임의 경로 못 읽음)
       try {
