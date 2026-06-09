@@ -1,5 +1,6 @@
 # Created: 2026-06-08
 # Purpose: 임의 프롬프트 cron 작업 — CRUD + cron 표현식 다음 실행 시각 (INT-1407)
+#          Sub-agent slot — is_slot=True인 cron job (INT-1418)
 # Dependencies: croniter, pipeline/data_paths.py
 
 from __future__ import annotations
@@ -57,12 +58,25 @@ def _next_run(expr: str, base: datetime | None = None) -> str | None:
 
 
 def list_jobs() -> list[dict]:
-    """모든 cron 작업."""
-    return _load()
+    """일반 cron 작업 목록 (slot 제외)."""
+    return [j for j in _load() if not j.get("is_slot")]
 
 
-def create_job(prompt: str, schedule: str, label: str = "", *, now_iso: str | None = None) -> dict:
-    """cron 작업 생성. schedule=cron 표현식(분 시 일 월 요일). 반환: 생성된 작업 또는 error."""
+def list_slots() -> list[dict]:
+    """Sub-agent slot 목록 (is_slot=True)."""
+    return [j for j in _load() if j.get("is_slot")]
+
+
+def _create_entry(
+    prompt: str,
+    schedule: str,
+    label: str = "",
+    *,
+    now_iso: str | None = None,
+    is_slot: bool = False,
+    icon: str = "🤖",
+) -> dict:
+    """공통 작업 생성 내부 함수."""
     prompt = (prompt or "").strip()
     schedule = (schedule or "").strip()
     if not prompt:
@@ -75,7 +89,7 @@ def create_job(prompt: str, schedule: str, label: str = "", *, now_iso: str | No
             base = datetime.fromisoformat(now_iso)
         except Exception:
             base = None
-    job = {
+    entry: dict = {
         "id": uuid.uuid4().hex[:12],
         "label": label.strip() or prompt[:40],
         "prompt": prompt,
@@ -86,10 +100,40 @@ def create_job(prompt: str, schedule: str, label: str = "", *, now_iso: str | No
         "last_run": None,
         "last_status": None,
     }
+    if is_slot:
+        entry["is_slot"] = True
+        entry["icon"] = icon or "🤖"
+        entry["last_session_id"] = None
+    return entry
+
+
+def create_job(prompt: str, schedule: str, label: str = "", *, now_iso: str | None = None) -> dict:
+    """cron 작업 생성. schedule=cron 표현식(분 시 일 월 요일). 반환: 생성된 작업 또는 error."""
+    entry = _create_entry(prompt, schedule, label, now_iso=now_iso, is_slot=False)
+    if "error" in entry:
+        return entry
     jobs = _load()
-    jobs.append(job)
+    jobs.append(entry)
     _save(jobs)
-    return job
+    return entry
+
+
+def create_slot(
+    prompt: str,
+    schedule: str,
+    label: str = "",
+    icon: str = "🤖",
+    *,
+    now_iso: str | None = None,
+) -> dict:
+    """Sub-agent slot 생성. 기존 cron job과 동일한 스토리지를 공유하되 is_slot=True."""
+    entry = _create_entry(prompt, schedule, label, now_iso=now_iso, is_slot=True, icon=icon)
+    if "error" in entry:
+        return entry
+    jobs = _load()
+    jobs.append(entry)
+    _save(jobs)
+    return entry
 
 
 def delete_job(job_id: str) -> dict:
@@ -129,8 +173,8 @@ def due_jobs(now: datetime | None = None) -> list[dict]:
     return out
 
 
-def mark_run(job_id: str, status: str, *, now: datetime | None = None) -> None:
-    """실행 후 last_run/last_status 기록 + next_run 재계산."""
+def mark_run(job_id: str, status: str, *, now: datetime | None = None, session_id: str | None = None) -> None:
+    """실행 후 last_run/last_status 기록 + next_run 재계산. slot이면 last_session_id도 기록."""
     now = now or datetime.now(KST)
     jobs = _load()
     for j in jobs:
@@ -138,5 +182,7 @@ def mark_run(job_id: str, status: str, *, now: datetime | None = None) -> None:
             j["last_run"] = now.isoformat()
             j["last_status"] = status
             j["next_run"] = _next_run(j["schedule"], now)
+            if j.get("is_slot") and session_id:
+                j["last_session_id"] = session_id
             break
     _save(jobs)

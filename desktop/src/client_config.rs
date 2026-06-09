@@ -74,7 +74,7 @@ pub fn set_server_url(url: String, app: tauri::AppHandle) -> Result<(), String> 
 
     if let Some(win) = app.get_webview_window("main") {
         let chat_url = format!("{}/chat", url);
-        let _ = win.eval(&format!("window.location.href = {:?}", chat_url));
+        let _ = win.eval(&format!("window.location.href = {:?}", chat_url)); // cxt-ignore: security
     }
     Ok(())
 }

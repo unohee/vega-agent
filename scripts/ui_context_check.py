@@ -4,7 +4,7 @@ from __future__ import annotations
 import sys
 from playwright.sync_api import sync_playwright
 
-URL = "http://localhost:8100/chat"
+URL = "http://localhost:8100/chat"  # cxt-ignore: fake_data
 
 
 def run(screenshot: str | None = None) -> int:

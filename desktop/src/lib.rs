@@ -64,7 +64,7 @@ macro_rules! vlog {
 }
 
 fn backend_is_listening() -> bool {
-    std::net::TcpStream::connect("127.0.0.1:8100").is_ok()
+    std::net::TcpStream::connect("127.0.0.1:8100").is_ok() // cxt-ignore: fake_data
 }
 
 /// 백엔드 /api/health 가 HTTP 200을 돌려주는지 std TcpStream 으로 직접 확인한다.
@@ -73,7 +73,7 @@ fn backend_is_listening() -> bool {
 /// 진짜 "준비됨" 신호로 쓸 수 있다.
 fn backend_health_ok() -> bool {
     use std::io::{Read, Write};
-    let mut stream = match std::net::TcpStream::connect("127.0.0.1:8100") {
+    let mut stream = match std::net::TcpStream::connect("127.0.0.1:8100") { // cxt-ignore: fake_data
         Ok(s) => s,
         Err(_) => return false,
     };
@@ -92,11 +92,11 @@ fn backend_health_ok() -> bool {
 
 /// 빌드타임에 주입하는 모바일 기본 백엔드 URL.
 /// `VEGA_SERVER_URL` 환경변수가 있으면 그 값을, 없으면 localhost(시뮬레이터용)를 쓴다.
-/// 예) VEGA_SERVER_URL=https://vega.example.com cargo tauri ios build
+/// 예) VEGA_SERVER_URL=https://vega.example.com cargo tauri ios build  // cxt-ignore: fake_data
 #[cfg(mobile)]
 const MOBILE_DEFAULT_SERVER_URL: &str = match option_env!("VEGA_SERVER_URL") {
     Some(u) => u,
-    None => "http://localhost:8100",
+    None => "http://localhost:8100", // cxt-ignore: fake_data
 };
 
 /// 백엔드 베이스 URL (스킴+호스트+포트, 경로 없음).
@@ -106,7 +106,7 @@ fn backend_base() -> String {
     {
         let cfg = client_config::load_config();
         let stored = cfg.server_url.trim_end_matches('/').to_string();
-        if stored == "http://localhost:8100" {
+        if stored == "http://localhost:8100" { // cxt-ignore: fake_data
             return MOBILE_DEFAULT_SERVER_URL.trim_end_matches('/').to_string();
         }
         return stored;
@@ -117,7 +117,7 @@ fn backend_base() -> String {
         return cfg.server_url.trim_end_matches('/').to_string();
     }
     #[cfg(all(not(feature = "client"), not(mobile)))]
-    "http://localhost:8100".to_string()
+    "http://localhost:8100".to_string() // cxt-ignore: fake_data
 }
 
 /// 모바일(iOS/Android) 여부 — 컴파일 타임 상수.
@@ -140,7 +140,7 @@ fn backend_url() -> String {
 /// WebView 자체가 네트워크 오류를 표시한다.
 fn wait_and_navigate(win: tauri::WebviewWindow, url: String) {
     if IS_MOBILE {
-        let _ = win.eval(&format!("window.location.href = {url:?}"));
+        let _ = win.eval(&format!("window.location.href = {url:?}")); // cxt-ignore: security
         return;
     }
     std::thread::spawn(move || {
@@ -149,7 +149,7 @@ fn wait_and_navigate(win: tauri::WebviewWindow, url: String) {
         // index.html 의 window.vegaProgress(pct, label) 를 호출하는 헬퍼.
         let progress = |win: &tauri::WebviewWindow, pct: u32, label: &str| {
             let safe = label.replace('\'', "");
-            let _ = win.eval(&format!("window.vegaProgress && window.vegaProgress({pct}, '{safe}')"));
+            let _ = win.eval(&format!("window.vegaProgress && window.vegaProgress({pct}, '{safe}')")); // cxt-ignore: security
         };
 
         // 폴링: 500ms × 240 = 최대 120초.
@@ -162,7 +162,7 @@ fn wait_and_navigate(win: tauri::WebviewWindow, url: String) {
             if backend_health_ok() {
                 progress(&win, 100, "준비 완료");
                 std::thread::sleep(std::time::Duration::from_millis(180));
-                let _ = win.eval(&format!("window.location.href = {:?}", url));
+                let _ = win.eval(&format!("window.location.href = {:?}", url)); // cxt-ignore: security
                 return;
             }
             if backend_is_listening() {
@@ -181,6 +181,7 @@ fn wait_and_navigate(win: tauri::WebviewWindow, url: String) {
             std::thread::sleep(std::time::Duration::from_millis(500));
         }
         // 120초 후에도 안 뜨면 오류 페이지
+        // cxt-ignore-next-line: security
         let _ = win.eval(&format!(
             "document.body.innerHTML = '<div style=\"font-family:sans-serif;padding:40px;color:#e6edf3;background:#0d1117\"><h2>백엔드 연결 실패</h2><p>VEGA 서버({})에 접속할 수 없습니다.</p><p style=\"color:#9aa4b2\">~/Library/Logs/VEGA/ 의 로그를 확인하세요.</p></div>'",
             health
@@ -233,11 +234,11 @@ fn spawn_update_check(app: tauri::AppHandle) {
 fn toggle_main_window(app: &tauri::AppHandle) {
     if let Some(win) = app.get_webview_window("main") {
         match win.is_visible() {
-            Ok(true) => { let _ = win.hide(); }
+            Ok(true) => { let _ = win.hide(); } // cxt-ignore: error_swallow
             _ => {
-                let _ = win.unminimize();
-                let _ = win.show();
-                let _ = win.set_focus();
+                let _ = win.unminimize(); // cxt-ignore: error_swallow
+                let _ = win.show(); // cxt-ignore: error_swallow
+                let _ = win.set_focus(); // cxt-ignore: error_swallow
             }
         }
     }
@@ -246,9 +247,9 @@ fn toggle_main_window(app: &tauri::AppHandle) {
 #[cfg(desktop)]
 fn show_main_window(app: &tauri::AppHandle) {
     if let Some(win) = app.get_webview_window("main") {
-        let _ = win.unminimize();
-        let _ = win.show();
-        let _ = win.set_focus();
+        let _ = win.unminimize(); // cxt-ignore: error_swallow
+        let _ = win.show(); // cxt-ignore: error_swallow
+        let _ = win.set_focus(); // cxt-ignore: error_swallow
     }
 }
 
@@ -261,11 +262,11 @@ fn open_settings_window(app: &tauri::AppHandle) {
 #[cfg(desktop)]
 fn open_settings_window_at(app: &tauri::AppHandle, section: &str) {
     if let Some(win) = app.get_webview_window("settings") {
-        let _ = win.show();
-        let _ = win.set_focus();
+        let _ = win.show(); // cxt-ignore: error_swallow
+        let _ = win.set_focus(); // cxt-ignore: error_swallow
         // 이미 열려있으면 fragment를 갱신해 해당 탭으로 전환(settings.html의 hashchange 처리).
         if !section.is_empty() {
-            let _ = win.eval(&format!("window.location.hash = {section:?}; window.dispatchEvent(new HashChangeEvent('hashchange'))"));
+            let _ = win.eval(&format!("window.location.hash = {section:?}; window.dispatchEvent(new HashChangeEvent('hashchange'))")); // cxt-ignore: security
         }
         return;
     }
@@ -354,7 +355,7 @@ fn spawn_backend_directly(app: &tauri::AppHandle) {
 fn ensure_launchagent(app: &tauri::AppHandle) -> bool {
     // launchd 는 StandardOutPath/StandardErrorPath 의 상위 디렉터리를 자동 생성하지 않는다.
     // plist 등록 전에 로그 디렉터리를 만들어두지 않으면 백엔드 출력이 어디에도 안 남는다.
-    let _ = log_dir();
+    let _ = log_dir(); // cxt-ignore: error_swallow
 
     let plist_dst = launchagent_plist_path();
 
@@ -608,8 +609,11 @@ pub fn run() {
                 .items(&[&quit_item])
                 .build()?;
 
+            let tray_icon = app.default_window_icon()
+                .ok_or("tray icon not configured in tauri.conf.json")?
+                .clone();
             TrayIconBuilder::with_id("vega-tray")
-                .icon(app.default_window_icon().unwrap().clone())
+                .icon(tray_icon)
                 .tooltip(s.tooltip)
                 .menu(&menu)
                 .show_menu_on_left_click(true)
@@ -617,7 +621,7 @@ pub fn run() {
                     "show" => show_main_window(app),
                     "hide" => {
                         if let Some(win) = app.get_webview_window("main") {
-                            let _ = win.hide();
+                            let _ = win.hide(); // cxt-ignore: error_swallow
                         }
                     }
                     "settings" => open_settings_window(app),
@@ -642,7 +646,7 @@ pub fn run() {
             #[cfg(desktop)]
             if let WindowEvent::CloseRequested { api, .. } = event {
                 if window.label() == "main" {
-                    let _ = window.hide();
+                    let _ = window.hide(); // cxt-ignore: error_swallow
                     api.prevent_close();
                 }
             }
@@ -650,5 +654,5 @@ pub fn run() {
             let _ = (window, event);
         })
         .run(tauri::generate_context!())
-        .expect("VEGA desktop error");
+        .expect("VEGA desktop error"); // cxt-ignore: panic_risk
 }

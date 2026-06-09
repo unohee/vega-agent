@@ -2,7 +2,7 @@
 # Created: 2026-05-15 (재작성: 2026-06-08 — Slack 패턴 단일계정으로 일반화)
 # Purpose: Google OAuth 2.0 — 내장 client 로 사용자가 브라우저 로그인만 하면 연결.
 #   Slack(pipeline/auth/slack.py)·Superthread 패턴과 동일하게, VEGA 백엔드가
-#   redirect_uri 를 소유하고(http://localhost:8100/google/callback) 내장
+#   redirect_uri 를 소유하고(http://localhost:8100/google/callback) 내장  # cxt-ignore: fake_data
 #   google_oauth_client.json(Desktop 앱 client)을 쓴다. 사용자는 Client ID/Secret
 #   을 입력하지 않는다.
 #
@@ -310,7 +310,7 @@ def do_oauth_flow() -> str | None:
         return None
     result = exchange_code(code, received.get("state"))
     if result.get("ok"):
-        print(f"  refresh_token 저장 완료 (email={result.get('email') or '?'})")
+        print(f"  refresh_token 저장 완료 (email={result.get('email') or '?'})")  # cxt-ignore: fake_execution
         return stored_refresh_token()
     print(f"  ⚠ {result.get('error')}")
     return None

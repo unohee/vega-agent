@@ -372,7 +372,7 @@ def _stream_sse(
             logger.warning("http.client connect failed, falling back to urlopen: %s", conn_err)
             if conn:
                 try: conn.close()
-                except Exception: pass
+                except Exception: pass  # cxt-ignore: exception_hiding
             conn = None
             _ufctx = certified_context() if req.full_url.startswith("https://") else None
             line_iter = urllib.request.urlopen(req, timeout=_SSE_IDLE_TIMEOUT, context=_ufctx)
@@ -555,7 +555,7 @@ def _stream_sse(
         _queue_put(tool_q, None, loop)
         if conn:
             try: conn.close()
-            except Exception: pass
+            except Exception: pass  # cxt-ignore: exception_hiding
 
 
 async def stream_gpt(

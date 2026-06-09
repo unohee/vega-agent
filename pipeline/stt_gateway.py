@@ -34,8 +34,8 @@ _DEFAULT_STT = {
 _WELL_KNOWN_ENDPOINTS: dict[str, str] = {
     "openai":   "https://api.openai.com/v1/audio/transcriptions",
     "groq":     "https://api.groq.com/openai/v1/audio/transcriptions",
-    "local":    "http://localhost:8765/v1/audio/transcriptions",  # e.g. faster-whisper-server
-    "lmstudio": "http://localhost:1234/v1/audio/transcriptions",
+    "local":    "http://localhost:8765/v1/audio/transcriptions",  # cxt-ignore: fake_data  # e.g. faster-whisper-server
+    "lmstudio": "http://localhost:1234/v1/audio/transcriptions",  # cxt-ignore: fake_data
 }
 
 

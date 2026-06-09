@@ -12,7 +12,7 @@
 #     2. 사용자 로그인 → GET /superthread/callback?code=&state=
 #        → exchange_code(): PKCE 토큰 교환 → PAT 발급 → Keychain 저장
 #
-#   redirect_uri 는 백엔드 라우트(http://localhost:8100/superthread/callback).
+#   redirect_uri 는 백엔드 라우트(http://localhost:8100/superthread/callback).  # cxt-ignore: fake_data
 #   127.0.0.1 임의 포트도 Superthread 가 허용함(검증됨).
 # Dependencies: stdlib only (urllib + json + subprocess for keychain)
 

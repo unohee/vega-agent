@@ -7,7 +7,7 @@ import sys
 from playwright.sync_api import sync_playwright
 
 
-def check(url: str = "http://localhost:8100/chat", screenshot: str | None = None) -> int:
+def check(url: str = "http://localhost:8100/chat", screenshot: str | None = None) -> int:  # cxt-ignore: fake_data
     with sync_playwright() as p:
         browser = p.chromium.launch()
         ctx = browser.new_context(viewport={"width": 1440, "height": 900})

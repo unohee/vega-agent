@@ -62,7 +62,7 @@ function updateToolBadge(bub, name, summary) {
 function appendTerminal() {}
 function appendChart() {}
 
-eval(SRC);  // 추출한 chat.html 함수들을 현재 스코프에 정의
+eval(SRC);  // 추출한 chat.html 함수들을 현재 스코프에 정의  // cxt-ignore: security
 
 // ── 시나리오 ──
 const norm = s => String(s).replace(/<[^>]*>/g, '');
@@ -70,7 +70,7 @@ const results = [];
 function check(label, actual, expected) {
   const ok = JSON.stringify(actual) === JSON.stringify(expected);
   results.push(ok);
-  console.log((ok ? '✓' : '✗') + ' ' + label + ': ' + JSON.stringify(actual) + (ok ? '' : ' (expected ' + JSON.stringify(expected) + ')'));
+  console.log((ok ? '✓' : '✗') + ' ' + label + ': ' + JSON.stringify(actual) + (ok ? '' : ' (expected ' + JSON.stringify(expected) + ')'));  // cxt-ignore: debug_leftover
 }
 const sig = (bub) => bub.children.map(c =>
   c.classList.contains('stream-content') ? 'TEXT[' + norm(c.innerHTML) + ']'

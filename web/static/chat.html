@@ -643,6 +643,71 @@ header button, header button *, header a, header a * { -webkit-app-region: no-dr
 .cron-job-prompt { font-size: 11.5px; color: var(--muted); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cron-job-meta { font-size: 10.5px; color: var(--muted); margin-top: 3px; }
 .cron-row-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+/* Sub-agent Slots drawer (INT-1418) */
+#slots-drawer {
+  position: fixed; bottom: 22px; left: 0; right: 0;
+  height: 0; overflow: hidden;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  z-index: 90;
+  transition: height .2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+#slots-drawer.open { height: 320px; overflow: hidden; }
+#slots-drawer-inner {
+  height: 100%; display: flex; flex-direction: column; padding: 0;
+}
+#slots-drawer-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 14px; border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+#slots-drawer-header h3 { font-size: 13px; font-weight: 600; margin: 0; flex: 1; }
+#slots-drawer-close {
+  background: none; border: none; color: var(--muted); cursor: pointer; font-size: 14px; padding: 2px 6px;
+}
+#slots-drawer-close:hover { color: var(--text); }
+#slots-drawer-body {
+  flex: 1; overflow-y: auto; padding: 10px 14px;
+  display: flex; gap: 10px; flex-wrap: wrap; align-content: flex-start;
+}
+.slot-card {
+  width: 220px; flex-shrink: 0;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+  padding: 10px 12px; display: flex; flex-direction: column; gap: 4px;
+  position: relative;
+}
+.slot-card.disabled { opacity: .55; }
+.slot-card-top { display: flex; align-items: center; gap: 6px; }
+.slot-icon { font-size: 16px; line-height: 1; }
+.slot-label { font-size: 12px; font-weight: 600; color: var(--text); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.slot-sched { font-size: 10px; color: var(--accent); background: var(--surface2); padding: 1px 5px; border-radius: 3px; }
+.slot-prompt { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.slot-meta { font-size: 10px; color: var(--muted); }
+.slot-meta a { color: var(--accent); cursor: pointer; text-decoration: none; }
+.slot-meta a:hover { text-decoration: underline; }
+.slot-actions { display: flex; gap: 6px; margin-top: 4px; align-items: center; }
+.slot-card-add {
+  width: 220px; flex-shrink: 0;
+  background: var(--bg); border: 1px dashed var(--border); border-radius: 8px;
+  padding: 10px 12px; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 6px;
+  cursor: pointer; color: var(--muted); font-size: 12px; min-height: 80px;
+  transition: border-color .15s, color .15s;
+}
+.slot-card-add:hover { border-color: var(--accent); color: var(--text); }
+#slots-add-form {
+  display: none; flex-direction: column; gap: 6px;
+  padding: 10px 14px; border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+#slots-add-form.open { display: flex; }
+#slots-add-form .slot-form-row { display: flex; gap: 6px; align-items: center; }
+#slots-add-form input, #slots-add-form textarea {
+  background: var(--surface2); border: 1px solid var(--border); border-radius: 6px;
+  color: var(--text); padding: 5px 8px; font-size: 12px; font-family: inherit;
+}
+#slots-add-form textarea { resize: none; height: 40px; flex: 1; }
+#slots-status { font-size: 11px; color: var(--ok); }
 .mcp-hint { font-size: 11px; color: var(--muted); }
 .mcp-hint code { background: var(--bg); padding: 1px 5px; border-radius: 3px; font-size: 10px; }
 
@@ -1877,6 +1942,10 @@ button.status-item:hover { background: var(--surface2); color: var(--text); }
     </span>
   </div>
   <div class="status-right">
+    <button class="status-item" id="status-slots" title="Sub-agent Slots — 반복 루틴 에이전트">
+      <svg viewBox="0 0 16 16" width="11" height="11" fill="currentColor"><path d="M8 1a3.5 3.5 0 00-3.5 3.5v.5H3a1 1 0 00-1 1v7a1 1 0 001 1h10a1 1 0 001-1V6a1 1 0 00-1-1h-1.5v-.5A3.5 3.5 0 008 1zm0 1.5A2 2 0 0110 4.5V5H6v-.5A2 2 0 018 2.5zm-1 5a1 1 0 112 0v1.5a1 1 0 11-2 0V7.5z"/></svg>
+      <span id="status-slots-label">Agents</span>
+    </button>
     <button class="status-item" id="status-cron" title="예약 작업 (Cron)">
       <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="6.2"/><path d="M8 4.5V8l2.5 1.5" stroke-linecap="round"/></svg>
       <span>Cron</span>
@@ -2088,6 +2157,38 @@ button.status-item:hover { background: var(--surface2); color: var(--text); }
 </div>
 
 <!-- Cron 모달 (INT-1407) -->
+<!-- Sub-agent Slots drawer (INT-1418) -->
+<div id="slots-drawer" role="complementary" aria-label="Sub-agent Slots">
+  <div id="slots-drawer-inner">
+    <div id="slots-drawer-header">
+      <h3>🤖 Sub-agent Slots</h3>
+      <span style="font-size:11px;color:var(--muted);flex:1">반복 루틴을 에이전트로 deploy합니다</span>
+      <button id="slots-drawer-close" title="닫기" aria-label="닫기">✕</button>
+    </div>
+    <div id="slots-drawer-body">
+      <div class="slot-card-add" id="slots-add-btn">
+        <span style="font-size:20px">＋</span>
+        <span>새 슬롯 추가</span>
+      </div>
+    </div>
+    <div id="slots-add-form">
+      <div class="slot-form-row">
+        <input type="text" id="slot-icon" placeholder="🤖" style="width:42px;text-align:center" maxlength="2" />
+        <input type="text" id="slot-label" placeholder="슬롯 이름" style="flex:1" />
+        <input type="text" id="slot-schedule" placeholder="cron: 0 9 * * *" style="width:150px" />
+      </div>
+      <div class="slot-form-row">
+        <textarea id="slot-prompt" placeholder="실행할 프롬프트 (예: 오늘 주식 뉴스 검색 후 디스코드로 보내줘)"></textarea>
+      </div>
+      <div class="slot-form-row" style="justify-content:flex-end;gap:8px">
+        <span id="slots-status"></span>
+        <button class="btn-secondary" id="slots-add-cancel">취소</button>
+        <button class="btn-primary" id="slots-add-save">추가</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div id="cron-modal" class="modal hidden" role="dialog" aria-labelledby="cron-modal-title">
   <div class="modal-backdrop"></div>
   <div class="modal-window">
@@ -4799,6 +4900,149 @@ async function _cronDelete(id, row) {
     if (r.ok) row.remove();
   } catch (e) {}
 }
+
+// ── Sub-agent Slots drawer (INT-1418) ──────────────────────────────────────
+const slotsDrawer = document.getElementById('slots-drawer');
+const slotsBody = document.getElementById('slots-drawer-body');
+const slotsAddForm = document.getElementById('slots-add-form');
+const slotsStatus = document.getElementById('slots-status');
+
+function openSlotsDrawer() {
+  slotsDrawer.classList.add('open');
+  loadSlots();
+}
+function closeSlotsDrawer() {
+  slotsDrawer.classList.remove('open');
+  slotsAddForm.classList.remove('open');
+}
+
+document.getElementById('status-slots')?.addEventListener('click', () => {
+  if (slotsDrawer.classList.contains('open')) closeSlotsDrawer();
+  else openSlotsDrawer();
+});
+document.getElementById('slots-drawer-close')?.addEventListener('click', closeSlotsDrawer);
+document.getElementById('slots-add-btn')?.addEventListener('click', () => {
+  slotsAddForm.classList.toggle('open');
+  if (slotsAddForm.classList.contains('open')) document.getElementById('slot-label').focus();
+});
+document.getElementById('slots-add-cancel')?.addEventListener('click', () => slotsAddForm.classList.remove('open'));
+
+document.getElementById('slots-add-save')?.addEventListener('click', async () => {
+  const prompt = document.getElementById('slot-prompt').value.trim();
+  const schedule = document.getElementById('slot-schedule').value.trim();
+  const label = document.getElementById('slot-label').value.trim();
+  const icon = document.getElementById('slot-icon').value.trim() || '🤖';
+  slotsStatus.textContent = '추가 중…'; slotsStatus.style.color = 'var(--muted)';
+  try {
+    const r = await fetch('/api/slots', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({prompt, schedule, label, icon}),
+    }).then(r => r.json());
+    if (r.ok) {
+      slotsStatus.textContent = '✓ 추가됨'; slotsStatus.style.color = 'var(--ok)';
+      document.getElementById('slot-prompt').value = '';
+      document.getElementById('slot-schedule').value = '';
+      document.getElementById('slot-label').value = '';
+      document.getElementById('slot-icon').value = '';
+      slotsAddForm.classList.remove('open');
+      loadSlots();
+    } else {
+      slotsStatus.textContent = r.error || '실패'; slotsStatus.style.color = 'var(--error)';
+    }
+  } catch (e) {
+    slotsStatus.textContent = '오류: ' + (e.message || e); slotsStatus.style.color = 'var(--error)';
+  }
+});
+
+async function loadSlots() {
+  // 기존 카드 제거 (+ 버튼 유지)
+  const addBtn = document.getElementById('slots-add-btn');
+  slotsBody.innerHTML = '';
+  slotsBody.appendChild(addBtn);
+  try {
+    const r = await fetch('/api/slots', { signal: AbortSignal.timeout(5000) }).then(r => r.json());
+    const slots = r.slots || [];
+    for (const s of slots) {
+      slotsBody.insertBefore(_slotCard(s), addBtn);
+    }
+    // statusbar 배지 업데이트
+    const active = slots.filter(s => s.enabled).length;
+    const lbl = document.getElementById('status-slots-label');
+    if (lbl) lbl.textContent = active > 0 ? `Agents (${active})` : 'Agents';
+  } catch (e) {
+    const err = document.createElement('span');
+    err.style.color = 'var(--error)'; err.style.fontSize = '11px';
+    err.textContent = '슬롯 조회 실패';
+    slotsBody.insertBefore(err, addBtn);
+  }
+}
+
+function _slotCard(s) {
+  const card = document.createElement('div');
+  card.className = 'slot-card' + (s.enabled ? '' : ' disabled');
+  card.dataset.slotId = s.id;
+  const nr = s.next_run ? new Date(s.next_run).toLocaleString('ko-KR', {month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '—';
+  const lr = s.last_run ? new Date(s.last_run).toLocaleString('ko-KR', {month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}) : null;
+  const sessionLink = s.last_session_id
+    ? `<a onclick="_openSlotSession('${esc(s.last_session_id)}')" title="마지막 실행 세션 열기">↗ 마지막 결과</a>`
+    : '';
+  card.innerHTML = `
+    <div class="slot-card-top">
+      <span class="slot-icon"></span>
+      <span class="slot-label"></span>
+      <code class="slot-sched"></code>
+    </div>
+    <div class="slot-prompt"></div>
+    <div class="slot-meta">
+      다음: ${esc(nr)}${lr ? ' · 최근: ' + esc(lr) : ''}
+      ${s.last_status ? ' · ' + esc(s.last_status) : ''}
+      ${sessionLink ? ' · ' + sessionLink : ''}
+    </div>
+    <div class="slot-actions">
+      <div class="toggle ${s.enabled ? 'on' : ''}" style="width:32px;height:18px" data-slot-toggle="${esc(s.id)}"></div>
+      <button class="mi-btn danger slot-del" data-id="${esc(s.id)}" style="margin-left:auto">삭제</button>
+    </div>`;
+  card.querySelector('.slot-icon').textContent = s.icon || '🤖';
+  card.querySelector('.slot-label').textContent = s.label || '(이름 없음)';
+  card.querySelector('.slot-sched').textContent = s.schedule;
+  card.querySelector('.slot-prompt').textContent = s.prompt;
+  card.querySelector('[data-slot-toggle]').addEventListener('click', async (e) => {
+    const tog = e.currentTarget;
+    const on = !tog.classList.contains('on');
+    try {
+      const r = await fetch(`/api/slots/${s.id}/toggle`, {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({enabled: on}),
+      }).then(r => r.json());
+      if (r.ok) { tog.classList.toggle('on', on); card.classList.toggle('disabled', !on); loadSlots(); }
+    } catch {}
+  });
+  card.querySelector('.slot-del').addEventListener('click', async () => {
+    if (!confirm(`슬롯 '${s.label}'을 삭제할까요?`)) return;
+    try {
+      const r = await fetch(`/api/slots/${s.id}`, { method: 'DELETE' }).then(r => r.json());
+      if (r.ok) { card.remove(); loadSlots(); }
+    } catch {}
+  });
+  return card;
+}
+
+function _openSlotSession(sid) {
+  closeSlotsDrawer();
+  // 사이드바 세션 클릭과 동일한 방식으로 세션 전환
+  if (typeof switchSession === 'function') switchSession(sid);
+}
+
+// 초기 로드 시 배지 업데이트
+(async () => {
+  try {
+    const r = await fetch('/api/slots', { signal: AbortSignal.timeout(4000) }).then(r => r.json());
+    const active = (r.slots || []).filter(s => s.enabled).length;
+    const lbl = document.getElementById('status-slots-label');
+    if (lbl && active > 0) lbl.textContent = `Agents (${active})`;
+  } catch {}
+})();
 
 // ── MCP 관리 모달 ──────────────────────────────────────────────────────────
 const mcpModal = document.getElementById('mcp-modal');

@@ -67,6 +67,99 @@ def _catalog_entry(pid: str) -> dict | None:
     return next((p for p in PROVIDER_CATALOG if p["id"] == pid), None)
 
 
+# ── 워크플레이스 플러그인 카탈로그 ───────────────────────────────────────────
+# status: "available"(지금 연동 가능) | "coming_soon"(UI에 표시하되 비활성)
+PLUGIN_CATALOG = [
+    {
+        "id": "google",
+        "label": "Google Workspace",
+        "desc": "Gmail·Calendar·Drive 도구를 연결합니다.",
+        "icon": "G",
+        "auth": "oauth",
+        "status": "available",
+        "status_endpoint": "/api/onboarding/google",
+        "auth_path": "/google/auth",
+    },
+    {
+        "id": "slack",
+        "label": "Slack",
+        "desc": "채널·DM 읽기 및 검색.",
+        "icon": "S",
+        "auth": "oauth",
+        "status": "available",
+        "status_endpoint": "/api/onboarding/slack",
+        "auth_path": "/slack/auth",
+    },
+    {
+        "id": "superthread",
+        "label": "Superthread",
+        "desc": "보드·카드 읽기 및 관리.",
+        "icon": "T",
+        "auth": "oauth",
+        "status": "available",
+        "status_endpoint": "/api/onboarding/superthread",
+        "auth_path": "/superthread/auth",
+    },
+    {
+        "id": "airtable",
+        "label": "Airtable",
+        "desc": "베이스·레코드 조회 및 관리.",
+        "icon": "A",
+        "auth": "key",
+        "status": "coming_soon",
+    },
+    {
+        "id": "notion",
+        "label": "Notion",
+        "desc": "페이지·데이터베이스 읽기·쓰기.",
+        "icon": "N",
+        "auth": "oauth",
+        "status": "coming_soon",
+    },
+    {
+        "id": "github",
+        "label": "GitHub",
+        "desc": "이슈·PR·코드 검색.",
+        "icon": "GH",
+        "auth": "oauth",
+        "status": "coming_soon",
+    },
+]
+
+
+def _plugin_authenticated(pid: str) -> bool:
+    """플러그인 현재 인증 여부(값은 노출 안 함)."""
+    try:
+        if pid == "google":
+            from pipeline.auth import google
+            return google.is_authenticated()
+        if pid == "slack":
+            from pipeline.auth import slack
+            return slack.is_authenticated()
+        if pid == "superthread":
+            from pipeline.auth import superthread
+            return superthread.is_authenticated()
+    except Exception:
+        pass
+    return False
+
+
+def _plugin_configured(pid: str) -> bool:
+    """빌드에 해당 플러그인 클라이언트 시크릿이 포함됐는지."""
+    try:
+        if pid == "google":
+            from pipeline.auth import google
+            return google.is_configured()
+        if pid == "slack":
+            from pipeline.auth import slack
+            return slack.is_configured()
+        if pid == "superthread":
+            return True  # public client — 항상 configured
+    except Exception:
+        pass
+    return False
+
+
 # ── 현재 상태 ────────────────────────────────────────────────────────────────
 
 def _provider_configured(entry: dict) -> bool:
@@ -120,6 +213,14 @@ async def get_onboarding():
                 "configured": _provider_configured(p),
             }
             for p in PROVIDER_CATALOG
+        ],
+        "plugins": [
+            {
+                **p,
+                "configured": _plugin_configured(p["id"]),
+                "authenticated": _plugin_authenticated(p["id"]),
+            }
+            for p in PLUGIN_CATALOG
         ],
         "active_provider": active,
         "has_google": has_google,
@@ -306,7 +407,6 @@ _WIZARD_SYSTEM = """당신은 VEGA 설치 마법사를 진행하는 어시스턴
 1. 사용자 이름(호칭) — display_name
 2. 역할/하는 일 한 줄 — role_summary
 3. (선택) 소속/회사 — company
-4. Google 연동(Gmail·Calendar·Drive)을 지금 연결할지 — 원하면 "GOOGLE_AUTH" 단계로 안내
 
 규칙:
 - 답변은 2~3문장 이내로 짧게. 한국어로.
@@ -315,9 +415,9 @@ _WIZARD_SYSTEM = """당신은 VEGA 설치 마법사를 진행하는 어시스턴
   ```vega
   {"set": {"display_name": "홍길동"}}
   ```
-- Google 연동을 사용자가 원하면: ```vega {"action": "google_auth"} ``` 를 출력.
-  (Google 단계 화면에서 Slack 연동까지 이어서 안내되므로, 너는 google_auth 까지만 트리거하면 된다.)
-- 사용자가 Google 을 원치 않고 곧장 끝내려 하면: ```vega {"action": "finish"} ``` 출력 후 환영 인사.
+- 모든 필드(이름·역할·회사)를 다 수집하거나 사용자가 건너뛰기를 원하면:
+  짧은 환영 인사를 하고 "다음으로 연결할 서비스를 선택할게요."라고 안내한 뒤
+  ```vega {"action": "finish"} ``` 를 출력한다.
 - 처음 메시지(사용자 입력 없음)에는 VEGA를 한 줄로 소개하고 이름부터 물어라.
 """
 
@@ -379,10 +479,7 @@ def _apply_directives(directives: list[dict]) -> list[str]:
                     profile[k] = v.strip()
                     applied.append(k); changed = True
         if d.get("action") == "finish":
-            profile["onboarded"] = True
-            applied.append("onboarded"); changed = True
-        elif d.get("action") == "google_auth":
-            applied.append("google_auth_requested")
+            applied.append("finish")
     if changed:
         save_profile(profile)
     return applied

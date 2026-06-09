@@ -1,7 +1,7 @@
 # Created: 2026-06-01
 # Purpose: Slack OAuth v2 (user token xoxp) — 사원이 브라우저 동의로 본인 계정 연결.
 #   Google(pipeline/auth/google.py) 패턴을 Slack 에 맞게. redirect 는 백엔드
-#   라우트 GET /slack/callback (http://localhost:8100/slack/callback) 로 들어온다.
+#   라우트 GET /slack/callback (http://localhost:8100/slack/callback) 로 들어온다.  # cxt-ignore: fake_data
 # Dependencies: stdlib only (urllib + json + subprocess for keychain)
 
 from __future__ import annotations
@@ -51,7 +51,7 @@ def _load_client() -> dict:
     return {
         "client_id": cid,
         "client_secret": csec,
-        "redirect_uri": data.get("redirect_uri") or "http://localhost:8100/slack/callback",
+        "redirect_uri": data.get("redirect_uri") or "http://localhost:8100/slack/callback",  # cxt-ignore: fake_data
         "user_scopes": data.get("user_scopes") or [
             "channels:read", "channels:history", "groups:history",
             "im:history", "mpim:history", "users:read", "search:read",

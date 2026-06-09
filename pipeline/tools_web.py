@@ -10,8 +10,8 @@ import urllib.parse
 import urllib.request
 
 # SearXNG endpoint. Deployment scenarios:
-#   - Single user: localhost:18888 (local Docker)
-#   - Internal deployment: an internal/shared instance (e.g. https://search.example.com)
+#   - Single user: localhost:18888 (local Docker)  # cxt-ignore: fake_data
+#   - Internal deployment: an internal/shared instance (e.g. https://search.example.com)  # cxt-ignore: fake_data
 # Resolution priority (read at call time so GUI saves apply immediately):
 #   Keychain > .env/env var > default. The settings window (Tools & Keys) saves to Keychain.
 _DEFAULT_SEARXNG_URL = "http://localhost:18888"

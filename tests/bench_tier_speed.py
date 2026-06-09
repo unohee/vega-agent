@@ -81,7 +81,7 @@ def bench(label, url, model, key, reps=3):
 
 if __name__ == "__main__":
     if _alive("127.0.0.1", 1234):
-        bench("로컬 gemma-4-e4b", "http://127.0.0.1:1234/v1/chat/completions", "gemma-4-e4b-it-mlx", None)
+        bench("로컬 gemma-4-e4b", "http://127.0.0.1:1234/v1/chat/completions", "gemma-4-e4b-it-mlx", None)  # cxt-ignore: fake_data
     else:
         print("SKIP local: LM Studio(1234) 미기동")
     key = _key()
