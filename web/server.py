@@ -214,6 +214,11 @@ from web.routers import scheduler as _scheduler_router  # noqa: E402
 from web.routers import memory_inspector as _memory_inspector_router  # noqa: E402
 from web.routers import data_boundary as _data_boundary_router  # noqa: E402
 from web.routers import cron as _cron_router  # noqa: E402
+from web.routers import oauth as _oauth_router  # noqa: E402
+from web.routers import upload as _upload_router  # noqa: E402
+from web.routers import stt as _stt_router  # noqa: E402
+from web.routers import sessions as _sessions_router  # noqa: E402
+from web.routers import admin as _admin_router  # noqa: E402
 app.include_router(_llm_router.router)
 app.include_router(_fs_router.router)
 app.include_router(_dashboard_router.router)
@@ -224,6 +229,11 @@ app.include_router(_scheduler_router.router)
 app.include_router(_memory_inspector_router.router)
 app.include_router(_data_boundary_router.router)  # local-first data boundary export/wipe (INT-1383)
 app.include_router(_cron_router.router)  # arbitrary-prompt cron jobs CRUD (INT-1407)
+app.include_router(_oauth_router.router)
+app.include_router(_upload_router.router)
+app.include_router(_stt_router.router)
+app.include_router(_sessions_router.router)
+app.include_router(_admin_router.router)
 
 # CORS — allow Tauri app origin + localhost only. Wildcard removed to block cross-origin CSRF.
 from fastapi.middleware.cors import CORSMiddleware
@@ -243,141 +253,50 @@ app.add_middleware(
 
 app.mount("/api/charts", StaticFiles(directory=str(CHART_DIR)), name="charts")
 
-# In-memory session history cache — restored from DB on restart
-_SESSION_HISTORY: dict[str, list[dict]] = {}
+# 공유 런타임 상태 — web/state.py에서 관리. 모두 같은 객체를 참조함.
+from web.state import (  # noqa: E402
+    _SESSION_HISTORY,
+    _PLAN_MODE,
+    _RESEARCH_MODE,
+    _YOLO_MODE,
+    _GOAL_MODE,
+    _TASK_REGISTRY,
+    _ACCESS,
+    _LOOPBACK,
+    _ENT_KEY_KC,
+    _heartbeat_resumes,
+    HEARTBEAT_INTERVAL,
+    HEARTBEAT_STALL_SEC,
+    HEARTBEAT_MAX_RESUMES,
+    HEARTBEAT_DB_MAX_RESUMES,
+    WATCHDOG_IDLE_DEFAULT,
+    WATCHDOG_IDLE_LONG,
+    autopilot_register as _autopilot_register,
+    autopilot_unregister as _autopilot_unregister,
+    save_yolo_global as _save_yolo_global,
+    load_enterprise_keys as _load_enterprise_keys,
+    watchdog_idle_for as _watchdog_idle_for,
+    yolo_on as _yolo_on,
+)
+import web.state as _state_mod
 
-# /plan mode toggle — sid → bool. When True, build_system injects the plan guide
-# and the dispatch layer blocks write/exec tools. Volatile: cleared on server restart.
-_PLAN_MODE: dict[str, bool] = {}
-
-# /research mode toggle — sid → bool.
-# When True, injects the research guide (hypothesis→evidence→conclusion, web-search-first,
-# cite sources) into the system prompt and raises stream_gpt max_rounds to 40.
-# Volatile: cleared on session end.
-_RESEARCH_MODE: dict[str, bool] = {}
-
-# YOLO mode — auto-reruns host_exec with ask="off" on a __needs_approval__ response.
-# Hard-block list + secret checks apply regardless. AskUserQuestion/exit_plan_mode/
-# improvement_pending still require user approval.
-#
-# YOLO is global (_YOLO_GLOBAL) — desktop is 1 machine = 1 user, so "auto-approve is on for
-# this machine" is natural. Once on, it persists across all sessions (new chat, switch) and
-# across restarts (flag file). plan/research stay per-session; yolo is machine-global.
-# _YOLO_MODE (per-session) is also honored for back-compat.
-_YOLO_MODE: dict[str, bool] = {}
-
-
-def _yolo_flag_path():
-    """YOLO global flag persistence file — survives restart (unattended long-running)."""
-    try:
-        from pipeline.data_paths import data_dir
-        return data_dir() / "yolo_global.flag"
-    except Exception:
-        from pathlib import Path
-        return Path(__file__).parent.parent / "data" / "yolo_global.flag"
-
-
-def _load_yolo_global() -> bool:
-    try:
-        return _yolo_flag_path().exists()
-    except Exception:
-        return False
-
-
-def _save_yolo_global(on: bool) -> None:
-    try:
-        p = _yolo_flag_path()
-        if on:
-            p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text("1")
-        elif p.exists():
-            p.unlink()
-    except Exception:
-        pass
-
-
-_YOLO_GLOBAL: bool = _load_yolo_global()  # restored from disk on restart
+# 하위호환 re-export — 기존 테스트가 web.server.* 로 참조
+from web.state import (  # noqa: E402
+    _yolo_flag_path,
+    _load_yolo_global,
+    save_yolo_global as _save_yolo_global,  # type: ignore[assignment]
+    _autopilot_path,
+    _load_autopilot,
+    _save_autopilot,
+)
 
 
 def _yolo_on(sid: str) -> bool:
-    """Is YOLO auto-approval on for this session — global OR per-session."""
-    return _YOLO_GLOBAL or bool(_YOLO_MODE.get(sid))
-
-# /goal long-running mode — sid → bool. Enabled on /goal. Multi-turn long work has
-# legitimately long tool chains, so the hang watchdog threshold is extended. Volatile.
-_GOAL_MODE: dict[str, bool] = {}
-
-# Hang watchdog threshold (seconds). If no token/tool event arrives for this long
-# after the last event, the task is treated as hung and cancelled. Long-running
-# modes (yolo/goal/research) get a longer threshold.
-WATCHDOG_IDLE_DEFAULT = 60.0    # normal — cut a stall fast so the user can retry
-WATCHDOG_IDLE_LONG = 300.0      # yolo/goal/research — matches host_exec's own 300s timeout
+    return _state_mod.yolo_on(sid)
 
 
 def _watchdog_idle_for(sid: str) -> float:
-    """Hang watchdog threshold (seconds) for the session's current mode."""
-    if _yolo_on(sid) or _GOAL_MODE.get(sid) or _RESEARCH_MODE.get(sid):
-        return WATCHDOG_IDLE_LONG
-    return WATCHDOG_IDLE_DEFAULT
-
-
-# ── YOLO heartbeat — find stalled YOLO sessions in the background and auto-resume ──
-# Covers cases self-wake (one in-task resume) misses — disconnected, fully terminated, or
-# genuinely stalled >5min sessions. Desktop is 1 machine = 1 user, so only this machine's
-# _TASK_REGISTRY matters. A per-session resume cap prevents infinite re-resume.
-HEARTBEAT_INTERVAL = 120.0       # scan period (seconds)
-HEARTBEAT_STALL_SEC = 300.0      # idle longer than this → treated as stalled (seconds)
-HEARTBEAT_MAX_RESUMES = 3        # memory-reg stall — per-session auto-resume cap
-HEARTBEAT_DB_MAX_RESUMES = 20    # autopilot tracked session — cumulative cap (prevents infinite revive)
-_heartbeat_resumes: dict[str, int] = {}   # sid → number of heartbeat resumes
-
-
-# ── Autopilot tracked sessions — explicitly registered "push to completion" sessions ──
-# Heartbeat revives them by DB even after a restart wipes the memory reg (unattended long-run).
-# Persisted to file. Tracking ends when the work completes or the user unregisters.
-def _autopilot_path():
-    try:
-        from pipeline.data_paths import data_dir
-        return data_dir() / "autopilot_sessions.json"
-    except Exception:
-        from pathlib import Path
-        return Path(__file__).parent.parent / "data" / "autopilot_sessions.json"
-
-
-def _load_autopilot() -> dict:
-    """{sid: {"resumes": int}} form."""
-    try:
-        import json as _json
-        p = _autopilot_path()
-        if p.exists():
-            return _json.loads(p.read_text())
-    except Exception:
-        pass
-    return {}
-
-
-def _save_autopilot(data: dict) -> None:
-    try:
-        import json as _json
-        p = _autopilot_path()
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(_json.dumps(data, ensure_ascii=False))
-    except Exception:
-        pass
-
-
-def _autopilot_register(sid: str) -> None:
-    data = _load_autopilot()
-    if sid not in data:
-        data[sid] = {"resumes": 0}
-        _save_autopilot(data)
-
-
-def _autopilot_unregister(sid: str) -> None:
-    data = _load_autopilot()
-    if sid in data:
-        data.pop(sid, None)
-        _save_autopilot(data)
+    return _state_mod.watchdog_idle_for(sid)
 
 
 def _is_stalled_yolo(sid: str, reg: dict, now_monotonic: float) -> bool:
@@ -386,12 +305,43 @@ def _is_stalled_yolo(sid: str, reg: dict, now_monotonic: float) -> bool:
         return False
     if reg.get("done"):
         return False
-    if reg.get("awaiting_approval"):        # awaiting user input is normal — not stalled
+    if reg.get("awaiting_approval"):
         return False
     if _heartbeat_resumes.get(sid, 0) >= HEARTBEAT_MAX_RESUMES:
         return False
     idle = now_monotonic - reg.get("last_activity", now_monotonic)
     return idle > HEARTBEAT_STALL_SEC
+
+
+def _load_autopilot() -> dict:
+    from web.state import _load_autopilot as _la
+    return _la()
+
+
+def _save_autopilot(data: dict) -> None:
+    from web.state import _save_autopilot as _sa
+    _sa(data)
+
+
+def _is_loopback(request: Request) -> bool:
+    forwarded = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+    if forwarded:
+        return forwarded in _LOOPBACK or forwarded.startswith("127.")
+    host = request.client.host if request.client else "127.0.0.1"
+    return host in _LOOPBACK or host.startswith("127.") or host.startswith("::ffff:127.")
+
+
+def _get_access_level(request: Request) -> str:
+    if _is_loopback(request):
+        return "local"
+    key = request.headers.get("x-vega-key", "").strip()
+    if key and key in _load_enterprise_keys():
+        return "enterprise"
+    return "local"
+
+
+def _ce_mode_from_access(level: str) -> bool:
+    return False
 
 
 _RESEARCH_MODE_GUIDE = """## 연구 모드 (Research Mode) 활성화
@@ -767,7 +717,6 @@ def _format_db_context(hits: list[dict]) -> str:
 
 def handle_slash(user_text: str, sid: str) -> dict | None:
     """Handle slash command → {"text": str} or {"text": str, "switch_session": sid} or None."""
-    global _YOLO_GLOBAL  # /yolo, /yolo-off toggle global
     parts = user_text.split(None, 1)
     cmd = parts[0].lower()
     args = parts[1].strip() if len(parts) > 1 else ""
@@ -942,7 +891,7 @@ def handle_slash(user_text: str, sid: str) -> dict | None:
         return {"text": "🔬 Research 모드 " + ("해제됨." if was else "이미 꺼져있었음.")}
 
     if cmd == "/yolo":
-        _YOLO_GLOBAL = True
+        _state_mod._YOLO_GLOBAL = True
         _save_yolo_global(True)
         return {"text": (
             "⚡ **YOLO 모드 켜짐 (전역).** 이제 모든 세션에서 host_exec의 allowlist 외 명령도 "
@@ -953,8 +902,8 @@ def handle_slash(user_text: str, sid: str) -> dict | None:
         )}
 
     if cmd == "/yolo-off":
-        was = _YOLO_GLOBAL or bool(_YOLO_MODE)
-        _YOLO_GLOBAL = False
+        was = _state_mod._YOLO_GLOBAL or bool(_YOLO_MODE)
+        _state_mod._YOLO_GLOBAL = False
         _YOLO_MODE.clear()
         _save_yolo_global(False)
         return {"text": "⚡ YOLO 모드 " + ("해제됨." if was else "이미 꺼져있었음.")}
@@ -1036,254 +985,7 @@ async def chat_page():
     return HTMLResponse((STATIC_DIR / "chat.html").read_text(encoding="utf-8"))
 
 
-@app.get("/slack/auth")
-async def slack_auth_start():
-    """Start Slack OAuth in the browser."""
-    try:
-        from pipeline.auth.slack import authorize_url
-        return RedirectResponse(url=authorize_url(), status_code=302)
-    except Exception as e:
-        return HTMLResponse(
-            f"<h3>Slack OAuth 설정 오류</h3><pre>{str(e)}</pre>",
-            status_code=500,
-        )
-
-
-@app.get("/slack/callback")
-async def slack_callback(request: Request):
-    """Receive Slack OAuth callback and exchange code for a user token."""
-    error = request.query_params.get("error")
-    if error:
-        return HTMLResponse(f"<h3>Slack 인증 취소/실패</h3><pre>{error}</pre>", status_code=400)
-
-    code = request.query_params.get("code", "")
-    state = request.query_params.get("state")
-    if not code:
-        return HTMLResponse("<h3>Slack 인증 실패</h3><pre>code 파라미터가 없습니다.</pre>", status_code=400)
-
-    from pipeline.auth.slack import exchange_code
-    result = exchange_code(code, state=state)
-    if result.get("ok"):
-        team = result.get("team") or "(unknown team)"
-        user = result.get("user") or "(unknown user)"
-        return HTMLResponse(f"<h3>Slack 인증 완료</h3><p>team: {team}<br>user: {user}</p>")
-
-    return HTMLResponse(
-        f"<h3>Slack 인증 실패</h3><pre>{result.get('error') or 'unknown error'}</pre>",
-        status_code=400,
-    )
-
-
-@app.get("/superthread/auth")
-async def superthread_auth_start():
-    """Start Superthread OAuth (PKCE) in the browser."""
-    try:
-        from pipeline.auth.superthread import authorize_url
-        return RedirectResponse(url=authorize_url(), status_code=302)
-    except Exception as e:
-        return HTMLResponse(
-            f"<h3>Superthread OAuth 설정 오류</h3><pre>{str(e)}</pre>",
-            status_code=500,
-        )
-
-
-@app.get("/callback")
-async def superthread_callback(request: Request):
-    """Receive Superthread OAuth callback → exchange code → issue + store PAT.
-
-    경로는 반드시 /callback — Superthread client(ocstcli)의 사전 등록 패턴.
-    """
-    error = request.query_params.get("error")
-    if error:
-        return HTMLResponse(f"<h3>Superthread 인증 취소/실패</h3><pre>{error}</pre>", status_code=400)
-
-    code = request.query_params.get("code", "")
-    state = request.query_params.get("state")
-    if not code:
-        return HTMLResponse("<h3>Superthread 인증 실패</h3><pre>code 파라미터가 없습니다.</pre>", status_code=400)
-
-    from pipeline.auth.superthread import exchange_code
-    result = exchange_code(code, state=state)
-    if result.get("ok"):
-        exp = result.get("expires_at") or "(만료 정보 없음)"
-        return HTMLResponse(f"<h3>Superthread 인증 완료</h3><p>PAT 발급됨 · 만료: {exp}</p>")
-
-    return HTMLResponse(
-        f"<h3>Superthread 인증 실패</h3><pre>{result.get('error') or 'unknown error'}</pre>",
-        status_code=400,
-    )
-
-
-@app.get("/google/auth")
-async def google_auth_start():
-    """Start Google OAuth in the browser. 내장 client 로 입력 없이 로그인."""
-    try:
-        from pipeline.auth.google import authorize_url
-        return RedirectResponse(url=authorize_url(), status_code=302)
-    except Exception as e:
-        return HTMLResponse(
-            f"<h3>Google OAuth 설정 오류</h3><pre>{str(e)}</pre>",
-            status_code=500,
-        )
-
-
-@app.get("/google/callback")
-async def google_callback(request: Request):
-    """Receive Google OAuth callback → exchange code → store refresh_token."""
-    error = request.query_params.get("error")
-    if error:
-        return HTMLResponse(f"<h3>Google 인증 취소/실패</h3><pre>{error}</pre>", status_code=400)
-
-    code = request.query_params.get("code", "")
-    state = request.query_params.get("state")
-    if not code:
-        return HTMLResponse("<h3>Google 인증 실패</h3><pre>code 파라미터가 없습니다.</pre>", status_code=400)
-
-    from pipeline.auth.google import exchange_code
-    result = exchange_code(code, state=state)
-    if result.get("ok"):
-        email = result.get("email") or "(이메일 미확인)"
-        return HTMLResponse(f"<h3>Google 인증 완료</h3><p>계정: {email}</p>")
-
-    return HTMLResponse(
-        f"<h3>Google 인증 실패</h3><pre>{result.get('error') or 'unknown error'}</pre>",
-        status_code=400,
-    )
-
-
-_UPLOAD_DIR = _uploads_dir()
-
-
-@app.post("/api/upload")
-async def upload_file(request: Request):
-    """
-    Drag-and-drop file upload — saves file to data/uploads/ and returns the path.
-    Encrypted Office files are decrypted before saving.
-    Returns: {"filename": str, "path": str} | {"error": "password_required"} (401)
-    """
-    import io, uuid as _uuid
-
-    MAX_SIZE = 100 * 1024 * 1024  # 100 MB limit
-
-    form = await request.form()
-    upload = form.get("file")
-    if upload is None:
-        return JSONResponse({"error": "file 필드가 없습니다"}, status_code=400)
-
-    raw = await upload.read()
-    if len(raw) > MAX_SIZE:
-        return JSONResponse({"error": f"파일이 너무 큽니다 ({len(raw)//1024//1024}MB)"}, status_code=413)
-
-    fname = upload.filename or "unknown"
-    ext = fname.rsplit(".", 1)[-1].lower() if "." in fname else ""
-    password = (form.get("password") or "").strip() or None
-
-    # Decrypt encrypted Office files
-    if ext in ("xlsx", "xlsm", "xltx", "xls", "xlsb", "ods", "docx", "doc", "pptx", "ppt"):
-        try:
-            import msoffcrypto
-            of = msoffcrypto.OfficeFile(io.BytesIO(raw))
-            if of.is_encrypted():
-                if not password:
-                    return JSONResponse({"error": "password_required"}, status_code=401)
-                try:
-                    out = io.BytesIO()
-                    of.load_key(password=password)
-                    of.decrypt(out)
-                    raw = out.getvalue()
-                except Exception:
-                    return JSONResponse({"error": "비밀번호가 틀렸습니다"}, status_code=403)
-        except Exception:
-            pass  # files that msoffcrypto cannot parse are saved as-is
-
-    # Add uuid prefix to avoid filename collisions
-    safe_name = f"{_uuid.uuid4().hex[:8]}_{fname}"
-    dest = _UPLOAD_DIR / safe_name
-    dest.write_bytes(raw)
-
-    return JSONResponse({"filename": fname, "path": str(dest)})
-
-
-@app.post("/api/upload/image")
-async def upload_image_base64(request: Request):
-    """Save base64 image to data/uploads/ and return the path.
-    Called alongside adding images to pendingImages in the UI to secure an editable path.
-    body: {data: "base64...", media_type: "image/png", name: "filename.png"}
-    Returns: {"path": str, "filename": str}
-    """
-    import base64 as _b64
-    import uuid as _uuid
-
-    body = await request.json()
-    data_str = body.get("data", "")
-    media_type = body.get("media_type", "image/png")
-    name = body.get("name", "image.png")
-
-    if not data_str:
-        return JSONResponse({"error": "data 필드가 없습니다"}, status_code=400)
-
-    ext_map = {"image/png": "png", "image/jpeg": "jpg", "image/jpg": "jpg",
-               "image/webp": "webp", "image/gif": "gif"}
-    ext = ext_map.get(media_type, "png")
-    safe_name = f"{_uuid.uuid4().hex[:8]}_{name}"
-    if not safe_name.endswith(f".{ext}"):
-        safe_name = safe_name.rsplit(".", 1)[0] + f".{ext}"
-
-    dest = _UPLOAD_DIR / safe_name
-    dest.write_bytes(_b64.b64decode(data_str))
-    return JSONResponse({"path": str(dest), "filename": safe_name})
-
-
-@app.post("/api/stt")
-async def stt_transcribe(request: Request):
-    """
-    Speech-to-Text transcription endpoint.
-    Accepts multipart/form-data with a 'file' field (audio: webm/mp4/wav/ogg/mp3/flac).
-    Optional 'language' field overrides the config language (e.g. 'ko', 'en').
-    Returns: {"text": str}
-    """
-    MAX_AUDIO_SIZE = 25 * 1024 * 1024  # 25 MB (Whisper API limit)
-
-    form = await request.form()
-    upload = form.get("file")
-    if upload is None:
-        return JSONResponse({"error": "file 필드가 없습니다"}, status_code=400)
-
-    raw = await upload.read()
-    if len(raw) > MAX_AUDIO_SIZE:
-        return JSONResponse({"error": f"오디오 파일이 너무 큽니다 ({len(raw)//1024//1024}MB, 최대 25MB)"}, status_code=413)
-
-    filename = getattr(upload, "filename", None) or "audio.webm"
-    language_override = (form.get("language") or "").strip() or None
-
-    try:
-        from pipeline.stt_gateway import transcribe as _transcribe, LocalSTTUnavailable
-        text = _transcribe(raw, filename=filename, language_override=language_override)
-        return JSONResponse({"text": text})
-    except LocalSTTUnavailable as e:
-        return JSONResponse({"error": str(e), "code": "local_stt_unavailable"}, status_code=503)
-    except RuntimeError as e:
-        return JSONResponse({"error": str(e)}, status_code=502)
-    except Exception as e:
-        return JSONResponse({"error": f"STT 처리 실패: {e}"}, status_code=500)
-
-
-@app.get("/api/stt/config")
-async def stt_get_config():
-    """Returns current STT configuration."""
-    from pipeline.stt_gateway import get_stt_config
-    return JSONResponse(get_stt_config())
-
-
-@app.post("/api/stt/config")
-async def stt_set_config(request: Request):
-    """Updates STT configuration. Body: {provider, model, language, response_format, endpoint?}"""
-    from pipeline.stt_gateway import set_stt_config
-    body = await request.json()
-    allowed = {"provider", "model", "language", "response_format", "endpoint", "api_key_env"}
-    cleaned = {k: v for k, v in body.items() if k in allowed}
-    set_stt_config(cleaned)
-    return JSONResponse({"ok": True})
+# OAuth, upload, STT 라우트 → web/routers/{oauth,upload,stt}.py 로 이전됨
 
 
 @app.get("/api/health")
@@ -1447,188 +1149,7 @@ async def abort_task(req: Request):
     return JSONResponse({"ok": True})
 
 
-@app.get("/api/sessions")
-async def sessions_list(include_archived: int = 0, limit: int = 30):
-    sessions = list_sessions(limit=limit, include_archived=bool(include_archived))
-    return JSONResponse({"sessions": sessions})
-
-
-@app.post("/api/sessions/{sid}/archive")
-async def session_archive(sid: str, request: Request):
-    """Toggle session archived flag. body: {archived: bool}. Defaults to True if missing."""
-    from pipeline.session_store import set_archived
-    try:
-        data = await request.json()
-    except Exception:
-        data = {}
-    archived = bool(data.get("archived", True))
-    ok = set_archived(sid, archived)
-    if not ok:
-        return JSONResponse({"error": "세션 없음"}, status_code=404)
-    # Archiving is just a flag; in-progress tasks continue and SSE remains unaffected
-    return JSONResponse({"ok": True, "archived": archived})
-
-
-@app.post("/api/sessions/{sid}/workdir")
-async def set_session_workdir(sid: str, request: Request):
-    """Set or clear session working directory. body: {path: str|null}"""
-    data = await request.json()
-    path = data.get("path")
-    if path:
-        p = Path(path).expanduser()
-        if not p.is_dir():
-            return JSONResponse({"error": f"폴더가 존재하지 않음: {path}"}, status_code=400)
-        path = str(p)
-    set_working_dir(sid, path)
-    return JSONResponse({"ok": True, "working_dir": path})
-
-
-@app.get("/api/sessions/{sid}/workdir")
-async def get_session_workdir(sid: str):
-    return JSONResponse({"working_dir": get_working_dir(sid)})
-
-
-@app.get("/api/sessions/{sid}/plan-mode")
-async def get_plan_mode(sid: str):
-    """Query current session plan mode state — for header badge update."""
-    return JSONResponse({"plan_mode": bool(_PLAN_MODE.get(sid, False))})
-
-
-@app.get("/api/sessions/{sid}/research-mode")
-async def get_research_mode(sid: str):
-    """Query current session research mode state — for header badge update."""
-    return JSONResponse({"research_mode": bool(_RESEARCH_MODE.get(sid, False))})
-
-
-@app.get("/api/sessions/{sid}/yolo-mode")
-async def get_yolo_mode(sid: str):
-    """Query YOLO mode — global. Any session's query sees the global state."""
-    return JSONResponse({"yolo_mode": _yolo_on(sid)})
-
-
-# ── Mode toggles (called from inline input chips) ──
-# Turn modes on/off via UI chips without slash commands (/plan, /research, /yolo).
-# body: {"enabled": bool}. If omitted, flips the current state (toggle).
-async def _toggle_mode(request: Request, sid: str, store: dict, key: str) -> JSONResponse:
-    try:
-        body = await request.json()
-    except Exception:
-        body = {}
-    if "enabled" in body:
-        enabled = bool(body["enabled"])
-    else:
-        enabled = not store.get(sid, False)
-    if enabled:
-        store[sid] = True
-    else:
-        store.pop(sid, None)
-    return JSONResponse({key: enabled})
-
-
-@app.post("/api/sessions/{sid}/plan-mode")
-async def set_plan_mode_ep(sid: str, request: Request):
-    return await _toggle_mode(request, sid, _PLAN_MODE, "plan_mode")
-
-
-@app.post("/api/sessions/{sid}/research-mode")
-async def set_research_mode_ep(sid: str, request: Request):
-    return await _toggle_mode(request, sid, _RESEARCH_MODE, "research_mode")
-
-
-@app.post("/api/sessions/{sid}/yolo-mode")
-async def set_yolo_mode_ep(sid: str, request: Request):
-    """YOLO toggle — global. sid is path-compat only; flips the global flag."""
-    global _YOLO_GLOBAL
-    try:
-        body = await request.json()
-    except Exception:
-        body = {}
-    if "enabled" in body:
-        _YOLO_GLOBAL = bool(body["enabled"])
-    else:
-        _YOLO_GLOBAL = not _YOLO_GLOBAL
-    if not _YOLO_GLOBAL:
-        _YOLO_MODE.clear()
-    _save_yolo_global(_YOLO_GLOBAL)  # survive restart
-    return JSONResponse({"yolo_mode": _YOLO_GLOBAL})
-
-
-@app.post("/api/sessions/{sid}/resume")
-async def resume_session_ep(sid: str, request: Request):
-    """Resume a stalled session with 'continue' — manual trigger (autopilot bootstrap/debug).
-    Skips if a task is already live (not done + recent activity).
-    body {"autopilot": true} registers it for autopilot — heartbeat keeps pushing across restarts."""
-    try:
-        body = await request.json()
-    except Exception:
-        body = {}
-    if body.get("autopilot"):
-        _autopilot_register(sid)
-    reg = _TASK_REGISTRY.get(sid)
-    if reg and not reg.get("done"):
-        idle = time.monotonic() - reg.get("last_activity", time.monotonic())
-        if idle < HEARTBEAT_STALL_SEC:
-            return JSONResponse({"resumed": False, "reason": f"already running (idle {int(idle)}s)",
-                                 "autopilot": bool(body.get("autopilot"))})
-    try:
-        _resume_stalled_session(sid)
-        return JSONResponse({"resumed": True, "resume_count": _heartbeat_resumes.get(sid, 0),
-                             "autopilot": bool(body.get("autopilot"))})
-    except Exception as e:
-        return JSONResponse({"resumed": False, "reason": str(e)}, status_code=500)
-
-
-@app.post("/api/sessions/{sid}/autopilot-off")
-async def autopilot_off_ep(sid: str):
-    """Stop autopilot tracking — heartbeat no longer auto-resumes this session."""
-    _autopilot_unregister(sid)
-    return JSONResponse({"autopilot": False})
-
-
-# Grace timeout for approval wait (seconds). Sessions exceeding this without response are treated as zombies.
-_AWAITING_GRACE_SEC = 30 * 60  # 30 minutes
-
-
-@app.get("/api/sessions/active")
-async def get_active_sessions():
-    """List in-progress GPT tasks — for UI status bar spinner and reconnect decision on session switch.
-    Sessions exceeding _AWAITING_GRACE_SEC since awaiting_since are auto-aborted and excluded.
-    Returns: {"active": [{"sid": str, "awaiting_approval": bool, "awaiting_age_sec": int|null, "last_event_id": int}, ...]}
-    """
-    now = time.time()
-    zombies: list[str] = []
-    active: list[dict] = []
-    for sid, reg in _TASK_REGISTRY.items():
-        if reg.get("done"):
-            continue
-        awaiting = bool(reg.get("awaiting_approval", False))
-        awaiting_since = reg.get("awaiting_since")
-        age = int(now - awaiting_since) if awaiting_since else None
-        # Auto-clean zombie sessions that exceeded the grace period
-        if awaiting and age is not None and age > _AWAITING_GRACE_SEC:
-            zombies.append(sid)
-            continue
-        active.append({
-            "sid": sid,
-            "awaiting_approval": awaiting,
-            "awaiting_age_sec": age,
-            "last_event_id": len(reg.get("buf", [])),
-        })
-    # Clean up zombies via the same abort path — push reject signal to approval_queue + cancel task
-    for zsid in zombies:
-        reg = _TASK_REGISTRY.get(zsid)
-        if not reg:
-            continue
-        aq = reg.get("approval_queue")
-        if aq is not None and aq.empty():
-            try:
-                aq.put_nowait({"approved": False, "result": None, "__aborted__": True})
-            except Exception:
-                pass
-        task = reg.get("task")
-        if task and not task.done():
-            task.cancel()
-    return JSONResponse({"active": active})
+# sessions 라우트 → web/routers/sessions.py 로 이전됨
 
 
 @app.get("/api/context/preview")
@@ -1744,80 +1265,7 @@ async def context_preview(sid: str):
 
 
 
-# Built-in slash commands (metadata for autocomplete)
-
-@app.get("/api/sessions/{sid}/history")
-async def session_history(sid: str):
-    session = get_session(sid)
-    if not session:
-        return JSONResponse({"error": "not found"}, status_code=404)
-    from pipeline.session_store import load_history_with_meta
-    messages = load_history_with_meta(sid)
-    return JSONResponse({"uuid": sid, "name": session["name"], "messages": messages})
-
-
-@app.post("/api/sessions")
-async def session_create(request: Request):
-    data = await request.json()
-    title = data.get("title", "VEGA 세션")
-    sid = create_session(title)
-    _SESSION_HISTORY[sid] = []
-    return JSONResponse({"uuid": sid, "name": title})
-
-
-@app.put("/api/sessions/{sid}/rename")
-async def session_rename(sid: str, request: Request):
-    data = await request.json()
-    name = data.get("name", "VEGA 세션")
-    rename_session(sid, name)
-    return JSONResponse({"ok": True})
-
-
-@app.delete("/api/sessions/{sid}")
-async def session_delete(sid: str):
-    delete_session(sid)
-    _SESSION_HISTORY.pop(sid, None)
-    _PLAN_MODE.pop(sid, None)
-    _ACCESS.pop(sid, None)
-    return JSONResponse({"ok": True})
-
-
-# ── Enterprise key management (local access only) ────────────────────────────
-
-def _require_local(request: Request):
-    if not _is_loopback(request):
-        from fastapi import HTTPException
-        raise HTTPException(status_code=403, detail="Only local connections are allowed.")
-
-@app.get("/api/admin/keys")
-async def admin_keys_list(request: Request):
-    _require_local(request)
-    keys = sorted(_load_enterprise_keys())
-    return JSONResponse({"keys": keys, "count": len(keys)})
-
-@app.post("/api/admin/keys")
-async def admin_keys_add(request: Request):
-    _require_local(request)
-    body = await request.json()
-    key = (body.get("key") or "").strip()
-    if not key:
-        return JSONResponse({"error": "key 필드 필요"}, status_code=400)
-    if not key.startswith("vk_"):
-        return JSONResponse({"error": "키는 vk_ 로 시작해야 합니다"}, status_code=400)
-    from pipeline.keychain import get_secret, set_secret
-    existing = set(k.strip() for k in (get_secret(_ENT_KEY_KC, service=_ENT_KEY_KC) or "").split(",") if k.strip())
-    existing.add(key)
-    set_secret(_ENT_KEY_KC, ",".join(sorted(existing)), service=_ENT_KEY_KC)
-    return JSONResponse({"ok": True, "key": key, "total": len(existing)})
-
-@app.delete("/api/admin/keys/{key}")
-async def admin_keys_delete(key: str, request: Request):
-    _require_local(request)
-    from pipeline.keychain import get_secret, set_secret
-    existing = set(k.strip() for k in (get_secret(_ENT_KEY_KC, service=_ENT_KEY_KC) or "").split(",") if k.strip())
-    existing.discard(key)
-    set_secret(_ENT_KEY_KC, ",".join(sorted(existing)), service=_ENT_KEY_KC)
-    return JSONResponse({"ok": True, "remaining": len(existing)})
+# sessions, admin 라우트 → web/routers/{sessions,admin}.py 로 이전됨
 
 
 # ── Core SSE streaming endpoint ───────────────────────────────────────────────
