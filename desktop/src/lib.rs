@@ -4,7 +4,7 @@
 //                      설정 창에서 서버 URL + 언어 변경 가능.
 // --features daemon  : 첫 실행 시 LaunchAgent를 등록해 백엔드를 상시 데몬으로 실행.
 //
-// 공통: 트레이 아이콘 + 창 토글 + 전역 단축키(Cmd+Shift+V) + 언어 선택기
+// 공통: 트레이 아이콘 + 창 토글 + 언어 선택기
 
 pub mod client_config;
 
@@ -228,20 +228,6 @@ fn spawn_update_check(app: tauri::AppHandle) {
             Err(e) => vlog!("[VEGA] 업데이트 체크 실패(무시): {e}"),
         }
     });
-}
-
-#[cfg(desktop)]
-fn toggle_main_window(app: &tauri::AppHandle) {
-    if let Some(win) = app.get_webview_window("main") {
-        match win.is_visible() {
-            Ok(true) => { let _ = win.hide(); } // cxt-ignore: error_swallow
-            _ => {
-                let _ = win.unminimize(); // cxt-ignore: error_swallow
-                let _ = win.show(); // cxt-ignore: error_swallow
-                let _ = win.set_focus(); // cxt-ignore: error_swallow
-            }
-        }
-    }
 }
 
 #[cfg(desktop)]
@@ -520,21 +506,6 @@ pub fn run() {
         ]);
     }
 
-    #[cfg(all(desktop, not(any(target_os = "android", target_os = "ios"))))]
-    {
-        use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut, ShortcutState};
-        let toggle_shortcut = Shortcut::new(Some(Modifiers::SUPER | Modifiers::SHIFT), Code::KeyV);
-        builder = builder.plugin(
-            tauri_plugin_global_shortcut::Builder::new()
-                .with_handler(move |app, shortcut, event| {
-                    if event.state() == ShortcutState::Pressed && shortcut == &toggle_shortcut {
-                        toggle_main_window(app);
-                    }
-                })
-                .build(),
-        );
-    }
-
     builder
         .setup(|app| {
             // 프론트(remote chat.html)에서 설정 창을 여는 경로.
@@ -582,14 +553,6 @@ pub fn run() {
                 .hidden_title(true);
 
             let win = win_builder.build()?;
-
-            #[cfg(all(desktop, not(any(target_os = "android", target_os = "ios"))))]
-            {
-                use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut};
-                let toggle_shortcut =
-                    Shortcut::new(Some(Modifiers::SUPER | Modifiers::SHIFT), Code::KeyV);
-                let _ = app.global_shortcut().register(toggle_shortcut);
-            }
 
             // 자동 업데이트 백그라운드 체크 (데스크탑 전용)
             #[cfg(all(desktop, not(any(target_os = "android", target_os = "ios"))))]

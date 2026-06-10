@@ -113,10 +113,6 @@
     <div class="section">
       <h2 id="t-sec-app">App</h2>
       <div class="row spaced">
-        <span id="t-shortcut">Global shortcut — toggle window</span>
-        <span class="kbd">⌘ ⇧ V</span>
-      </div>
-      <div class="row spaced" style="margin-top:8px">
         <span style="color:var(--muted);font-size:12px" id="t-close-hint">Red close button hides instead of quitting</span>
       </div>
     </div>
@@ -152,7 +148,6 @@ const I18N = {
     ver:        'Version',
     auth:       'Auth',
     secApp:     'App',
-    shortcut:   'Global shortcut — toggle window',
     closeHint:  'Red close button hides instead of quitting',
     secLang:    'Language',
     close:      'Close',
@@ -173,7 +168,6 @@ const I18N = {
     ver:        '버전',
     auth:       '인증',
     secApp:     '앱 동작',
-    shortcut:   '전역 단축키 — 창 토글',
     closeHint:  '빨간 버튼(닫기) → 창 숨김, 종료 아님',
     secLang:    '언어',
     close:      '닫기',
@@ -207,7 +201,6 @@ function applyLang(lang) {
   document.getElementById('t-ver').textContent        = T.ver;
   document.getElementById('t-auth').textContent       = T.auth;
   document.getElementById('t-sec-app').textContent    = T.secApp;
-  document.getElementById('t-shortcut').textContent   = T.shortcut;
   document.getElementById('t-close-hint').textContent = T.closeHint;
   document.getElementById('t-sec-lang').textContent   = T.secLang;
   document.getElementById('cancel-btn').textContent   = T.close;
