@@ -27,6 +27,13 @@ datas += [
     (os.path.join(REPO_ROOT, "sandbox", "docker-compose.yml"), "sandbox"),
 ]
 
+# 배포 기본 키 (.env) — build_dmg.sh [pre] 단계가 repo .env에서 추출 생성.
+# 번들 루트(".")에 실리면 keychain._env_file_paths의 repo-루트 폴백이
+# frozen 앱에서 _MEIPASS/.env 로 이 파일을 찾는다. 없으면(수동 spec 빌드) 생략.
+_bundle_env = os.path.join(REPO_ROOT, "bin", "bundle_env", ".env")
+if os.path.exists(_bundle_env):
+    datas += [(_bundle_env, ".")]
+
 # FastAPI / uvicorn / starlette / MCP 서브모듈 (동적 import 보장)
 # 주의: mcp 전체를 collect_submodules 하면 mcp.cli(typer 선택의존) 수집 중 죽는다.
 #       런타임엔 mcp.cli 가 불필요하므로 mcp 는 핵심 하위만 명시 수집한다.

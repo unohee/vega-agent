@@ -6,23 +6,29 @@ from __future__ import annotations
 
 import os
 import re
+import urllib.error
 import urllib.parse
 import urllib.request
 
-# SearXNG endpoint. Deployment scenarios:
-#   - Single user: localhost:18888 (local Docker)  # cxt-ignore: fake_data
-#   - Internal deployment: an internal/shared instance (e.g. https://search.example.com)  # cxt-ignore: fake_data
+# SearXNG endpoint. 기본값 = 호스팅 인스턴스 search.intrect.io — 배포 사용자가
+# 로컬 Docker SearXNG 없이도 web_search가 동작한다 (No setup tax).
+# 단, 인스턴스가 X-VEGA-Key를 요구하므로 VEGA_SEARXNG_KEY(또는 VEGA_API_KEY) 필요 —
+# 미설정 시 401을 키 안내 에러로 변환한다.
 # Resolution priority (read at call time so GUI saves apply immediately):
 #   Keychain > .env/env var > default. The settings window (Tools & Keys) saves to Keychain.
-_DEFAULT_SEARXNG_URL = "http://localhost:18888"
+#   (로컬 SearXNG를 쓰려면 VEGA_SEARXNG_URL=http://localhost:18888 설정)  # cxt-ignore: fake_data
+_DEFAULT_SEARXNG_URL = "https://search.intrect.io"
 
+
+# keychain.get 체인(Keychain → .env → 환경변수)을 쓴다 — get_secret(Keychain 단독)이
+# 아니라 체인을 타야 배포본에 동봉된 번들 .env(_MEIPASS/.env)의 기본 키가 보인다.
 
 def _get_searxng_url() -> str:
     try:
-        from pipeline.keychain import get_secret
-        kc = get_secret("VEGA_SEARXNG_URL")
-        if kc:
-            return kc.rstrip("/")
+        from pipeline.keychain import get as kc_get
+        v = kc_get("VEGA_SEARXNG_URL")
+        if v:
+            return v.rstrip("/")
     except Exception:
         pass
     return os.environ.get("VEGA_SEARXNG_URL", _DEFAULT_SEARXNG_URL).rstrip("/")
@@ -30,10 +36,10 @@ def _get_searxng_url() -> str:
 
 def _get_searxng_key() -> str:
     try:
-        from pipeline.keychain import get_secret
-        kc = get_secret("VEGA_SEARXNG_KEY") or get_secret("VEGA_API_KEY")
-        if kc:
-            return kc
+        from pipeline.keychain import get as kc_get
+        v = kc_get("VEGA_SEARXNG_KEY") or kc_get("VEGA_API_KEY")
+        if v:
+            return v
     except Exception:
         pass
     return os.environ.get("VEGA_SEARXNG_KEY", "") or os.environ.get("VEGA_API_KEY", "")
@@ -80,6 +86,14 @@ def web_search(query: str, max_results: int = 5) -> list[dict]:
         with urllib.request.urlopen(req, timeout=15) as r:
             import json
             data = json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        if e.code in (401, 403):
+            # 호스팅 게이트웨이는 키 필수 — 막연한 실패 대신 해결 경로를 알려준다
+            raise RuntimeError(
+                f"검색 게이트웨이({searxng_url}) 인증 실패({e.code}) — "
+                "설정 → Tools & Keys에서 VEGA_SEARXNG_KEY를 등록해라."
+            ) from e
+        raise RuntimeError(f"SearXNG ({searxng_url}) request failed: {e}") from e
     except Exception as e:
         # Covers: SearXNG not running, network error, JSON parse failure
         raise RuntimeError(f"SearXNG ({searxng_url}) request failed: {e}") from e
@@ -96,18 +110,64 @@ def web_search(query: str, max_results: int = 5) -> list[dict]:
     return results
 
 
-def web_fetch(url: str, timeout: int = 20000) -> str:
+# 정적 fetch가 이 길이 이상의 본문을 추출하면 Chromium 폴백을 생략한다
+# (_pw_get_text의 본문 판정 기준 200자와 동일)
+_MIN_STATIC_TEXT = 200
+
+_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+
+
+def _strip_html(html: str) -> str:
+    """서버 렌더링된 HTML에서 본문 텍스트 추출 (의존성 없는 정규식 기반)."""
+    import html as _html_mod
+    html = re.sub(r"(?is)<(script|style|noscript|svg|head|template)[^>]*>.*?</\1>", " ", html)
+    html = re.sub(r"(?is)<br\s*/?>|</(p|div|li|tr|h[1-6]|blockquote|pre)>", "\n", html)
+    text = re.sub(r"(?s)<[^>]+>", " ", html)
+    text = _html_mod.unescape(text)
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r" ?\n ?", "\n", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def _fetch_static(url: str, timeout_s: float) -> str:
+    """httpx로 정적 HTML을 받아 본문 추출. 실패/비-텍스트면 예외."""
+    import httpx
+    r = httpx.get(url, headers={"User-Agent": _UA}, follow_redirects=True, timeout=timeout_s)
+    r.raise_for_status()
+    ctype = r.headers.get("content-type", "")
+    if "html" not in ctype and "text" not in ctype:
+        raise RuntimeError(f"non-text content-type: {ctype}")
+    return _strip_html(r.text)
+
+
+def _fetch_browser(url: str, timeout: int) -> str:
+    """Chromium(playwright)으로 렌더링 후 본문 추출 — JS 렌더 페이지 폴백."""
     from playwright.sync_api import sync_playwright
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page(user_agent=_UA)
+        page.goto(url, wait_until="domcontentloaded", timeout=timeout)
+        text = _pw_get_text(page)
+        browser.close()
+    return text
+
+
+def web_fetch(url: str, timeout: int = 20000) -> str:
+    # 1차: httpx 정적 fetch — 호출마다 Chromium을 새로 띄우는 비용(1-3초 +
+    # 수백 MB 메모리 스파이크, 저사양 Mac 체감 끊김 INT-1430)을 대부분의
+    # 서버 렌더링 페이지에서 생략한다. 본문이 부족하면(JS 렌더) Chromium 폴백.
+    text = ""
     try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page(
-                user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
-            )
-            page.goto(url, wait_until="domcontentloaded", timeout=timeout)
-            text = _pw_get_text(page)
-            browser.close()
-        # Boundary markers to prevent the LLM from confusing external content with internal instructions
-        return f"[외부 URL: {url}]\n[콘텐츠 시작]\n{text[:6000]}\n[콘텐츠 끝]"
-    except Exception as e:
-        return f"fetch 실패: {e}"
+        text = _fetch_static(url, timeout / 1000)
+    except Exception:
+        pass
+    if len(text) < _MIN_STATIC_TEXT:
+        try:
+            text = _fetch_browser(url, timeout)
+        except Exception as e:
+            if not text:
+                return f"fetch 실패: {e}"
+            # 짧더라도 정적 결과가 있으면 그걸 반환
+    # Boundary markers to prevent the LLM from confusing external content with internal instructions
+    return f"[외부 URL: {url}]\n[콘텐츠 시작]\n{text[:6000]}\n[콘텐츠 끝]"
