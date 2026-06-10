@@ -59,7 +59,7 @@ def log_dir() -> Path:
 
 
 def db_path() -> Path:
-    # NOTE: vega-core 는 자체 agent.db 를 쓴다. 메인(개인) VEGA 의 vega.db 와
+    # NOTE: vega-agent 는 자체 agent.db 를 쓴다. 메인(개인) VEGA 의 vega.db 와
     # 데이터 디렉터리를 공유하더라도 파일을 분리해 스키마 충돌을 피한다.
     return data_dir() / "agent.db"
 

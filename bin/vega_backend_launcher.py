@@ -1,5 +1,5 @@
 # Created: 2026-05-31
-# Purpose: PyInstaller 진입점 — VEGA Core FastAPI 백엔드(web.server:app)를 uvicorn 으로 띄운다.
+# Purpose: PyInstaller 진입점 — VEGA Agent FastAPI 백엔드(web.server:app)를 uvicorn 으로 띄운다.
 #   sys._MEIPASS(번들 루트)를 cwd 로 잡아 web/static, data/ 기본값을 찾게 한다.
 # Dependencies: web/server.py, uvicorn
 import os
@@ -77,7 +77,7 @@ PORT = int(os.environ.get("VEGA_PORT", "8100"))
 
 import uvicorn  # noqa: E402
 
-# vega-core FastAPI 앱 (web/server.py 의 `app`)
+# vega-agent FastAPI 앱 (web/server.py 의 `app`)
 from web.server import app  # noqa: E402
 
 if __name__ == "__main__":

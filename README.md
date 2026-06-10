@@ -1,4 +1,4 @@
-# VEGA Core
+# VEGA Agent
 
 **Vector Encoded General Agent** — a local-first AI workspace for people who want
 power-user LLM workflows without becoming terminal-native developers first.
@@ -8,7 +8,7 @@ developer-only terminal/CLI agent setups. It gives non-developer power users the
 kind of control that technical users already build for themselves with shells,
 MCP servers, scripts, local daemons, and custom model routing.
 
-> VEGA Core is the open, generalized layer extracted from a production personal agent.
+> VEGA Agent is the open, generalized layer extracted from a production personal agent.
 > It ships with the harness infrastructure; you supply the domain knowledge via
 > `data/agents/_default.md` and let users evolve behavior through natural language.
 

@@ -1,5 +1,5 @@
 # Created: 2026-05-31
-# Purpose: VEGA 채널 어댑터 패키지. 텔레그램/슬랙 등 외부 메신저를 vega-core 에이전트 루프
+# Purpose: VEGA 채널 어댑터 패키지. 텔레그램/슬랙 등 외부 메신저를 vega-agent 에이전트 루프
 #          (streaming.stream_gpt)에 연결하는 thin 어댑터들을 담는다.
 # Dependencies: pipeline.streaming, pipeline.session_store
 """VEGA 채널 어댑터.

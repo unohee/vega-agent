@@ -23,7 +23,7 @@ status: active
 
 ## 현재 상태
 
-현재 vega-core는 **CE 게이트 비활성화** 상태 (개인용이라 전체 도구 노출).
+현재 vega-agent는 **CE 게이트 비활성화** 상태 (개인용이라 전체 도구 노출).
 `ce_mode` 인자와 `_CE_ALLOWED_TOOLS` / `_CE_MODE_VAR`는 재활성화용으로 코드에 보존.
 
 예외: `kyte__*` prefix는 원격 채널에서도 허용 (read-only envelope, 채널 봇 핵심 목적).

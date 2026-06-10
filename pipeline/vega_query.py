@@ -20,7 +20,7 @@ def _conn() -> sqlite3.Connection:
 def _ensure_schema() -> None:
     """Create persona/events/entities tables (idempotent). Safe for new user DBs.
 
-    개인 VEGA 는 ingest 스크립트로 이 테이블들을 채우지만, vega-core(빈 새 DB)는
+    개인 VEGA 는 ingest 스크립트로 이 테이블들을 채우지만, vega-agent(빈 새 DB)는
     채널 봇만 띄워도 동작해야 한다. 테이블이 없으면 get_persona 등이 깨지므로
     모듈 로드 시 비어있는 스키마를 보장한다 (persona 가 비면 빈 문자열 반환).
     """

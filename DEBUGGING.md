@@ -50,7 +50,7 @@
 | 파일/항목 | 내용 |
 |-----------|------|
 | `openai_oauth.json` | ChatGPT(OpenAI) OAuth 토큰 (퍼미션 600) |
-| `agent.db` | vega-core 전용 SQLite (메인 VEGA `vega.db`와 분리) |
+| `agent.db` | vega-agent 전용 SQLite (메인 VEGA `vega.db`와 분리) |
 | `contacts.db` | 연락처 |
 | `llm_providers.json` | 프로바이더 설정 + `active` (런타임이 매 호출 hot-reload) |
 | `mcp.json`, `tool_groups.json` | MCP/툴 설정 (사용자 오버라이드) |

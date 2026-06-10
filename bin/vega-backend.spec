@@ -1,5 +1,5 @@
 # Created: 2026-05-31
-# Purpose: PyInstaller spec — VEGA Core 백엔드 단일 바이너리 빌드 정의
+# Purpose: PyInstaller spec — VEGA Agent 백엔드 단일 바이너리 빌드 정의
 # Dependencies: vega_backend_launcher.py, web/server.py, pipeline/*
 # -*- mode: python ; coding: utf-8 -*-
 

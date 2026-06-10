@@ -4,7 +4,7 @@ This file holds the **constitution applied across all LLM providers** — respon
 tool usage, and memory update conventions. Provider-specific files
 (`data/agents/{provider}.md`) are appended after this content (not overwriting).
 
-> This is the **default constitution** shipped with VEGA Core. Operators
+> This is the **default constitution** shipped with VEGA Agent. Operators
 > deploying VEGA to a team should customize this file with their domain
 > knowledge and conventions. End users typically should not edit this file —
 > their personal rules go to `RULES.md` via `rule_save`.

@@ -1,13 +1,13 @@
 ---
-title: "VEGA Core Wiki — 인덱스"
+title: "VEGA Agent Wiki — 인덱스"
 tags: [index]
 updated: 2026-06-02
 status: active
 ---
 
-# VEGA Core Wiki
+# VEGA Agent Wiki
 
-VEGA Core 에이전트 하네스 개발 지식 베이스.
+VEGA Agent 에이전트 하네스 개발 지식 베이스.
 
 ## 핵심 개념
 

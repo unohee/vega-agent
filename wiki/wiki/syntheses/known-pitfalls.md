@@ -41,7 +41,7 @@ status: active
 
 ## 4. vega.db vs agent.db
 
-vega-core는 `agent.db` 사용. 메인 VEGA의 `vega.db`와 같은 user data dir를 공유해도 파일은 분리.
+vega-agent는 `agent.db` 사용. 메인 VEGA의 `vega.db`와 같은 user data dir를 공유해도 파일은 분리.
 `run_log.py`, `memory_inspector.py` 하드코딩 폴백도 `agent.db`.
 
 ---

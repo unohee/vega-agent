@@ -1,11 +1,11 @@
-# VEGA Core — Architecture
+# VEGA Agent — Architecture
 
 > 이 문서는 다른 에이전트가 이 레포에 빠르게 온보딩하기 위한 구조 지도다.
 > 사람 독자용 개요는 README를 참조.
 
 ## 시스템 개요
 
-VEGA Core는 **로컬-퍼스트, 모델-비종속 LLM 에이전트 하네스**다. 핵심 추상화는
+VEGA Agent는 **로컬-퍼스트, 모델-비종속 LLM 에이전트 하네스**다. 핵심 추상화는
 "LLM은 액션 레이어, 지식·규칙·기억은 모델 밖 파일/DB에 영속"이다.
 
 제품 관점에서 VEGA는 **쉬운 데스크톱 AI 앱과 개발자 전용 터미널 에이전트 환경 사이의
@@ -39,8 +39,8 @@ pipeline/
   streaming.py      — GPT tool-use SSE 루프 (plan/research/CE 모드)
   llm_gateway.py    — 멀티 프로바이더 라우터 (OpenRouter=기본, deepseek-v4-flash)
   tools.py          — 도구 레지스트리 + dispatch_tool + CE/plan 모드 게이트
-  tools_*.py        — 도구 구현 (google/code/web). office는 vega-core에서 빈 스텁
-  discord_bridge.py — Discord no-op 스텁 (vega-core는 텔레그램/슬랙 사용)
+  tools_*.py        — 도구 구현 (google/code/web). office는 vega-agent에서 빈 스텁
+  discord_bridge.py — Discord no-op 스텁 (vega-agent는 텔레그램/슬랙 사용)
   compaction.py     — 20턴 컴팩션 + 메모리/규칙 갱신
   session_store.py  — 세션/메시지 영속 (SQLite, conversations/messages)
   vega_query.py     — 페르소나/이벤트/엔티티 쿼리 + 스키마 자동생성
@@ -110,7 +110,7 @@ tests/              — pytest (test_channel_kyte_e2e.py = 채널↔kyte E2E)
 kyte-portal: integration_tools 10종 (Airtable/Gmail/Superthread/Calendar/Drive 조회)
   → kyte_cli/mcp_server.py (stdio MCP 서버, INTEGRATION_TOOL_SPECS → MCP Tool)
   → [user data dir]/mcp.json 의 "kyte" 항목으로 등록
-  → vega-core mcp_client.init_mcp_tools() 가 startup/첫턴에 로드
+  → vega-agent mcp_client.init_mcp_tools() 가 startup/첫턴에 로드
   → TOOL_SCHEMAS에 kyte__find_work, kyte__komca_lines ... 추가
   → dispatch는 call_mcp_tool() 경유, envelope {data, source, note} 반환
 ```

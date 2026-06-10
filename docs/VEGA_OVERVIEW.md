@@ -25,7 +25,7 @@ VEGA는 macOS 데스크탑용 **개인 AI 에이전트 하네스**다. 외부 LL
 ```
 ┌────────────────────────────────────────────────────────────────┐
 │  사용자                                                         │
-│    ↓  Cmd+Shift+V (전역 단축키) 또는 트레이 클릭               │
+│    ↓  트레이 클릭                                              │
 │  VEGA.app (Tauri/Rust 데스크탑 셸)                             │
 │    ↓  http://127.0.0.1:8100                                     │
 │  vega-backend (PyInstaller onefile · FastAPI · Python 3.14)    │
@@ -58,7 +58,7 @@ VEGA는 macOS 데스크탑용 **개인 AI 에이전트 하네스**다. 외부 LL
 │  │  ├─ ensure_launchagent()     │   │  └─ uvicorn → web/server.py (FastAPI)│ │
 │  │  ├─ spawn_backend_directly() │   │                                      │ │
 │  │  ├─ 트레이 아이콘            │   │  web/                                │ │
-│  │  ├─ Cmd+Shift+V 단축키       │   │  ├─ server.py          (메인 라우터) │ │
+│  │  ├─ 트레이 창 토글           │   │  ├─ server.py          (메인 라우터) │ │
 │  │  └─ 설정 창(settings.html)   │   │  └─ routers/                         │ │
 │  │                              │   │     ├─ onboarding.py                 │ │
 │  │  client_config.rs            │   │     ├─ llm.py                        │ │

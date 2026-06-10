@@ -1,5 +1,5 @@
 import asyncio, sys
-sys.path.insert(0, "/Users/unohee/dev/vega-core")
+sys.path.insert(0, "/Users/unohee/dev/vega-agent")
 
 async def main():
     # 1) 텔레그램 봇 모듈 import (구성 단계 검증 — 토큰 없이)

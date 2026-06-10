@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Guidance for AI coding agents working on VEGA Core.
+Guidance for AI coding agents working on VEGA Agent.
 
 ## Product Direction
 

@@ -1,6 +1,6 @@
 # Created: 2026-06-08
 # Purpose: Superthread OAuth (Authorization Code + PKCE) → PAT 자동 발급.
-#   kyte-portal(kyte_cli/web/superthread_oauth.py)의 검증된 구현을 vega-core 로
+#   kyte-portal(kyte_cli/web/superthread_oauth.py)의 검증된 구현을 vega-agent 로
 #   포팅. Slack(pipeline/auth/slack.py) 패턴에 맞춰 단일 사용자 Keychain 저장.
 #
 #   Superthread 는 public client(ocstcli, client_secret 없음)라서 PKCE 만으로
@@ -34,12 +34,12 @@ KEYCHAIN_SERVICE = "vega-superthread-oauth"
 CLIENT_ID = "ocstcli"
 SCOPE = "offline_access"
 WORKSPACE_ID = "tmBp7DYU"
-PAT_NAME = "vega-core"
+PAT_NAME = "vega-agent"
 PAT_EXPIRES_DAYS = 365
 
 # Superthread API 는 Cloudflare 뒤에 있어 User-Agent 없는 요청을 봇으로 보고
 # 차단한다(403, "error code: 1010"). 모든 요청에 UA 를 명시해야 한다.
-_UA = "vega-core/0.1.8 (+https://github.com/Intrect-io/vega-agent)"
+_UA = "vega-agent/0.1.10 (+https://github.com/unohee/vega-agent)"
 
 _AUTHORIZE_URL = "https://app.superthread.com/oauth2/authorize/"
 _TOKEN_URL = "https://api.superthread.com/oauth2/token"

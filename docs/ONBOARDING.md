@@ -283,11 +283,10 @@ sse:   { "url": "http://localhost:3000/sse" }   ← HTTP SSE
 
 ## 6. 설정 이후 — 기본 사용법
 
-### 전역 단축키
+### 단축키
 
 | 단축키 | 동작 |
 |--------|------|
-| `Cmd+Shift+V` | VEGA 창 토글 (숨김/표시) |
 | `Cmd+,` | 설정 창 열기 |
 
 ### 채팅 UI 기본 기능
@@ -420,7 +419,7 @@ docker ps -a | grep vega-sandbox
 # 컨테이너 시작
 docker start vega-sandbox
 # 또는 이미지부터 생성
-cd ~/dev/vega-core/sandbox && docker compose up -d
+cd ~/dev/vega-agent/sandbox && docker compose up -d
 ```
 
 #### 도구가 몇 개밖에 안 보이는 경우
@@ -455,8 +454,8 @@ rm -f ~/Library/Application\ Support/VEGA/openai_oauth.json
 
 ```bash
 # 1. 저장소 클론
-git clone https://github.com/unohee/vega-core.git
-cd vega-core
+git clone https://github.com/unohee/vega-agent.git
+cd vega-agent
 
 # 2. Python 환경 (mlx_env 권장)
 source ~/dev/mlx_env/bin/activate
@@ -476,7 +475,7 @@ python -m uvicorn web.server:app --host 127.0.0.1 --port 8100 --reload
 ### 디렉터리 구조
 
 ```
-vega-core/
+vega-agent/
 ├─ bin/                  # PyInstaller 번들 관련
 │  ├─ vega-backend.spec  # 빌드 스펙
 │  └─ vega_backend_launcher.py  # 진입점

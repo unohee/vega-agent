@@ -1,6 +1,6 @@
 #!/bin/bash
 # VEGA CLI — 데몬 관리 (INT-1412)
-# 설치: ln -sf ~/dev/vega-core/bin/vega ~/.local/bin/vega
+# 설치: ln -sf ~/dev/vega-agent/bin/vega ~/.local/bin/vega
 # 사용: vega restart | status | logs | stop | start
 
 set -euo pipefail
@@ -9,7 +9,7 @@ UID_NUM="$(id -u)"
 DOMAIN="gui/${UID_NUM}"
 # 서버 데몬 후보 — 개발(vega.server) / 배포 앱(vega-backend) 둘 다 시도
 LABELS=("com.unohee.vega.server" "com.unohee.vega-backend")
-REPO="${VEGA_REPO:-$HOME/dev/vega-core}"
+REPO="${VEGA_REPO:-$HOME/dev/vega-agent}"
 # 로그 위치: 개발은 ${REPO}/logs/, 배포 앱은 ~/Library/Logs/VEGA/. 둘 다 후보로 둔다.
 if [[ -f "${REPO}/logs/server.log" ]]; then
   LOG="${REPO}/logs/server.log"

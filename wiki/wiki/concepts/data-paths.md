@@ -24,7 +24,7 @@ status: active
 
 **`data/mcp.json` (레포 내)은 절대 읽지 않는다.** MCP 서버 등록은 반드시 user data dir에.
 
-**`agent.db`는 `vega.db`가 아니다.** vega-core는 `agent.db`를 사용해 메인 VEGA의 `vega.db`와 스키마 충돌을 회피. `run_log.py`·`memory_inspector.py`의 하드코딩 폴백도 `agent.db`로 통일.
+**`agent.db`는 `vega.db`가 아니다.** vega-agent는 `agent.db`를 사용해 메인 VEGA의 `vega.db`와 스키마 충돌을 회피. `run_log.py`·`memory_inspector.py`의 하드코딩 폴백도 `agent.db`로 통일.
 
 ## 새 환경 초기화
 

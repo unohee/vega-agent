@@ -121,7 +121,7 @@ from pipeline.tools_google import (
 )
 from pipeline.tools_web import web_search, web_fetch
 from pipeline.discord_bridge import discord_notify
-# NOTE: vega-core 공개판은 office/browser/things/kis/imessage 개인 도구 모듈을 싣지 않는다.
+# NOTE: vega-agent 공개판은 office/browser/things/kis/imessage 개인 도구 모듈을 싣지 않는다.
 # OFFICE_TOOL_SCHEMAS / OFFICE_TOOL_FUNCTIONS 는 빈 값으로 스텁한다.
 # (개인 VEGA 에서 이식하려면 pipeline/tools_office.py 를 추가하고 이 두 줄을 import 로 교체)
 OFFICE_TOOL_SCHEMAS: list[dict] = []
@@ -993,7 +993,7 @@ TOOL_SCHEMAS.extend(SESSION_TOOL_SCHEMAS)
 TOOL_SCHEMAS.extend(CODE_TOOL_SCHEMAS)
 TOOL_SCHEMAS.extend(OFFICE_TOOL_SCHEMAS)
 
-# vega-core: 네이티브 linear_* 도구는 pipeline.linear_client(개인 VEGA 전용, 여기 없음)에
+# vega-agent: 네이티브 linear_* 도구는 pipeline.linear_client(개인 VEGA 전용, 여기 없음)에
 # 의존한다. 모듈이 없으면 호출 시 무조건 실패하고 self_improve 가 폭주하므로,
 # 모듈을 import 할 수 없으면 linear_* 스키마를 LLM 에 노출하지 않는다.
 # (Linear 가 필요하면 LINEAR_API_KEY 를 설정 → MCP linear__* 서버로 자동 등록되어 동작.)

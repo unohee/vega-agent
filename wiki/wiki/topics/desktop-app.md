@@ -14,7 +14,6 @@ status: active
 ```
 Tauri (Rust 셸)
   ├── 트레이 아이콘
-  ├── 전역 단축키 (⌘⇧V)
   └── 창 토글
        ↓ (첫 실행 시)
 LaunchAgent 등록 (com.unohee.vega-backend)
