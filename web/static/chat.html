@@ -3738,15 +3738,53 @@ function renderMarkdown(bub, text) {
 }
 
 // ── 타이핑 효과 렌더러 ──
-// 네트워크 토큰은 charQueue에 쌓이고, 타이핑 루프가 TYPING_SPEED ms마다 CHUNK_SIZE 글자씩 표시
+// 네트워크 토큰은 charQueue에 쌓이고, 타이핑 루프가 TYPING_SPEED ms마다 표시.
+// 저사양 성능 (INT-1430):
+//   1) 틱마다 marked.parse(전체 텍스트) 재파싱은 메시지 길이에 O(n²) — 확정된
+//      블록(빈 줄 경계)은 stable 노드에 한 번만 파싱하고, 틱마다는 마지막
+//      미완성 블록(tail)만 재파싱한다. 최종 확정(renderMarkdown)은 전체를
+//      1회 파싱하므로 끝 상태는 기존과 동일.
+//   2) CHUNK_SIZE 3/18ms = 초당 ~167자 인위적 상한 — 큐가 밀리면(빠른 모델)
+//      틱당 글자 수를 큐 길이에 비례해 키워서 따라잡는다(catch-up).
 const TYPING_SPEED = 18;   // ms per tick
-const CHUNK_SIZE   = 3;    // 한 tick에 표시할 최대 글자 수
+const CHUNK_SIZE   = 3;    // 한 tick에 표시할 최대 글자 수 (큐 짧을 때)
+const CATCHUP_AT   = 240;  // 큐가 이보다 길면 catch-up 모드
+
+// 닫히지 않은 코드펜스(```) 안에서는 빈 줄이 블록 경계가 아니다
+function fenceBalanced(s) {
+  return ((s.match(/```/g) || []).length % 2) === 0;
+}
 
 function makeTyper(bub) {
   let displayed = '';      // 현재 세그먼트에 표시된 텍스트
   let charQueue  = '';
   let networkDone = false;
   let timer = null;
+  let stableLen = 0;       // displayed[0..stableLen) — 파싱 확정된 안정 블록 길이
+
+  // 세그먼트 안을 stable/tail 두 노드로 나눠 tail만 틱마다 재파싱한다.
+  // 최종 renderMarkdown이 innerHTML 전체를 덮어쓰므로 끝 상태엔 흔적이 없다.
+  function renderProgressive() {
+    const el = getStreamContent(bub);
+    if (!el._stableEl) {
+      el.textContent = '';
+      el._stableEl = document.createElement('div');
+      el._tailEl = document.createElement('div');
+      el.appendChild(el._stableEl);
+      el.appendChild(el._tailEl);
+      stableLen = 0;
+    }
+    const cut = displayed.lastIndexOf('\n\n');
+    if (cut >= 0 && cut + 2 > stableLen && fenceBalanced(displayed.slice(0, cut))) {
+      // 새로 확정된 블록만 파싱해 append — 누적 텍스트 전체 재파싱 금지(O(n) 유지).
+      // 빈 줄 경계의 마크다운 블록은 독립 파싱해도 결과가 같고,
+      // 어긋나는 드문 케이스는 최종 renderMarkdown 전체 파싱이 바로잡는다.
+      el._stableEl.insertAdjacentHTML('beforeend', marked.parse(displayed.slice(stableLen, cut + 2)));
+      stableLen = cut + 2;
+    }
+    el._tailEl.innerHTML = marked.parse(displayed.slice(stableLen));
+    scrollBottom();
+  }
 
   function tick() {
     if (!charQueue) {
@@ -3759,10 +3797,13 @@ function makeTyper(bub) {
       timer = setTimeout(tick, TYPING_SPEED);
       return;
     }
-    const chunk = charQueue.slice(0, CHUNK_SIZE);
-    charQueue   = charQueue.slice(CHUNK_SIZE);
-    displayed  += chunk;
-    renderMarkdown(bub, displayed);
+    // catch-up: 큐가 밀려 있으면 틱당 1/8씩(최소 24자) 소비해 표시 지연을 상한
+    const take = charQueue.length > CATCHUP_AT
+      ? Math.max(24, charQueue.length >> 3)
+      : CHUNK_SIZE;
+    displayed += charQueue.slice(0, take);
+    charQueue  = charQueue.slice(take);
+    renderProgressive();
     timer = setTimeout(tick, TYPING_SPEED);
   }
 
@@ -3783,6 +3824,7 @@ function makeTyper(bub) {
         closeStreamSegment(bub);
       }
       displayed = '';
+      stableLen = 0;
     },
     flush() {
       networkDone = true;

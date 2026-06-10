@@ -16,11 +16,18 @@ server = importlib.import_module("web.server")
 
 @pytest.fixture(autouse=True)
 def _clear_modes():
-    """각 테스트 전후로 모드 dict를 깨끗이 — 세션 누수 방지."""
+    """각 테스트 전후로 모드 dict를 깨끗이 — 세션 누수 방지.
+    _YOLO_GLOBAL은 실 데이터 디렉터리의 플래그 파일에서 로드되므로(라이브 데몬이
+    YOLO를 켜두면 True) 반드시 격리한다. import binding 함정 — server 재수출이
+    아니라 web.state 모듈 변수에 직접 설정해야 yolo_on이 본다."""
+    import web.state as _state
+    saved_global = _state._YOLO_GLOBAL
+    _state._YOLO_GLOBAL = False
     sid = "test-sid"
     for d in (server._YOLO_MODE, server._GOAL_MODE, server._RESEARCH_MODE):
         d.pop(sid, None)
     yield
+    _state._YOLO_GLOBAL = saved_global
     for d in (server._YOLO_MODE, server._GOAL_MODE, server._RESEARCH_MODE):
         d.pop(sid, None)
 

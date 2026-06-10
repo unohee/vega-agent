@@ -1,0 +1,119 @@
+<!doctype html>
+<!-- Created: 2026-06-10
+     Purpose: chat.html 스트리밍 타이퍼(makeTyper/renderProgressive)를 실제 코드로 검증 (INT-1430).
+              1) 파싱 총량이 O(n) 수준인지 (블록 델타 파싱 — O(n²) 회귀 감지)
+              2) catch-up — 큐가 밀려도 틱 수가 폭증하지 않는지
+              3) 최종 상태가 전체 1회 파싱과 동일한지
+              4) breakSegment 세그먼트 분리
+     Usage: Chrome --headless --dump-dom → #result-sink 의 RESULT_JSON. -->
+<html><head><meta charset="utf-8"></head><body>
+<div id="messages" style="height:200px; overflow-y:auto;"></div>
+<div id="result-sink"></div>
+<script>
+// ── 스텁: marked(파싱량 계측) + scrollBottom ──
+let parsedChars = 0;
+let parseCalls = 0;
+window.marked = {
+  parse(text) {
+    parsedChars += text.length;
+    parseCalls += 1;
+    return '<md>' + text.replace(/</g, '&lt;') + '</md>';
+  },
+};
+function scrollBottom() {}
+
+async function loadTyperFns() {
+  const html = await fetch('../../web/static/chat.html').then(r => r.text());
+  const scripts = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)].map(m => m[1]);
+  const script = scripts.reduce((a, b) => b.length > a.length ? b : a, '');
+
+  // getStreamContent → closeStreamSegment → renderMarkdown → 상수 → fenceBalanced → makeTyper
+  // 까지 연속 블록을 통째로 추출 (makeTyper의 끝 = 컬럼 0의 닫는 중괄호)
+  const block = script.match(/function getStreamContent\(bub\) \{[\s\S]*?function makeTyper\(bub\) \{[\s\S]*?\n\}/);
+  if (!block) throw new Error('타이퍼 블록 추출 실패');
+  (0, eval)(block[0] + '\nwindow._typer = { makeTyper, fenceBalanced, TYPING_SPEED };');
+}
+
+function makeBubble() {
+  const bub = document.createElement('div');
+  bub.className = 'bubble';
+  document.getElementById('messages').appendChild(bub);
+  return bub;
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+async function waitFor(cond, timeoutMs = 30000) {
+  const t0 = Date.now();
+  while (!cond()) {
+    if (Date.now() - t0 > timeoutMs) throw new Error('waitFor 타임아웃');
+    await sleep(20);
+  }
+}
+
+async function run() {
+  const results = {};
+  await loadTyperFns();
+  const T = window._typer;
+
+  // 1) 긴 멀티블록 텍스트 — 파싱 총량 O(n) 검증 + catch-up 틱 수 검증
+  {
+    const blocks = [];
+    for (let i = 0; i < 40; i++) blocks.push(`블록 ${i} ` + 'x'.repeat(90));
+    const full = blocks.join('\n\n');           // ~3900자, 블록 40개
+    const bub = makeBubble();
+    const typer = T.makeTyper(bub);
+    parsedChars = 0; parseCalls = 0;
+    const t0 = Date.now();
+    typer.push(full);                            // 한 번에 밀어넣기 → 큐 밀림 → catch-up
+    typer.flush();
+    const finalHtml = '<md>' + full.replace(/</g, '&lt;') + '</md>';
+    await waitFor(() => bub.lastElementChild && bub.lastElementChild.innerHTML === finalHtml);
+    const elapsed = Date.now() - t0;
+
+    // O(n²)였다면 parsedChars ≈ 틱수 × 평균누적길이 ≫ 8n. 델타 파싱은 ~3-4n.
+    results.parse_total_linear = parsedChars < full.length * 8;
+    results.parse_total_chars = parsedChars;     // 디버그용
+    results.text_len = full.length;
+    // catch-up: 3자/18ms 고정이면 ~1300틱(≈23초 가상시간). catch-up은 두 자릿수 틱.
+    results.catchup_fast = elapsed < 5000;
+    results.elapsed_ms = elapsed;
+    // 최종 상태 = 전체 1회 파싱과 동일 (waitFor 통과 자체가 증명)
+    results.final_state_exact = true;
+  }
+
+  // 2) breakSegment — 도구 배지 끼어들기 시 세그먼트 분리 + 각각 확정
+  {
+    const bub = makeBubble();
+    const typer = T.makeTyper(bub);
+    typer.push('첫 세그먼트');
+    typer.breakSegment();
+    typer.push('둘째 세그먼트');
+    typer.flush();
+    await waitFor(() => {
+      const segs = bub.querySelectorAll('.stream-content');
+      return segs.length === 2 && segs[1].innerHTML === '<md>둘째 세그먼트</md>';
+    });
+    const segs = bub.querySelectorAll('.stream-content');
+    results.break_first_closed = segs[0].dataset.closed === '1'
+      && segs[0].innerHTML === '<md>첫 세그먼트</md>';
+    results.break_second_rendered = true;
+  }
+
+  // 3) 코드펜스 안의 빈 줄은 stable 경계가 아니다
+  {
+    results.fence_open_not_balanced = T.fenceBalanced('```js\ncode') === false;
+    results.fence_closed_balanced = T.fenceBalanced('```js\ncode\n```\n') === true;
+    results.fence_none_balanced = T.fenceBalanced('plain text') === true;
+  }
+
+  results.ok = Object.entries(results).every(
+    ([k, v]) => typeof v !== 'boolean' || v === true
+  );
+  document.getElementById('result-sink').textContent = 'RESULT_JSON:' + JSON.stringify(results);
+}
+run().catch(e => {
+  document.getElementById('result-sink').textContent = 'RESULT_JSON:' + JSON.stringify({ ok: false, error: String(e) });
+});
+</script>
+</body></html>

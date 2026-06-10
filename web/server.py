@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import fcntl
 import json
 import os
@@ -90,7 +91,7 @@ from pipeline.streaming import build_system, stream_gpt
 from pipeline.mcp_client import init_mcp_tools
 from pipeline.tools import TOOL_SCHEMAS, patch_account_enum
 from pipeline.contact_store import startup_sync
-from pipeline.compaction import compact_history, _needs_compaction
+from pipeline.compaction import KEEP_RECENT, compact_history, _needs_compaction, splice_compacted
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -100,22 +101,31 @@ CHART_DIR = _charts_dir()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Sync contacts DB
-    try:
-        loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(None, startup_sync)
-        print(f"[Contacts] iCloud sync done: {result['synced']} updated, {result['total']} total")  # cxt-ignore: fake_execution
-    except Exception as e:
-        print(f"[Contacts] sync warning: {e}")
+    # Sync contacts DB — 백그라운드 (기동을 3-10초 블로킹하던 것 제거, INT-1430).
+    # 동기화 완료 전 연락처 도구는 직전 동기화 시점의 DB를 본다 — 허용 가능한 staleness.
+    async def _sync_contacts():
+        try:
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, startup_sync)
+            print(f"[Contacts] iCloud sync done: {result['synced']} updated, {result['total']} total")  # cxt-ignore: fake_execution
+        except Exception as e:
+            print(f"[Contacts] sync warning: {e}")
 
-    # Collect MCP tool list → merge into TOOL_SCHEMAS
-    try:
-        mcp_schemas = await init_mcp_tools()
-        for server_name, schemas in mcp_schemas.items():
-            TOOL_SCHEMAS.extend(schemas)
-            print(f"[MCP] {server_name}: {len(schemas)} tools registered")
-    except Exception as e:
-        print(f"[MCP] init warning: {e}")
+    asyncio.create_task(_sync_contacts())
+
+    # Collect MCP tool list → merge into TOOL_SCHEMAS — 백그라운드 (INT-1430).
+    # 서버별 연결(+실패 재시도)이 기동을 수 초씩 블로킹하던 것 제거. 연결 완료 전
+    # 첫 턴은 MCP 도구 없이 진행될 수 있다 — 앱이 8초 늦게 뜨는 것보다 낫다.
+    async def _init_mcp():
+        try:
+            mcp_schemas = await init_mcp_tools()
+            for server_name, schemas in mcp_schemas.items():
+                TOOL_SCHEMAS.extend(schemas)
+                print(f"[MCP] {server_name}: {len(schemas)} tools registered")
+        except Exception as e:
+            print(f"[MCP] init warning: {e}")
+
+    asyncio.create_task(_init_mcp())
 
     # Update Gmail/Calendar/Drive account enum from user_profile account list
     try:
@@ -163,7 +173,12 @@ async def lifespan(app: FastAPI):
     # 첫 bash_exec/python_exec 호출 시 빌드/기동 지연을 없앤다. Docker 없으면 조용히 skip.
     async def _warmup_sandbox():
         try:
-            from pipeline.sandbox import ensure_sandbox_ready
+            from pipeline.sandbox import ensure_sandbox_ready, low_memory_host
+            if low_memory_host():
+                # 저사양(<16GB)에서는 Docker Desktop VM 상주 점유(수 GB)가 스왑 주범 —
+                # 선기동을 생략하고 sandbox_* 첫 호출 시 온디맨드 기동(INT-1430)
+                print("[Sandbox] 저사양 머신(<16GB) — 선기동 생략, sandbox_* 첫 호출 시 기동")
+                return
             result = await asyncio.get_event_loop().run_in_executor(None, ensure_sandbox_ready)
             if result.get("ready"):
                 print(f"[Sandbox] ready ({result.get('reason')})")
@@ -1216,7 +1231,9 @@ async def context_preview(sid: str):
 
     # 5. Tool schemas (active group only)
     try:
-        active_tools = filter_tools(_tools.TOOL_SCHEMAS)
+        # 미연결 워크스페이스 도구 제외 — 실제 LLM 페이로드(streaming.py 경유)와 동일 기준
+        from pipeline.tool_registry import filter_available_schemas
+        active_tools = filter_tools(filter_available_schemas(_tools.TOOL_SCHEMAS))
         cc_tools = _to_chat_completions_tools(active_tools)
         tools_tokens = count_json_tokens(cc_tools)
         n_active = len(active_tools)
@@ -1435,6 +1452,11 @@ async def _yolo_heartbeat() -> None:
             print(f"[heartbeat] scan error: {e}")
 
 
+# 백그라운드 compaction 상태 — sid 단위 중복 실행 방지 + 완료 알림 이연 전달
+_COMPACTING: set[str] = set()
+_PENDING_COMPACT_NOTICE: dict[str, str] = {}
+
+
 async def _run_gpt_task(sid: str, history: list[dict], images: list[dict]) -> None:
     """
     Background GPT task fully decoupled from the connection.
@@ -1442,6 +1464,10 @@ async def _run_gpt_task(sid: str, history: list[dict], images: list[dict]) -> No
     Task runs to completion even if the client disconnects.
     """
     reg = _TASK_REGISTRY[sid]
+    # 직전 턴 사이에 백그라운드 압축이 끝났으면 알림 배너를 이번 스트림 머리에 싣는다
+    _pending_summary = _PENDING_COMPACT_NOTICE.pop(sid, None)
+    if _pending_summary:
+        _push_event(reg, {"event": "compacted", "data": {"status": "done", "summary": _pending_summary}})
     partial: list[str] = []
     # 인터리빙 events — 텍스트 세그먼트와 도구 호출을 시간순으로 누적.
     # 콜백 호출 순서 = 라이브 SSE 순서이므로 재방문 복원이 라이브와 일치.
@@ -1850,14 +1876,30 @@ async def _run_gpt_task(sid: str, history: list[dict], images: list[dict]) -> No
             if session_meta and session_meta.get("msg_count", 0) == 2:
                 asyncio.create_task(_auto_title_session(sid))
 
-        if _needs_compaction(history):
-            async def on_compact_status(msg: str):
-                _push_event(reg, {"event": "compacted", "data": {"status": msg}})
-            new_history, summary = await compact_history(history, on_compact_status)
-            history.clear()
-            history.extend(new_history)
-            _SESSION_HISTORY[sid] = history
-            _push_event(reg, {"event": "compacted", "data": {"status": "done", "summary": summary}})
+        if _needs_compaction(history) and sid not in _COMPACTING:
+            # 응답 경로에서 await하지 않는다 — 요약 LLM 호출(수십 초)이 done 이벤트를
+            # 막아 "응답이 끝났는데 입력이 잠기는" 체감 끊김을 만들었다 (INT-1430).
+            # 스냅샷을 요약하고, 완료 시 splice_compacted로 접합 — 압축 중 도착한
+            # 새 메시지는 보존된다. 알림 배너는 다음 턴 시작 시 전송.
+            _COMPACTING.add(sid)
+            _compact_snapshot = list(history)
+            _n_summarized = max(0, len(_compact_snapshot) - KEEP_RECENT)
+
+            async def _bg_compact():
+                try:
+                    new_hist, summary = await compact_history(_compact_snapshot)
+                    live = _SESSION_HISTORY.get(sid)
+                    if live is not None:
+                        splice_compacted(live, new_hist[0], _n_summarized)
+                    _PENDING_COMPACT_NOTICE[sid] = summary
+                except Exception:
+                    logging.getLogger(__name__).warning(
+                        "백그라운드 compaction 실패 (sid=%s) — 다음 턴에 재시도", sid, exc_info=True
+                    )
+                finally:
+                    _COMPACTING.discard(sid)
+
+            asyncio.create_task(_bg_compact())
 
         _push_event(reg, {"event": "done", "data": {"session_id": sid, "usage": usage_stats}})
 

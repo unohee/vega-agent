@@ -116,6 +116,20 @@ def ensure_running() -> None:
     raise RuntimeError("vega-sandbox 컨테이너 기동 실패")
 
 
+_LOW_MEM_BYTES = 16 * 1024 ** 3
+
+
+def low_memory_host() -> bool:
+    """16GB 미만 머신 여부 (INT-1430). Docker Desktop VM이 수 GB를 상주 점유하므로
+    저사양에서는 샌드박스 선기동(warmup)을 생략한다 — 컨테이너는 sandbox_* 도구
+    첫 호출 시(_exec → ensure_running) 온디맨드로만 띄운다. 판정 실패 시 False(기존 동작)."""
+    try:
+        import psutil
+        return psutil.virtual_memory().total < _LOW_MEM_BYTES
+    except Exception:
+        return False
+
+
 def ensure_sandbox_ready(timeout: float = 0) -> dict:
     """기동/설치 시 호출하는 자동 확보 진입점. Docker 가 있으면 컨테이너를 확보하고,
     없으면 조용히 skip한다(에러로 죽지 않음). 코드 실행 도구가 항상 준비되도록 한다.

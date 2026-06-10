@@ -19,7 +19,7 @@ function extract(name) {
   if (!m) { console.error('함수 추출 실패: ' + name); process.exit(2); }
   return m[0];
 }
-const SRC = ['esc', 'getStreamContent', 'closeStreamSegment', 'getOrCreateBadgeContainer', 'renderMarkdown', 'makeTyper', 'renderEventsInto']
+const SRC = ['esc', 'getStreamContent', 'closeStreamSegment', 'getOrCreateBadgeContainer', 'renderMarkdown', 'fenceBalanced', 'makeTyper', 'renderEventsInto']
   .map(extract).join('\n');
 
 // ── jsdom-lite: innerHTML 설정 시 textContent 반영 (브라우저 동작 모방) ──
@@ -34,6 +34,8 @@ class El {
   insertBefore(c, ref) { const i = ref ? this.children.indexOf(ref) : 0; this.children.splice(i < 0 ? this.children.length : i, 0, c); c.parent = this; return c; }
   remove() { if (this.parent) { const i = this.parent.children.indexOf(this); if (i >= 0) this.parent.children.splice(i, 1); } }
   querySelector() { return null; }
+  // renderProgressive(INT-1430)가 stable 블록을 append할 때 사용 — 'beforeend'만 지원
+  insertAdjacentHTML(pos, html) { const d = new El('div'); d.innerHTML = html; this.appendChild(d); }
   get lastElementChild() { return this.children[this.children.length - 1] || null; }
   get firstChild() { return this.children[0] || null; }
   get textContent() { return this._text || this.children.map(c => c.textContent).join(''); }
@@ -43,7 +45,7 @@ class El {
 const document = { createElement: (t) => new El(t) };
 function scrollBottom() {}
 const marked = { parse: (t) => '<p>' + t + '</p>' };
-const TYPING_SPEED = 0, CHUNK_SIZE = 9999;
+const TYPING_SPEED = 0, CHUNK_SIZE = 9999, CATCHUP_AT = 99999;
 
 // renderEventsInto가 호출하는 도구 배지 함수들의 stub — 버블 끝에 컨테이너만 만들어
 // 순서 검증이 가능하게 (실제 배지 내부 DOM은 라이브 인터리빙 테스트가 이미 커버).

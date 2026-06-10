@@ -22,8 +22,12 @@ from pipeline.tools import TOOL_SCHEMAS, dispatch_tool
 
 logger = logging.getLogger(__name__)
 
-# Compaction trigger: runs when history message count exceeds this value
-COMPACT_THRESHOLD = 20
+# Compaction trigger — 토큰 기준이 주 트리거, 메시지 수는 백스톱 (INT-1430).
+# 기존 "메시지 20개" 고정 트리거는 짧은 메시지 위주 대화에서도 응답 사이에
+# 수십 초짜리 요약 LLM 호출을 유발했다. 실제 비용(요청 크기·지연)은 토큰이
+# 결정하므로 토큰 기준으로 바꾸고, 메시지 수는 안전망으로만 둔다.
+COMPACT_TOKEN_THRESHOLD = 8000
+COMPACT_THRESHOLD = 60
 # Number of recent messages to preserve after compaction (keeps conversation context post-summary)
 KEEP_RECENT = 6
 
@@ -35,7 +39,23 @@ def _estimate_tokens(history: list[dict]) -> int:
 
 
 def _needs_compaction(history: list[dict]) -> bool:
-    return len(history) >= COMPACT_THRESHOLD
+    if not history:
+        return False
+    if len(history) >= COMPACT_THRESHOLD:
+        return True
+    return _estimate_tokens(history) >= COMPACT_TOKEN_THRESHOLD
+
+
+def splice_compacted(live: list[dict], summary_msg: dict, n_summarized: int) -> None:
+    """백그라운드 압축 완료 시 live 히스토리에 요약을 in-place 접합.
+
+    compact_history는 스냅샷의 앞 n_summarized개만 요약하므로, 압축이 도는 동안
+    live에 새로 추가된 메시지(live[n_summarized:])는 그대로 보존된다.
+    clear+extend로 list 객체 identity를 유지해야 _SESSION_HISTORY와
+    진행 중인 핸들러가 들고 있는 참조가 깨지지 않는다."""
+    tail = live[n_summarized:]
+    live.clear()
+    live.extend([summary_msg, *tail])
 
 
 

@@ -12,10 +12,12 @@ import pytest
 
 from pipeline.compaction import (
     COMPACT_THRESHOLD,
+    COMPACT_TOKEN_THRESHOLD,
     KEEP_RECENT,
     _estimate_tokens,
     _needs_compaction,
     compact_history,
+    splice_compacted,
 )
 
 
@@ -128,3 +130,54 @@ class TestConstants:
 
     def test_keep_recent_less_than_threshold(self):
         assert KEEP_RECENT < COMPACT_THRESHOLD
+
+
+class TestTokenBasedTrigger:
+    """INT-1430 — 트리거가 토큰 기준(주) + 메시지 수(백스톱)로 동작하는지."""
+
+    def test_short_messages_below_token_threshold_no_compaction(self):
+        # 짧은 메시지 25개 — 기존 20개 고정 트리거였으면 True였을 케이스.
+        # 토큰이 적으므로 압축하지 않아야 한다 (불필요한 요약 LLM 호출 방지).
+        history = [{"role": "user", "content": "짧은 메시지"}] * 25
+        assert _needs_compaction(history) is False
+
+    def test_token_heavy_history_triggers(self):
+        # 메시지 수는 적어도(4개 < 백스톱) 토큰 합이 크면 압축해야 한다
+        history = [{"role": "user", "content": "한글내용입니다 " * 1000}] * 4
+        assert _estimate_tokens(history) >= COMPACT_TOKEN_THRESHOLD
+        assert _needs_compaction(history) is True
+
+    def test_message_count_backstop(self):
+        history = [{"role": "user", "content": "x"}] * COMPACT_THRESHOLD
+        assert _needs_compaction(history) is True
+
+
+class TestSpliceCompacted:
+    """백그라운드 압축 완료 시 in-place 접합 — 압축 중 도착 메시지 보존 (INT-1430)."""
+
+    def _live(self, n: int) -> list[dict]:
+        return [{"role": "user", "content": f"m{i}"} for i in range(n)]
+
+    def test_basic_splice(self):
+        live = self._live(10)
+        summary = {"role": "assistant", "content": "[요약]"}
+        splice_compacted(live, summary, 4)
+        assert live[0] is summary
+        assert [m["content"] for m in live[1:]] == [f"m{i}" for i in range(4, 10)]
+
+    def test_messages_added_during_compaction_preserved(self):
+        # 스냅샷 후 압축이 도는 동안 live에 새 메시지가 추가된 시나리오
+        live = self._live(10)
+        n_summarized = 4  # 스냅샷 시점 기준
+        live.append({"role": "user", "content": "압축 중 도착한 메시지"})
+        splice_compacted(live, {"role": "assistant", "content": "[요약]"}, n_summarized)
+        assert live[-1]["content"] == "압축 중 도착한 메시지"
+        assert len(live) == 1 + (11 - n_summarized)
+
+    def test_list_identity_preserved(self):
+        # _SESSION_HISTORY와 핸들러가 같은 객체를 들고 있으므로 identity 유지 필수
+        live = self._live(8)
+        ref = live
+        splice_compacted(live, {"role": "assistant", "content": "s"}, 2)
+        assert ref is live
+        assert ref[0]["content"] == "s"
