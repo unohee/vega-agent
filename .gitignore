@@ -85,3 +85,4 @@ pytest_output.log
 # 로컬 전용 Claude 설정
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
+.wrangler/

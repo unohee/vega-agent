@@ -1,19 +1,20 @@
 #!/usr/bin/env python3
-# Created: 2026-06-08
+# Created: 2026-06-08 / Updated: 2026-06-10 (R2 서빙으로 전환, INT-1432)
 # Purpose: Tauri updater 매니페스트(latest.json) 생성.
 #   build_dmg.sh 가 build_output/updater/ 에 만든 .app.tar.gz(.sig) 들을 읽어
 #   darwin-aarch64 / darwin-x86_64 platform 항목을 채운다. CI(release-dmg.yml)가
-#   이 파일을 GitHub Release 에 함께 올리면, updater endpoint 를 그 Release 의
-#   latest.json URL 로 두는 것만으로 자동 업데이트가 동작한다.
+#   이 파일 + .app.tar.gz(.sig) 들을 R2(download.intrect.io)에 올리고, updater
+#   endpoint 를 그 R2 의 latest.json URL 로 두면 자동 업데이트가 동작한다.
 # Dependencies: stdlib only
 #
 # 사용: python3 scripts/make_latest_json.py <version>
-#   예) python3 scripts/make_latest_json.py 0.1.8
+#   예) python3 scripts/make_latest_json.py 0.1.10
 #
 # 출력: build_output/latest.json
 #
-# url 필드는 GitHub Release 다운로드 URL 패턴으로 채운다(태그 v<version>).
-# 리포는 GITHUB_REPOSITORY(CI) 또는 기본값(Intrect-io/vega-agent)을 사용.
+# url 필드는 R2 공개 다운로드 URL 로 채운다(download.intrect.io).
+#   리포가 private 이라 GitHub Release URL 은 updater 익명 GET 으로 접근 불가 —
+#   반드시 공개 프록시(R2)를 거쳐야 한다. base 는 VEGA_UPDATE_BASE_URL 로 오버라이드.
 
 from __future__ import annotations
 
@@ -26,6 +27,10 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 BUILD_DIR = REPO_ROOT / "build_output"
 UPDATER_DIR = BUILD_DIR / "updater"
 
+# R2 공개 베이스 — tauri.conf.json updater.endpoints 와 같은 호스트/경로를 가리켜야 한다.
+# 버전별 디렉터리(vega/updates/v<ver>/) 아래에 .app.tar.gz 를 둔다.
+DEFAULT_UPDATE_BASE = "https://download.intrect.io/vega/updates"
+
 # (Tauri platform key, 아티팩트 arch suffix)
 PLATFORMS = [
     ("darwin-aarch64", "aarch64"),
@@ -33,8 +38,8 @@ PLATFORMS = [
 ]
 
 
-def _release_url(repo: str, version: str, fname: str) -> str:
-    return f"https://github.com/{repo}/releases/download/v{version}/{fname}"
+def _r2_url(base: str, version: str, fname: str) -> str:
+    return f"{base.rstrip('/')}/v{version}/{fname}"
 
 
 def main() -> int:
@@ -42,7 +47,7 @@ def main() -> int:
         print("usage: make_latest_json.py <version>", file=sys.stderr)
         return 2
     version = sys.argv[1].lstrip("v").strip()
-    repo = os.environ.get("GITHUB_REPOSITORY", "Intrect-io/vega-agent")
+    base = os.environ.get("VEGA_UPDATE_BASE_URL", DEFAULT_UPDATE_BASE)
 
     platforms: dict[str, dict] = {}
     for plat_key, arch in PLATFORMS:
@@ -53,7 +58,7 @@ def main() -> int:
             continue
         platforms[plat_key] = {
             "signature": sig.read_text(encoding="utf-8").strip(),
-            "url": _release_url(repo, version, tgz.name),
+            "url": _r2_url(base, version, tgz.name),
         }
 
     if not platforms:

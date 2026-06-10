@@ -25,7 +25,9 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
-VERSION="0.1.10"
+# 버전의 단일 출처 = tauri.conf.json (cargo tauri build 가 이 값으로 산출물 이름을 짓는다).
+# 하드코딩하면 산출물 경로 안내가 실제와 어긋난다 (INT-1432).
+VERSION="$(/usr/bin/python3 -c "import json;print(json.load(open('$REPO_ROOT/desktop/tauri.conf.json'))['version'])")"
 APP_NAME="VEGA"
 SIGN_APP="Developer ID Application: Heewon Oh (635QK74RYK)"
 BUILD_DIR="$REPO_ROOT/build_output"
@@ -39,6 +41,25 @@ fi
 unset APPLE_SIGNING_IDENTITY || true
 
 BUILD_ARCH="${VEGA_ARCH:-all}"  # all | aarch64 | x86_64
+
+# ── 배포 기본 키 번들 생성 ────────────────────────────────────────────────────
+# repo .env(gitignore)에서 검색 게이트웨이 키(VEGA_API_KEY)만 추출해
+# bin/bundle_env/.env 로 스테이징 → spec 이 번들 루트(_MEIPASS/.env)에 싣는다.
+# keychain.get 의 .env 폴백 체인이 frozen 앱에서 이 파일을 찾는다 (keychain.py 참조).
+# 키 없이 빌드하면 배포 사용자 web_search 가 401 — 조용히 빠뜨리지 않고 실패시킨다.
+echo "[pre] 배포 기본 키 번들 생성..."
+# 표준 이름 VEGA_SEARXNG_KEY 우선, 구명칭 VEGA_API_KEY 폴백 (tools_web 해석 순서와 동일)
+VEGA_BUNDLE_KEY="$(grep -E '^VEGA_SEARXNG_KEY=' "$REPO_ROOT/.env" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '"' | tr -d "'")"
+[ -n "$VEGA_BUNDLE_KEY" ] || VEGA_BUNDLE_KEY="$(grep -E '^VEGA_API_KEY=' "$REPO_ROOT/.env" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '"' | tr -d "'")"
+if [ -z "$VEGA_BUNDLE_KEY" ]; then
+    echo "  ERROR: $REPO_ROOT/.env 에 VEGA_SEARXNG_KEY(또는 VEGA_API_KEY) 없음 — 배포본 web_search 가 깨진다." >&2
+    echo "         키를 .env 에 추가하거나, 의도적으로 뺄 거면 VEGA_SKIP_BUNDLE_KEY=1 로 재실행." >&2
+    [ "${VEGA_SKIP_BUNDLE_KEY:-0}" = "1" ] || exit 1
+else
+    mkdir -p "$REPO_ROOT/bin/bundle_env"
+    printf '# 배포 기본값 — 빌드 시 자동 생성 (scripts/build_dmg.sh). 커밋 금지.\nVEGA_SEARXNG_KEY=%s\n' "$VEGA_BUNDLE_KEY" > "$REPO_ROOT/bin/bundle_env/.env"
+    echo "  ✓ bin/bundle_env/.env (VEGA_SEARXNG_KEY)"
+fi
 
 # ── 아키텍처별 빌드 함수 ──────────────────────────────────────────────────────
 build_arch() {
