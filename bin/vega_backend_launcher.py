@@ -75,11 +75,56 @@ logging.getLogger("vega.boot").info(
 
 PORT = int(os.environ.get("VEGA_PORT", "8100"))
 
+
+def _wait_port_free(port: int) -> None:
+    """다른 백엔드가 이미 포트를 서빙 중이면 뺏지 않고 빌 때까지 양보 대기한다.
+
+    와일드카드(0.0.0.0) 바인드와 특정 주소(127.0.0.1) 바인드는 EADDRINUSE 없이
+    공존할 수 있다. 그 상태에선 localhost 연결이 특정 바인드 쪽으로 쏠려, 서로 다른
+    DB를 쓰는 두 백엔드가 트래픽을 나눠 받는 split-brain이 된다 — 사용자는
+    "세션 컨텍스트가 통째로 사라짐"으로 체감한다 (INT-1439 실사고: 개인 VEGA
+    데브 데몬(*:8100, vega.db) 위에 배포 백엔드(127.0.0.1:8100, agent.db)가
+    조용히 겹쳐 기동). launchd KeepAlive=true 라 exit 하면 respawn 루프가 되므로
+    프로세스 안에서 대기한다.
+    """
+    import socket
+    import time
+    import urllib.request
+
+    boot_log = logging.getLogger("vega.boot")
+    notified = False
+    while True:
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=1):
+                pass
+        except OSError:
+            # 연결 불가 = 포트 비어있음(또는 일시 오류) — 바인드 시도로 진행.
+            if notified:
+                boot_log.info("포트 %d 해제 감지 — 기동 재개", port)
+            return
+        if not notified:
+            notified = True
+            holder = ""
+            try:
+                with urllib.request.urlopen(
+                    f"http://127.0.0.1:{port}/api/health", timeout=3
+                ) as r:
+                    holder = r.read(2048).decode("utf-8", "replace")
+            except Exception:
+                holder = "(health 응답 없음 — VEGA 계열 아닐 수 있음)"
+            boot_log.warning(
+                "포트 %d 를 다른 프로세스가 이미 서빙 중 — split-brain 방지를 위해 "
+                "해제될 때까지 대기한다. holder health=%s", port, holder[:300]
+            )
+        time.sleep(5)
+
+
 import uvicorn  # noqa: E402
 
 # vega-agent FastAPI 앱 (web/server.py 의 `app`)
 from web.server import app  # noqa: E402
 
 if __name__ == "__main__":
+    _wait_port_free(PORT)
     # log_config=None : uvicorn 의 기본 dictConfig 가 우리 루트 핸들러를 덮어쓰지 않게 한다.
     uvicorn.run(app, host="127.0.0.1", port=PORT, log_level="info", log_config=None)

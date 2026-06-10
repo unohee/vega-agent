@@ -28,14 +28,22 @@ use tauri::{
 
 // ── 셸 로깅 ───────────────────────────────────────────────────────────────────
 // 배포본 .app 은 콘솔이 없어 eprintln! 출력이 사라진다. Rust 셸 측 진단을
-// Python 백엔드와 같은 ~/Library/Logs/VEGA/ 디렉터리의 파일에 남긴다.
-// (번들 내부가 아니라 macOS 표준 사용자 로그 위치 — 코드서명/자동업데이트 안전)
+// Python 백엔드와 같은 로그 디렉터리의 파일에 남긴다.
+// (번들 내부가 아니라 OS 표준 사용자 로그 위치 — 코드서명/자동업데이트 안전)
 
-/// 로그 디렉터리(~/Library/Logs/VEGA). 없으면 생성한다.
+/// 로그 디렉터리. 없으면 생성한다.
+/// macOS: ~/Library/Logs/VEGA (Python 백엔드 data_paths.log_dir 와 동일)
+/// Windows: %LOCALAPPDATA%\VEGA\logs / Linux: ~/.local/share/VEGA/logs
 fn log_dir() -> std::path::PathBuf {
+    #[cfg(target_os = "macos")]
     let dir = dirs_next::home_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("/tmp"))
         .join("Library/Logs/VEGA");
+    #[cfg(not(target_os = "macos"))]
+    let dir = dirs_next::data_local_dir()
+        .unwrap_or_else(std::env::temp_dir)
+        .join("VEGA")
+        .join("logs");
     let _ = std::fs::create_dir_all(&dir);
     dir
 }
@@ -183,8 +191,10 @@ fn wait_and_navigate(win: tauri::WebviewWindow, url: String) {
         // 120초 후에도 안 뜨면 오류 페이지
         // cxt-ignore-next-line: security
         let _ = win.eval(&format!(
-            "document.body.innerHTML = '<div style=\"font-family:sans-serif;padding:40px;color:#e6edf3;background:#0d1117\"><h2>백엔드 연결 실패</h2><p>VEGA 서버({})에 접속할 수 없습니다.</p><p style=\"color:#9aa4b2\">~/Library/Logs/VEGA/ 의 로그를 확인하세요.</p></div>'",
-            health
+            "document.body.innerHTML = '<div style=\"font-family:sans-serif;padding:40px;color:#e6edf3;background:#0d1117\"><h2>백엔드 연결 실패</h2><p>VEGA 서버({})에 접속할 수 없습니다.</p><p style=\"color:#9aa4b2\">{} 의 로그를 확인하세요.</p></div>'",
+            health,
+            // Windows 역슬래시는 JS 문자열 리터럴에서 이스케이프로 먹히므로 슬래시로 표기
+            log_dir().display().to_string().replace('\\', "/")
         ));
     });
 }
@@ -277,38 +287,57 @@ fn open_settings_window_at(app: &tauri::AppHandle, section: &str) {
     let base = if cfg!(feature = "client") { "client-settings.html" } else { "settings.html" };
     let settings_html = if section.is_empty() { base.to_string() } else { format!("{base}#{section}") };
     let title = strings().settings_title;
-    let _ = WebviewWindowBuilder::new(app, "settings", WebviewUrl::App(settings_html.into()))
+    let builder = WebviewWindowBuilder::new(app, "settings", WebviewUrl::App(settings_html.into()))
         .title(title)
         .inner_size(880.0, 640.0)
         .min_inner_size(640.0, 480.0)
         .resizable(true)
-        .center()
+        .center();
+    // 오버레이 타이틀바는 macOS 전용 API — Windows/Linux 는 기본 타이틀바.
+    #[cfg(target_os = "macos")]
+    let builder = builder
         .title_bar_style(tauri::TitleBarStyle::Overlay)
-        .hidden_title(true)
-        .build();
+        .hidden_title(true);
+    let _ = builder.build();
 }
 
 
-// ── LaunchAgent 관리 (daemon 전용) ────────────────────────────────────────────
+// ── LaunchAgent 관리 (daemon + macOS 전용) ────────────────────────────────────
+// launchd 는 macOS 에만 있다. Windows/Linux daemon 빌드는 LaunchAgent 등록 없이
+// spawn_backend_directly 로 백엔드를 셸이 직접 띄운다(트레이 quit 후에도 child 는 생존).
 
-#[cfg(all(feature = "daemon", not(mobile)))]
+#[cfg(all(feature = "daemon", not(mobile), target_os = "macos"))]
 fn launchagent_plist_path() -> std::path::PathBuf {
     dirs_next::home_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
         .join("Library/LaunchAgents/com.unohee.vega-backend.plist")
 }
 
-#[cfg(all(feature = "daemon", not(mobile)))]
+#[cfg(all(feature = "daemon", not(mobile), target_os = "macos"))]
 fn resources_dir(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
     app.path().resource_dir().ok()
 }
 
+/// 번들된 sidecar 백엔드 실행 파일 경로.
+/// macOS: VEGA.app/Contents/MacOS/vega-backend (externalBin 이 메인 바이너리 옆에 실림)
+/// Windows/Linux: 메인 실행 파일과 같은 디렉터리의 vega-backend(.exe)
 #[cfg(all(feature = "daemon", not(mobile)))]
 fn bundled_backend_path(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
-    app.path()
-        .resource_dir()
-        .ok()
-        .and_then(|p| p.parent().map(|contents| contents.join("MacOS/vega-backend")))
+    #[cfg(target_os = "macos")]
+    {
+        app.path()
+            .resource_dir()
+            .ok()
+            .and_then(|p| p.parent().map(|contents| contents.join("MacOS/vega-backend")))
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app;
+        let name = if cfg!(windows) { "vega-backend.exe" } else { "vega-backend" };
+        std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.parent().map(|dir| dir.join(name)))
+    }
 }
 
 #[cfg(all(feature = "daemon", not(mobile)))]
@@ -341,12 +370,19 @@ fn spawn_backend_directly(app: &tauri::AppHandle) {
         .map(std::process::Stdio::from)
         .unwrap_or_else(std::process::Stdio::null);
 
-    match std::process::Command::new(&backend)
-        .stdout(stdout)
-        .stderr(stderr)
-        .spawn()
+    let mut cmd = std::process::Command::new(&backend);
+    cmd.stdout(stdout).stderr(stderr);
+
+    // Windows: console=True 인 PyInstaller 바이너리를 그대로 spawn 하면 콘솔 창이
+    // 뜬다. CREATE_NO_WINDOW(0x08000000) 로 창 없이 백그라운드 실행.
+    #[cfg(windows)]
     {
-        Ok(child) => vlog!("[VEGA] 백엔드 직접 실행 fallback: pid={}", child.id()),
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000);
+    }
+
+    match cmd.spawn() {
+        Ok(child) => vlog!("[VEGA] 백엔드 직접 실행: pid={}", child.id()),
         Err(e) => vlog!("[VEGA] 백엔드 직접 실행 실패: {e}"),
     }
 }
@@ -354,7 +390,7 @@ fn spawn_backend_directly(app: &tauri::AppHandle) {
 /// Resources의 LaunchAgent plist를 매 실행마다 갱신하고 재등록한다.
 /// 기존 백엔드가 떠 있으면 새 앱 설치 후에도 오래된 프로세스가 8100을 계속 잡을 수 있으므로
 /// bootout/bootstrap/kickstart로 현재 /Applications/VEGA.app의 백엔드를 강제로 반영한다.
-#[cfg(all(feature = "daemon", not(mobile)))]
+#[cfg(all(feature = "daemon", not(mobile), target_os = "macos"))]
 fn ensure_launchagent(app: &tauri::AppHandle) -> bool {
     // launchd 는 StandardOutPath/StandardErrorPath 의 상위 디렉터리를 자동 생성하지 않는다.
     // plist 등록 전에 로그 디렉터리를 만들어두지 않으면 백엔드 출력이 어디에도 안 남는다.
@@ -437,8 +473,8 @@ fn ensure_launchagent(app: &tauri::AppHandle) -> bool {
 
 /// 트레이 "백엔드 재시작" — 백엔드 데몬을 kickstart -k 로 재기동 (INT-1412).
 /// 개발(vega.server)·배포(vega-backend) label 둘 다 시도해 환경 무관 동작.
-#[cfg(all(feature = "daemon", not(mobile)))]
-fn restart_backend() {
+#[cfg(all(feature = "daemon", not(mobile), target_os = "macos"))]
+fn restart_backend(_app: &tauri::AppHandle) {
     let uid = unsafe { libc::getuid() };
     let domain = format!("gui/{uid}");
     for label in ["com.unohee.vega.server", "com.unohee.vega-backend"] {
@@ -458,6 +494,28 @@ fn restart_backend() {
             vlog!("[VEGA] 백엔드 재시작: {target}");
         }
     }
+}
+
+/// 트레이 "백엔드 재시작" — 비-macOS: launchd 가 없으므로 프로세스를 직접 내리고 재spawn.
+#[cfg(all(feature = "daemon", not(mobile), not(target_os = "macos")))]
+fn restart_backend(app: &tauri::AppHandle) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let _ = std::process::Command::new("taskkill")
+            .args(["/IM", "vega-backend.exe", "/F"])
+            .creation_flags(0x0800_0000) // CREATE_NO_WINDOW
+            .status();
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = std::process::Command::new("pkill")
+            .args(["-f", "vega-backend"])
+            .status();
+    }
+    std::thread::sleep(std::time::Duration::from_millis(700));
+    spawn_backend_directly(app);
+    vlog!("[VEGA] 백엔드 재시작 (direct respawn)");
 }
 
 /// 외부 URL을 OS 기본 브라우저로 연다.
@@ -565,7 +623,11 @@ pub fn run() {
                 .inner_size(980.0, 760.0)
                 .min_inner_size(420.0, 480.0)
                 .resizable(true)
-                .center()
+                .center();
+
+            // 오버레이 타이틀바는 macOS 전용 API — Windows/Linux 는 기본 타이틀바.
+            #[cfg(target_os = "macos")]
+            let win_builder = win_builder
                 .title_bar_style(tauri::TitleBarStyle::Overlay)
                 .hidden_title(true);
 
@@ -577,11 +639,15 @@ pub fn run() {
                 spawn_update_check(app.handle().clone());
             }
 
-            // LaunchAgent 등록 (daemon 모드 첫 실행 시)
-            #[cfg(all(feature = "daemon", not(mobile)))]
+            // 백엔드 기동 (daemon 모드)
+            // macOS: LaunchAgent 등록(실패 시 직접 실행 fallback)
+            // Windows/Linux: launchd 가 없으므로 항상 직접 spawn (이미 떠 있으면 skip)
+            #[cfg(all(feature = "daemon", not(mobile), target_os = "macos"))]
             if !ensure_launchagent(&app.handle()) {
                 spawn_backend_directly(&app.handle());
             }
+            #[cfg(all(feature = "daemon", not(mobile), not(target_os = "macos")))]
+            spawn_backend_directly(&app.handle());
 
             // 백엔드 준비 후 실제 URL로 전환 (흰 화면 방지)
             wait_and_navigate(win, backend_url());
@@ -621,7 +687,7 @@ pub fn run() {
                     "settings" => open_settings_window(app),
                     "restart-backend" => {
                         #[cfg(all(feature = "daemon", not(mobile)))]
-                        restart_backend();
+                        restart_backend(app);
                     }
                     "quit" => {
                         // GUI 셸만 종료 — LaunchAgent 데몬은 계속 실행

@@ -1,0 +1,163 @@
+name: Build Windows
+
+# main 푸시마다 Windows NSIS 인스톨러(x64)를 빌드해 GitHub Release 에 첨부한다.
+# macOS DMG(release-dmg.yml, self-hosted)와 달리 GitHub-hosted windows-latest 러너 사용 —
+# PyInstaller 는 크로스 컴파일이 불가해 Windows 백엔드는 Windows 에서만 빌드된다 (INT-1438).
+# Windows 코드사이닝 인증서는 아직 없음 → 인스톨러는 unsigned (SmartScreen 경고 감수).
+# updater 서명(.sig)은 macOS 와 같은 TAURI_SIGNING_PRIVATE_KEY 로 생성된다.
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'bin/vega'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-windows
+  cancel-in-progress: false
+
+jobs:
+  build-windows:
+    name: Build NSIS installer (x64)
+    runs-on: windows-latest
+    timeout-minutes: 90
+
+    env:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: 버전 읽기 (tauri.conf.json)
+        id: version
+        run: |
+          $v = (Get-Content desktop/tauri.conf.json -Raw | ConvertFrom-Json).version
+          if (-not $v) { Write-Error "tauri.conf.json 에서 버전을 읽지 못함"; exit 1 }
+          "version=$v" >> $env:GITHUB_OUTPUT
+          "VERSION=$v" >> $env:GITHUB_ENV
+          Write-Host "빌드 버전: $v"
+
+      - name: Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: OAuth client 시크릿 주입 (gitignore된 파일 복원)
+        env:
+          SLACK_OAUTH_CLIENT_JSON: ${{ secrets.SLACK_OAUTH_CLIENT_JSON }}
+          GOOGLE_OAUTH_CLIENT_JSON: ${{ secrets.GOOGLE_OAUTH_CLIENT_JSON }}
+        run: |
+          # slack 은 vega-backend.spec datas 에 무조건 포함 — 없으면 PyInstaller 가 죽는다.
+          if (-not $env:SLACK_OAUTH_CLIENT_JSON) { Write-Error "SLACK_OAUTH_CLIENT_JSON secret 미설정"; exit 1 }
+          New-Item -ItemType Directory -Force -Path data | Out-Null
+          [IO.File]::WriteAllText("$PWD/data/slack_oauth_client.json", $env:SLACK_OAUTH_CLIENT_JSON)
+          python -c "import json;json.load(open('data/slack_oauth_client.json'));print('slack_oauth_client.json OK')"
+          if ($env:GOOGLE_OAUTH_CLIENT_JSON) {
+            [IO.File]::WriteAllText("$PWD/data/google_oauth_client.json", $env:GOOGLE_OAUTH_CLIENT_JSON)
+            python -c "import json;json.load(open('data/google_oauth_client.json'));print('google_oauth_client.json OK')"
+          } else {
+            Write-Warning "GOOGLE_OAUTH_CLIENT_JSON 미설정 — Google OAuth 미번들"
+          }
+
+      - name: 배포 기본 키 번들 (bin/bundle_env/.env)
+        env:
+          VEGA_SEARXNG_KEY: ${{ secrets.VEGA_SEARXNG_KEY }}
+        run: |
+          if ($env:VEGA_SEARXNG_KEY) {
+            New-Item -ItemType Directory -Force -Path bin/bundle_env | Out-Null
+            [IO.File]::WriteAllText("$PWD/bin/bundle_env/.env", "VEGA_SEARXNG_KEY=$($env:VEGA_SEARXNG_KEY)`n")
+            Write-Host "bundle_env/.env OK"
+          } else {
+            Write-Warning "VEGA_SEARXNG_KEY 미설정 — 배포본 web_search 키 미번들"
+          }
+
+      - name: Python 의존성 설치
+        # macOS DMG 빌드 venv(arm64_vega_env)와 동일한 최소 패키지 집합 — pandas/playwright
+        # 등 무거운 선택 의존성은 frozen 앱에서 lazy import 실패를 감수하고 제외한다.
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller uvicorn fastapi starlette sse-starlette fastmcp httpx httpx-sse openai anthropic tenacity aiosqlite aiofiles aiohttp tiktoken certifi pydantic pydantic-settings python-multipart python-dotenv keyring requests rich pyyaml websockets
+
+      - name: PyInstaller — vega-backend.exe
+        run: |
+          pyinstaller bin/vega-backend.spec --distpath bin/dist_win --workpath bin/build_pyinstaller_win --noconfirm
+          if (-not (Test-Path "bin/dist_win/vega-backend.exe")) { Write-Error "vega-backend.exe 빌드 실패"; exit 1 }
+          Write-Host ("vega-backend.exe: {0:N1} MB" -f ((Get-Item bin/dist_win/vega-backend.exe).Length / 1MB))
+
+      - name: 백엔드 smoke test (/api/health)
+        # 빌드만 통과하고 기동이 깨지는 회귀를 CI 에서 잡는다 — Windows 실기 검증은 이 단계가 유일.
+        run: |
+          $env:VEGA_DATA_DIR = "$env:RUNNER_TEMP\vega-data"
+          $p = Start-Process -FilePath "bin/dist_win/vega-backend.exe" -PassThru -NoNewWindow `
+                -RedirectStandardOutput "$env:RUNNER_TEMP\backend.out.log" `
+                -RedirectStandardError "$env:RUNNER_TEMP\backend.err.log"
+          $ok = $false
+          foreach ($i in 1..60) {
+            Start-Sleep -Seconds 2
+            if ($p.HasExited) { Write-Warning "백엔드 프로세스 조기 종료 (exit=$($p.ExitCode))"; break }
+            try {
+              $r = Invoke-RestMethod -Uri "http://127.0.0.1:8100/api/health" -TimeoutSec 3
+              if ($r.app -eq "vega-agent") { $ok = $true; break }
+            } catch {}
+          }
+          Write-Host "--- backend stdout (tail) ---"
+          Get-Content "$env:RUNNER_TEMP\backend.out.log" -Tail 60 -ErrorAction SilentlyContinue
+          Write-Host "--- backend stderr (tail) ---"
+          Get-Content "$env:RUNNER_TEMP\backend.err.log" -Tail 60 -ErrorAction SilentlyContinue
+          if (-not $p.HasExited) { Stop-Process -Id $p.Id -Force }
+          if (-not $ok) { Write-Error "백엔드 /api/health smoke test 실패"; exit 1 }
+          Write-Host "✓ /api/health 200 (app=vega-agent)"
+
+      - name: externalBin 배치 (타겟 suffix)
+        run: Copy-Item "bin/dist_win/vega-backend.exe" "bin/vega-backend-x86_64-pc-windows-msvc.exe"
+
+      - name: Rust 캐시
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop
+
+      - name: Tauri build (NSIS)
+        working-directory: desktop
+        run: npx --yes "@tauri-apps/cli@2" build
+
+      - name: 산출물 확인/정리
+        id: artifacts
+        run: |
+          $nsis = Get-ChildItem "desktop/target/release/bundle/nsis" -Filter "*-setup.exe" -ErrorAction Stop
+          if (-not $nsis) { Write-Error "NSIS 인스톨러 없음"; exit 1 }
+          New-Item -ItemType Directory -Force -Path build_output | Out-Null
+          Copy-Item $nsis.FullName "build_output/"
+          $sig = "$($nsis.FullName).sig"
+          if (Test-Path $sig) { Copy-Item $sig "build_output/" } else { Write-Warning "updater .sig 없음 (서명 키 미설정?)" }
+          Get-ChildItem build_output | ForEach-Object { Write-Host ("{0}  {1:N1} MB" -f $_.Name, ($_.Length / 1MB)) }
+          Get-FileHash build_output/*-setup.exe -Algorithm SHA256 | Format-List
+
+      - name: Artifact 업로드
+        uses: actions/upload-artifact@v4
+        with:
+          name: VEGA-${{ steps.version.outputs.version }}-windows-x64
+          path: build_output/*
+          if-no-files-found: error
+
+      - name: GitHub Release 에 첨부
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: VEGA v${{ steps.version.outputs.version }}
+          draft: false
+          prerelease: false
+          files: build_output/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

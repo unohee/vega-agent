@@ -6,6 +6,18 @@
 
 ## [Unreleased]
 
+## [0.1.14] - 2026-06-11
+
+### Added (Windows 빌드 — INT-1438)
+- **Windows NSIS 빌드 파이프라인** (`.github/workflows/build-windows.yml`) — windows-latest 러너에서 PyInstaller 백엔드 빌드 → `/api/health` smoke test → Tauri NSIS 인스톨러 빌드 → Release 첨부. Windows 코드사이닝 인증서 없음(unsigned, SmartScreen 경고 감수).
+- **`desktop/tauri.windows.conf.json`** — Windows 전용 번들 타겟(nsis, currentUser 설치).
+- **Rust 셸 Windows 지원** (`desktop/src/lib.rs`) — LaunchAgent/libc 등 macOS 전용 코드를 `cfg(target_os = "macos")`로 게이팅, Windows/Linux는 백엔드 직접 spawn(CREATE_NO_WINDOW), 로그 디렉터리 플랫폼 분기(%LOCALAPPDATA%\VEGA\logs), 트레이 "백엔드 재시작"은 taskkill+재spawn. 오버레이 타이틀바는 macOS 전용 유지.
+- **Python 백엔드 Windows 가드** — `pipeline/keychain.py`(`security` CLI 부재 시 .env/환경변수 폴백), `pipeline/data_paths.py`(Windows %LOCALAPPDATA%\VEGA), `web/server.py`(pty/fcntl/termios import 가드 — 내장 터미널만 비활성).
+
+### Fixed
+- **포트 8100 split-brain** (`bin/vega_backend_launcher.py`, INT-1439) — 다른 백엔드(예: 개인 VEGA 데브 데몬의 `*:8100` 와일드카드 바인드)가 이미 서빙 중이면 `127.0.0.1:8100`을 겹쳐 잡지 않고 해제될 때까지 양보 대기. 두 백엔드가 트래픽을 나눠 받아 "세션 컨텍스트 증발"로 체감되던 사고 재발 방지. `/api/health`에 `app`/`db` 정체성 필드 추가.
+- **pytest 수집 차단 해소** — `tests/test_channel_kyte_e2e.py`(import 시 LLM 호출+sys.exit 하는 수동 스크립트)를 `testing/channel_kyte_e2e_260611.py`로 이동.
+
 ## [0.1.7] - 2026-06-04
 
 ### Added (VEGA 백포트 — 채팅/대시보드 UX)

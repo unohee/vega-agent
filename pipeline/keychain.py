@@ -6,13 +6,21 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
 
 _SERVICE = "VEGA"
 
+# `security` CLI는 macOS 전용. Windows/Linux에선 모든 Keychain 연산을 "없음"으로
+# 처리해 get()이 .env → 환경변수 폴백 체인으로 넘어가게 한다 (INT-1438).
+# 가드 없이 호출하면 FileNotFoundError가 모든 keychain.get() 사용처로 전파된다.
+_HAS_KEYCHAIN = sys.platform == "darwin"
+
 
 def _security(*args: str, input_text: str | None = None) -> tuple[int, str]:
     """Invoke the macOS `security` CLI. Returns (returncode, stdout)."""
+    if not _HAS_KEYCHAIN:
+        return 1, "keychain unavailable on this platform"
     result = subprocess.run(
         ["security", *args],
         capture_output=True,

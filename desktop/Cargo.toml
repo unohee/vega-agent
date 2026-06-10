@@ -1,6 +1,6 @@
 [package]
 name = "vega-desktop"
-version = "0.1.13"
+version = "0.1.14"
 description = "VEGA 데스크탑 셸 — 클라이언트 또는 데몬 포함 올인원 빌드"
 authors = ["unohee"]
 edition = "2021"
@@ -27,6 +27,9 @@ tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 dirs-next = "2"
+
+[target."cfg(target_os = \"macos\")".dependencies]
+# launchctl 도메인(gui/<uid>) 계산용 getuid — macOS 전용
 libc = "0.2"
 
 [target."cfg(not(any(target_os = \"android\", target_os = \"ios\")))".dependencies]

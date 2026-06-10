@@ -17,7 +17,8 @@ def data_dir() -> Path:
     """User data root. Resolution order:
     1. VEGA_DATA_DIR environment variable
     2. macOS: ~/Library/Application Support/VEGA
-    3. Linux/other: ~/.local/share/VEGA
+    3. Windows: %LOCALAPPDATA%\\VEGA  (Rust 셸 log_dir와 같은 루트 — dirs_next::data_local_dir)
+    4. Linux/other: ~/.local/share/VEGA
     Created automatically if it does not exist.
     """
     env = os.environ.get("VEGA_DATA_DIR", "").strip()
@@ -25,6 +26,10 @@ def data_dir() -> Path:
         p = Path(env).expanduser()
     elif os.name == "posix" and Path("/Library").exists():
         p = Path.home() / "Library" / "Application Support" / "VEGA"
+    elif os.name == "nt":
+        local = os.environ.get("LOCALAPPDATA", "").strip()
+        base = Path(local) if local else Path.home() / "AppData" / "Local"
+        p = base / "VEGA"
     else:
         p = Path.home() / ".local" / "share" / "VEGA"
     p.mkdir(parents=True, exist_ok=True)

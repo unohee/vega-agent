@@ -7,15 +7,23 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import fcntl
 import json
 import os
-import pty
 import struct
 import sys
-import termios
 import time
 from pathlib import Path
+
+# PTY 터미널(/ws/terminal)용 unix 전용 모듈 — Windows 에는 없다.
+# import 실패 시 내장 터미널 기능만 비활성하고 서버는 정상 기동한다 (INT-1438).
+try:
+    import fcntl
+    import pty
+    import termios
+    _HAS_PTY = True
+except ImportError:  # Windows
+    fcntl = pty = termios = None  # type: ignore[assignment]
+    _HAS_PTY = False
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
@@ -1061,8 +1069,18 @@ async def health():
     except Exception:
         total_tools = 0
 
+    # 백엔드 정체성 — 같은 포트를 다른 VEGA 계열 백엔드(개인 VEGA=vega.db 등)와
+    # 나눠 잡는 split-brain 사고 진단용. launcher 의 포트 가드도 이 필드를 본다.
+    try:
+        from pipeline.data_paths import db_path
+        db_name = db_path().name
+    except Exception:
+        db_name = "?"
+
     return JSONResponse({
         "status": "ok",
+        "app": "vega-agent",
+        "db": db_name,
         "auth": auth_status,
         "auth_remaining_min": auth_remaining_min,
         "active_provider": active_name,
@@ -2087,6 +2105,11 @@ async def chat_stream(request: Request):
 async def terminal_ws(websocket: WebSocket, sid: str):
     import subprocess
     await websocket.accept()
+    if not _HAS_PTY:
+        # Windows: pty/fcntl/termios 부재 — 내장 터미널만 미지원, 즉시 정상 종료.
+        await websocket.send_text("\r\n[VEGA] 이 플랫폼에선 내장 터미널을 아직 지원하지 않습니다.\r\n")
+        await websocket.close()
+        return
     loop = asyncio.get_event_loop()
 
     cwd = get_working_dir(sid) or str(Path.home())
