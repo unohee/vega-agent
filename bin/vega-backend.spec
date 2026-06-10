@@ -27,6 +27,14 @@ datas += [
     (os.path.join(REPO_ROOT, "sandbox", "docker-compose.yml"), "sandbox"),
 ]
 
+# Google OAuth 내장 client — gitignore라 CI(release-dmg.yml)가 GOOGLE_OAUTH_CLIENT_JSON
+# 시크릿에서 복원한다. slack 과 달리 선택적(시크릿 없으면 파일도 없음)이라 조건부 포함.
+# 누락 시 frozen 앱의 google.is_configured()가 False → 설정 창에서 "OAuth client 없음"
+# 으로 떠 연결 버튼이 죽는다. slack 만 spec 에 있고 google 이 빠졌던 회귀를 막는다.
+_google_client = os.path.join(REPO_ROOT, "data", "google_oauth_client.json")
+if os.path.exists(_google_client):
+    datas += [(_google_client, "data")]
+
 # 배포 기본 키 (.env) — build_dmg.sh [pre] 단계가 repo .env에서 추출 생성.
 # 번들 루트(".")에 실리면 keychain._env_file_paths의 repo-루트 폴백이
 # frozen 앱에서 _MEIPASS/.env 로 이 파일을 찾는다. 없으면(수동 spec 빌드) 생략.

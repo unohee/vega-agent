@@ -59,3 +59,19 @@ def test_no_bundle_env_falls_to_default(tmp_path, monkeypatch):
     _frozen_layout(tmp_path, monkeypatch, bundle_key=None)
     monkeypatch.delenv("VEGA_API_KEY", raising=False)
     assert kc.get("VEGA_API_KEY", default="") == ""
+
+
+# ── OAuth client 번들 회귀 (Google "OAuth client 없음" 버그) ──────────────────
+# spec 에 slack 만 있고 google 이 빠져 frozen 앱에서 is_configured()=False 로
+# "구성 안 됨"이 떴던 회귀를 막는다 (2026-06-10).
+
+def test_spec_bundles_both_oauth_clients():
+    from pathlib import Path
+    spec = (Path(__file__).resolve().parent.parent / "bin" / "vega-backend.spec").read_text()
+    # slack 은 무조건 datas 에 명시
+    assert "slack_oauth_client.json" in spec, "spec 에 slack OAuth client 번들 누락"
+    # google 은 조건부(os.path.exists)지만 spec 에 반드시 등장해야 함
+    assert "google_oauth_client.json" in spec, (
+        "spec 에 google OAuth client 번들 누락 — frozen 앱에서 "
+        "google.is_configured()=False → '구성 안 됨'으로 연결 불가"
+    )
