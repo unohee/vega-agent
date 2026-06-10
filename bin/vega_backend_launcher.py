@@ -10,6 +10,14 @@ from pathlib import Path
 BUNDLE_ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
 os.environ.setdefault("VEGA_BUNDLE_ROOT", str(BUNDLE_ROOT))
 
+# Windows 콘솔 기본 인코딩(cp1252 등)에선 한국어 로그가 UnicodeEncodeError 로
+# "--- Logging error ---" 를 양산한다. stdout/stderr 를 UTF-8 로 강제 (INT-1438).
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass  # 파이프/리다이렉트 등 reconfigure 미지원 스트림은 무시
+
 # 배포된 PyInstaller 앱은 새 사용자 맥에서 시스템 CA 경로를 못 찾는 경우가 있다.
 # 프로세스 시작 시 certifi 번들 경로를 표준 SSL env에 고정해 모든 HTTPS 클라이언트가 공유하게 한다.
 # setdefault 가 아니라 무조건 덮어쓴다 — 사용자 환경에 깨진 SSL_CERT_FILE 이 미리

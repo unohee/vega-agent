@@ -88,7 +88,8 @@ jobs:
         # 등 무거운 선택 의존성은 frozen 앱에서 lazy import 실패를 감수하고 제외한다.
         run: |
           python -m pip install --upgrade pip
-          pip install pyinstaller uvicorn fastapi starlette sse-starlette fastmcp httpx httpx-sse openai anthropic tenacity aiosqlite aiofiles aiohttp tiktoken certifi pydantic pydantic-settings python-multipart python-dotenv keyring requests rich pyyaml websockets
+          # tzdata: Windows 엔 시스템 tz DB 가 없어 ZoneInfo("Asia/Seoul") 에 필수
+          pip install pyinstaller uvicorn fastapi starlette sse-starlette fastmcp httpx httpx-sse openai anthropic tenacity aiosqlite aiofiles aiohttp tiktoken certifi pydantic pydantic-settings python-multipart python-dotenv keyring requests rich pyyaml websockets tzdata
 
       - name: PyInstaller — vega-backend.exe
         run: |

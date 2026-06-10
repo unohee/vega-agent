@@ -70,6 +70,17 @@ for _meta_pkg in ("fastmcp", "mcp", "openai", "anthropic", "fastapi",
     except Exception:
         pass
 
+# IANA 타임존 데이터(tzdata) — Windows 엔 시스템 tz 데이터베이스가 없어
+# ZoneInfo("Asia/Seoul") 이 tzdata 패키지를 요구한다(없으면 import 시점 사망 — INT-1438).
+# zoneinfo 가 tzdata 를 동적으로 찾으므로 hiddenimport 로 못박는다.
+# macOS/Linux 빌드 venv 에 tzdata 가 없으면 그냥 건너뛴다(시스템 DB 사용).
+try:
+    datas += collect_data_files("tzdata")
+    hiddenimports += collect_submodules("tzdata")
+    datas += copy_metadata("tzdata")
+except Exception:
+    pass
+
 # certifi CA 번들(cacert.pem) 명시 동봉 — SSL 검증의 신뢰 루트.
 # PyInstaller 내장 hook 이 보통 cacert.pem 을 자동 동봉하지만, hook 누락/버전
 # 변화에 대비해 명시적으로 못박는다. 이게 없으면 깨끗한 사용자 맥에서 외부 HTTPS 가
