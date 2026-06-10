@@ -25,9 +25,10 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
-# 버전의 단일 출처 = tauri.conf.json (cargo tauri build 가 이 값으로 산출물 이름을 짓는다).
-# 하드코딩하면 산출물 경로 안내가 실제와 어긋난다 (INT-1432).
-VERSION="$(/usr/bin/python3 -c "import json;print(json.load(open('$REPO_ROOT/desktop/tauri.conf.json'))['version'])")"
+# 버전의 단일 출처 = tauri.conf.json. CI(release-dmg.yml)가 이 줄을 sed 로
+# tauri.conf 값과 맞춰 주입한다(^VERSION="..." 패턴 의존). 로컬 수동 빌드 시엔
+# 이 값을 tauri.conf.json 과 손으로 맞춰야 한다 (INT-1432).
+VERSION="0.1.11"
 APP_NAME="VEGA"
 SIGN_APP="Developer ID Application: Heewon Oh (635QK74RYK)"
 BUILD_DIR="$REPO_ROOT/build_output"
