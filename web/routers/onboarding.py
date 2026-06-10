@@ -550,6 +550,9 @@ async def disconnect_service(service: str):
         import importlib
         mod = importlib.import_module(f"pipeline.auth.{service}")
         mod.logout()
+        # 해제 즉시 워크스페이스 도구 가용성 캐시 반영 (pipeline/tool_registry.py, TTL 30s)
+        from pipeline.tool_registry import invalidate_check_fn_cache
+        invalidate_check_fn_cache()
         return JSONResponse({"ok": True})
     except Exception as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)

@@ -73,8 +73,12 @@ def get_schemas_for_mode(
     CE 게이트는 당분간 비활성 — 개인용이라 모든 진입점(데스크톱 앱·채널 봇)에서
     로컬 파일/exec 도구를 포함한 전체 도구를 노출한다. ce_mode 인자는 호출부
     호환을 위해 유지하나 더 이상 스키마를 필터링하지 않는다.
-    (원격 노출 시 재활성화하려면 아래 _CE_ALLOWED_TOOLS 화이트리스트 필터를 되살릴 것.)"""
-    return base
+    (원격 노출 시 재활성화하려면 아래 _CE_ALLOWED_TOOLS 화이트리스트 필터를 되살릴 것.)
+
+    미연결 워크스페이스(toolset) 도구는 제외한다 — hermes-agent의
+    "check_fn 실패 도구는 get_definitions()에서 제외" 규칙 (pipeline/tool_registry.py 참조)."""
+    from pipeline.tool_registry import filter_available_schemas
+    return filter_available_schemas(base)
 
 
 # Tools blocked in plan mode. Read/search/lookup/memory_read are excluded.
@@ -1773,6 +1777,12 @@ def dispatch_tool(name: str, arguments: dict) -> str:
             return loop.run_until_complete(call_mcp_tool(name, arguments))
         finally:
             loop.close()
+    # 미연결 워크스페이스 도구 차단 — 스키마 필터(get_schemas_for_mode)와 별개의
+    # 이중 방어 (히스토리 재생·세션 중 연결 해제 대비). pipeline/tool_registry.py 참조.
+    from pipeline.tool_registry import dispatch_gate
+    gate_err = dispatch_gate(name)
+    if gate_err:
+        return gate_err
     fn = TOOL_FUNCTIONS.get(name)
     if not fn:
         return json.dumps({"error": f"unknown tool: {name}"}, ensure_ascii=False)
