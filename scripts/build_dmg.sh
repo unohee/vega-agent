@@ -49,9 +49,15 @@ BUILD_ARCH="${VEGA_ARCH:-all}"  # all | aarch64 | x86_64
 # keychain.get 의 .env 폴백 체인이 frozen 앱에서 이 파일을 찾는다 (keychain.py 참조).
 # 키 없이 빌드하면 배포 사용자 web_search 가 401 — 조용히 빠뜨리지 않고 실패시킨다.
 echo "[pre] 배포 기본 키 번들 생성..."
-# 표준 이름 VEGA_SEARXNG_KEY 우선, 구명칭 VEGA_API_KEY 폴백 (tools_web 해석 순서와 동일)
-VEGA_BUNDLE_KEY="$(grep -E '^VEGA_SEARXNG_KEY=' "$REPO_ROOT/.env" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '"' | tr -d "'")"
-[ -n "$VEGA_BUNDLE_KEY" ] || VEGA_BUNDLE_KEY="$(grep -E '^VEGA_API_KEY=' "$REPO_ROOT/.env" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '"' | tr -d "'")"
+# 키 출처 우선순위: 환경변수(CI=GitHub Secret 주입) > repo .env(로컬 개발).
+# CI 러너엔 .env(gitignore)가 없으므로 환경변수 경로가 정상. set -e 하에서
+# grep 실패가 스크립트를 죽이지 않도록 .env 존재 시에만 grep 하고 `|| true` 로 감싼다.
+# 표준 이름 VEGA_SEARXNG_KEY 우선, 구명칭 VEGA_API_KEY 폴백 (tools_web 해석 순서와 동일).
+VEGA_BUNDLE_KEY="${VEGA_SEARXNG_KEY:-${VEGA_API_KEY:-}}"
+if [ -z "$VEGA_BUNDLE_KEY" ] && [ -f "$REPO_ROOT/.env" ]; then
+    VEGA_BUNDLE_KEY="$(grep -E '^VEGA_SEARXNG_KEY=' "$REPO_ROOT/.env" | head -1 | cut -d= -f2- | tr -d '"' | tr -d "'" || true)"
+    [ -n "$VEGA_BUNDLE_KEY" ] || VEGA_BUNDLE_KEY="$(grep -E '^VEGA_API_KEY=' "$REPO_ROOT/.env" | head -1 | cut -d= -f2- | tr -d '"' | tr -d "'" || true)"
+fi
 if [ -z "$VEGA_BUNDLE_KEY" ]; then
     echo "  ERROR: $REPO_ROOT/.env 에 VEGA_SEARXNG_KEY(또는 VEGA_API_KEY) 없음 — 배포본 web_search 가 깨진다." >&2
     echo "         키를 .env 에 추가하거나, 의도적으로 뺄 거면 VEGA_SKIP_BUNDLE_KEY=1 로 재실행." >&2

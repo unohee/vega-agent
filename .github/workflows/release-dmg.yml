@@ -45,6 +45,9 @@ jobs:
       APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      # 배포본 동봉 검색 키 — build_dmg.sh [pre] 가 bin/bundle_env/.env 로 굽는다.
+      # CI 러너엔 repo .env(gitignore)가 없으므로 이 시크릿이 유일한 출처 (INT-1432).
+      VEGA_SEARXNG_KEY: ${{ secrets.VEGA_SEARXNG_KEY }}
 
     steps:
       - name: Checkout
