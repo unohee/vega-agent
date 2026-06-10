@@ -552,6 +552,20 @@ pub fn run() {
                 });
             }
 
+            // remote 페이지(설치 마법사·chat·설정)에서 외부 브라우저를 여는 경로.
+            // open-settings와 같은 이유 — remote 오리진은 invoke(open_url)가 ACL에 막힌다.
+            {
+                use tauri::Listener;
+                app.listen_any("open-url", move |event| {
+                    let raw = event.payload();
+                    let url = serde_json::from_str::<String>(raw)
+                        .unwrap_or_else(|_| raw.trim_matches('"').to_string());
+                    if let Err(e) = open_url(url) {
+                        vlog!("[VEGA] open-url 이벤트 처리 실패: {e}");
+                    }
+                });
+            }
+
             // 데스크탑: 크기 지정 + macOS 오버레이 타이틀바.
             // 모바일(iOS/Android): 전체화면 단일 윈도우 — TitleBarStyle/inner_size 등은
             // macOS 전용이거나 무의미하므로 적용하지 않는다.

@@ -135,6 +135,7 @@
     <nav class="nav" id="nav">
       <div class="nav-item active" data-pane="model"><span class="ico">◆</span><span id="t-nav-model">Model</span></div>
       <div class="nav-item" data-pane="providers"><span class="ico">⚡</span><span id="t-nav-prov">Providers</span></div>
+      <div class="nav-item" data-pane="workspace"><span class="ico">🔗</span><span id="t-nav-ws">Workspace</span></div>
       <div class="nav-item" data-pane="mcp"><span class="ico">⚙</span><span id="t-nav-mcp">MCP</span></div>
       <div class="nav-item" data-pane="tools"><span class="ico">🧰</span><span id="t-nav-tools">Tools &amp; Keys</span></div>
       <div class="nav-item" data-pane="agent"><span class="ico">📝</span><span id="t-nav-agent">Agent</span></div>
@@ -192,6 +193,15 @@
             <div class="field"><label id="prov-status-lbl">상태</label><div class="hint" id="prov-status">—</div></div>
             <button class="btn" id="prov-apply">적용</button>
           </div>
+        </div>
+      </div>
+
+      <!-- ── Workspace 연결 (Google/Slack/Superthread OAuth) ── -->
+      <div class="pane" id="pane-workspace">
+        <h1 id="t-ws-h">워크스페이스 연결</h1>
+        <p class="desc" id="t-ws-d">Google·Slack·Superthread 계정 연결을 관리합니다. 온보딩 이후에도 여기서 연결·해제할 수 있습니다.</p>
+        <div class="section">
+          <div id="ws-list"><div class="empty">불러오는 중…</div></div>
         </div>
       </div>
 
@@ -493,7 +503,7 @@ function applyLang(lang) {
 // ── 사이드바 네비게이션 ──
 const PANE_LOADERS = { mcp: () => loadMcp(), model: () => loadModelPane(), tools: () => loadToolsPane(),
   agent: () => loadAgentMd(), memory: () => loadMemoryPane(), voice: () => loadVoice(), advanced: () => loadScheduler(),
-  app: () => loadDataBoundary() };
+  app: () => loadDataBoundary(), workspace: () => loadWorkspacePane() };
 function activatePane(name) {
   const item = document.querySelector(`.nav-item[data-pane="${name}"]`);
   if (!item) return;
@@ -518,6 +528,75 @@ const DEFAULTS = { serverUrl: 'http://localhost:8100', closeToTray: true };
 function loadLocal() { try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem('vega.settings') || '{}') }; } catch { return { ...DEFAULTS }; } }
 function saveLocal(s) { localStorage.setItem('vega.settings', JSON.stringify(s)); }
 function provBase() { return ($('server-url').value.trim().replace(/\/$/, '')) || 'http://localhost:8100'; }
+
+// ── 외부 브라우저 열기 ──
+// OAuth 동의 화면은 WebView가 아니라 OS 브라우저에서 열어야 한다.
+// remote 오리진에선 invoke가 ACL에 막히므로 open-url 이벤트(emit)를 우선 사용.
+async function openExternalUrl(url) {
+  const emit = window.__TAURI__?.event?.emit;
+  if (emit) { try { await emit('open-url', url); return true; } catch (e) { console.error('open-url emit 실패:', e); } }
+  if (invoke) { try { await invoke('open_url', { url }); return true; } catch (e) { console.error('open_url 실패:', e); } }
+  const w = window.open(url, '_blank'); return !!w;
+}
+
+// ── Workspace 연결 패널 (Google/Slack/Superthread OAuth) ──
+const WS_SERVICES = [
+  { id: 'google',      label: 'Google Workspace', desc: 'Gmail · Calendar · Drive',  auth_path: '/google/auth' },
+  { id: 'slack',       label: 'Slack',            desc: '채널 · DM 읽기 및 검색',      auth_path: '/slack/auth' },
+  { id: 'superthread', label: 'Superthread',      desc: '보드 · 카드 읽기 및 관리',     auth_path: '/superthread/auth' },
+];
+let wsPoll = null;
+function stopWsPoll() { if (wsPoll) { clearInterval(wsPoll); wsPoll = null; } }
+
+async function wsStatus(id) {
+  const r = await fetch(provBase() + '/api/onboarding/' + id, { signal: AbortSignal.timeout(5000) });
+  return r.json();
+}
+
+async function loadWorkspacePane() {
+  stopWsPoll();
+  const list = $('ws-list');
+  const rows = await Promise.all(WS_SERVICES.map(async s => {
+    try { return { s, st: await wsStatus(s.id) }; }
+    catch (e) { return { s, st: { configured: false, authenticated: false, error: String(e) } }; }
+  }));
+  list.innerHTML = '';
+  for (const { s, st } of rows) {
+    const row = document.createElement('div'); row.className = 'row';
+    const acct = st.email ? ` — ${st.email}` : st.team ? ` — ${st.team}` : '';
+    const stateTxt = !st.configured ? '구성 안 됨 (빌드에 OAuth client 없음)'
+      : st.authenticated ? `연결됨${acct}` : '연결 안 됨';
+    row.innerHTML = `<div class="field"><label>${s.label}</label>
+      <div class="hint" id="ws-hint-${s.id}">${s.desc} · ${stateTxt}</div></div>`;
+    const btns = document.createElement('div');
+    if (st.configured && st.authenticated) {
+      const dis = document.createElement('button'); dis.className = 'btn'; dis.textContent = '해제';
+      dis.onclick = async () => {
+        dis.disabled = true;
+        try { await fetch(provBase() + `/api/onboarding/${s.id}/disconnect`, { method: 'POST' }); } catch {}
+        loadWorkspacePane();
+      };
+      btns.appendChild(dis);
+    } else if (st.configured) {
+      const con = document.createElement('button'); con.className = 'btn primary'; con.textContent = '연결';
+      con.onclick = () => {
+        openExternalUrl(provBase() + s.auth_path);
+        $('ws-hint-' + s.id).textContent = s.desc + ' · 브라우저에서 동의 화면을 완료해 주세요…';
+        con.disabled = true;
+        stopWsPoll();
+        let ticks = 0;
+        wsPoll = setInterval(async () => {
+          ticks++;
+          try { const st2 = await wsStatus(s.id); if (st2.authenticated) { stopWsPoll(); loadWorkspacePane(); return; } } catch {}
+          if (ticks >= 90) { stopWsPoll(); con.disabled = false; $('ws-hint-' + s.id).textContent = s.desc + ' · 시간 초과 — 다시 시도해 주세요.'; }
+        }, 2000);
+      };
+      btns.appendChild(con);
+    }
+    row.appendChild(btns);
+    list.appendChild(row);
+  }
+}
 
 // ── Model 패널 ──
 let MODEL_PROVIDERS = [];

@@ -154,9 +154,16 @@ function setStep(n){ [0,1,2].forEach(i=>{ $('step'+i).classList.toggle('hidden',
 async function api(path, body){ const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})}); return r.json(); }
 function gotoChat(){ location.href='/chat'; }
 
-// Tauri WebView엔 새 탭이 없으므로 Rust open_url 커맨드로 외부 브라우저 오픈.
+// Tauri WebView엔 새 탭이 없으므로 외부 브라우저로 열어야 한다.
+// 이 페이지는 remote 콘텐츠(localhost:8100)라 invoke(open_url)는 ACL에 막힌다 —
+// open-settings와 동일하게 core:event로 emit하고 Rust 쪽 listen_any가 브라우저를 연다.
 async function openExternal(path){
   const url = path.startsWith('http') ? path : (location.origin + path);
+  const emit = window.__TAURI__?.event?.emit;
+  if (emit){
+    try { await emit('open-url', url); return true; }
+    catch(e){ console.error('open-url emit 실패:', e); }
+  }
   const invoke = window.__TAURI__?.core?.invoke ?? window.__TAURI__?.invoke;
   if (invoke){
     try { await invoke('open_url', { url }); return true; }

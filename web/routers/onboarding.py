@@ -538,6 +538,23 @@ async def google_status():
         return JSONResponse({"configured": False, "authenticated": False, "error": str(e)})
 
 
+# ── 연결 해제 ─────────────────────────────────────────────────────────────────
+# 설정 창 "연결" 패널에서 사용. Keychain 토큰만 삭제 — client.json 등 빌드 구성은 유지.
+
+@router.post("/api/onboarding/{service}/disconnect")
+async def disconnect_service(service: str):
+    """워크스페이스 서비스 연결 해제 (slack/google/superthread). logout()이 Keychain 토큰 삭제."""
+    if service not in ("slack", "google", "superthread"):
+        return JSONResponse({"ok": False, "error": f"unknown service: {service}"}, status_code=404)
+    try:
+        import importlib
+        mod = importlib.import_module(f"pipeline.auth.{service}")
+        mod.logout()
+        return JSONResponse({"ok": True})
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
 # ── 완료 ─────────────────────────────────────────────────────────────────────
 
 class OnboardingPayload(BaseModel):
