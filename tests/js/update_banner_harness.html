@@ -1,0 +1,67 @@
+<!doctype html>
+<!-- Created: 2026-06-10
+     Purpose: chat.html 자동 업데이트 배너(setupUpdateReadyBanner)를 실제 코드로 검증 (INT-1434).
+              update-ready 이벤트 → 배너 표시 / 멱등(중복 emit 1회만) / payload 버전 렌더 / dismiss.
+     Usage: Chrome --headless --dump-dom → #result-sink 의 RESULT_JSON. -->
+<html><head><meta charset="utf-8"></head><body>
+<div id="result-sink"></div>
+<script>
+// ── __TAURI__.event.listen 스텁 — emit 을 흉내내는 미니 이벤트 버스 ──
+const _handlers = {};
+window.__TAURI__ = {
+  event: {
+    listen(name, cb) { (_handlers[name] = _handlers[name] || []).push(cb); return Promise.resolve(() => {}); },
+  },
+};
+function emit(name, payload) { (_handlers[name] || []).forEach(cb => cb({ payload })); }
+
+// requestAnimationFrame 즉시 실행(헤드리스 안정화)
+const _raf = window.requestAnimationFrame;
+window.requestAnimationFrame = (fn) => setTimeout(fn, 0);
+
+async function loadBannerFn() {
+  const html = await fetch('../../web/static/chat.html').then(r => r.text());
+  const scripts = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)].map(m => m[1]);
+  const script = scripts.reduce((a, b) => b.length > a.length ? b : a, '');
+  // setupUpdateReadyBanner IIFE 추출 (function ... })();)
+  const m = script.match(/\(function setupUpdateReadyBanner\(\) \{[\s\S]*?\}\)\(\);/);
+  if (!m) throw new Error('setupUpdateReadyBanner 추출 실패');
+  (0, eval)(m[0]);
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+async function run() {
+  const results = {};
+  await loadBannerFn();
+
+  // 1) 이벤트 없을 때 배너 없음
+  results.no_banner_initially = !document.getElementById('update-banner');
+
+  // 2) update-ready emit → 배너 생성 + 버전 렌더
+  emit('update-ready', '0.1.12');
+  await sleep(50);
+  const bar = document.getElementById('update-banner');
+  results.banner_appears = !!bar;
+  results.shows_version = bar ? bar.innerHTML.includes('0.1.12') : false;
+  results.has_dismiss = bar ? !!bar.querySelector('.ub-dismiss') : false;
+
+  // 3) 멱등 — 백엔드가 3회 재시도 emit 해도 배너는 1개만
+  emit('update-ready', '0.1.12');
+  emit('update-ready', '0.1.12');
+  await sleep(30);
+  results.idempotent_single = document.querySelectorAll('#update-banner').length === 1;
+
+  // 4) dismiss 클릭 → 배너 제거(애니메이션 후)
+  bar.querySelector('.ub-dismiss').click();
+  await sleep(500);
+  results.dismiss_removes = !document.getElementById('update-banner');
+
+  results.ok = Object.entries(results).every(([k, v]) => typeof v !== 'boolean' || v === true);
+  document.getElementById('result-sink').textContent = 'RESULT_JSON:' + JSON.stringify(results);
+}
+run().catch(e => {
+  document.getElementById('result-sink').textContent = 'RESULT_JSON:' + JSON.stringify({ ok: false, error: String(e) });
+});
+</script>
+</body></html>

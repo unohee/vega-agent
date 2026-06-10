@@ -196,10 +196,16 @@ fn make_loading_page() -> WebviewUrl {
 
 // ── 자동 업데이트 (데스크탑 전용) ─────────────────────────────────────────────
 // 앱 시작 시 백그라운드로 CF R2(plugins.updater.endpoints)에서 최신 버전을 조회한다.
-// 새 버전이 있으면 조용히 내려받아 설치 후 앱을 재시작한다. 사용자 개입 없음.
-// 엔드포인트가 placeholder(미배포)이거나 네트워크 실패 시 조용히 무시한다.
+// 새 버전이 있으면 조용히 내려받아 설치만 하고 **재시작은 하지 않는다**(작업 중 강제
+// 재시작 방지). 설치 완료 후 프론트에 `update-ready` 이벤트를 emit → 비방해적 배너로
+// "다음 실행 때 적용" 안내. 사용자가 평소처럼 앱을 껐다 켜면 새 버전이 뜬다.
+// (Claude/ChatGPT 데스크탑 방식.) 엔드포인트 placeholder/네트워크 실패 시 조용히 무시.
+//
+// remote 페이지(localhost:8100)에선 커스텀 invoke가 ACL 차단되므로, 프론트 알림은
+// invoke 가 아니라 event emit + listen 패턴으로 전달한다(tauri-remote-acl-invoke-trap).
 #[cfg(all(desktop, not(any(target_os = "android", target_os = "ios"))))]
 fn spawn_update_check(app: tauri::AppHandle) {
+    use tauri::Emitter;
     use tauri_plugin_updater::UpdaterExt;
 
     tauri::async_runtime::spawn(async move {
@@ -215,11 +221,22 @@ fn spawn_update_check(app: tauri::AppHandle) {
         match updater.check().await {
             Ok(Some(update)) => {
                 let version = update.version.clone();
-                vlog!("[VEGA] 새 버전 발견: {version} — 다운로드 시작");
+                vlog!("[VEGA] 새 버전 발견: {version} — 백그라운드 다운로드 시작");
+                // download + install 만 수행하고 restart 는 호출하지 않는다.
+                // macOS 에선 .app 이 교체되어 다음 실행 때 새 버전이 적용된다.
                 match update.download_and_install(|_chunk, _total| {}, || {}).await {
                     Ok(_) => {
-                        vlog!("[VEGA] 업데이트 설치 완료 — 재시작");
-                        app.restart();
+                        vlog!("[VEGA] 업데이트 설치 완료(대기) — 다음 재시작 시 v{version} 적용");
+                        // 프론트(웹뷰)가 아직 로드 전이거나 리스너가 늦게 붙을 수 있으니
+                        // 별도 OS 스레드에서 간격을 두고 3회 emit(멱등 — 프론트가 중복 무시).
+                        // tokio 직접 의존이 없어 std::thread 로 sleep 한다(기존 코드 관례).
+                        let app2 = app.clone();
+                        std::thread::spawn(move || {
+                            for _ in 0..3 {
+                                let _ = app2.emit("update-ready", version.clone());
+                                std::thread::sleep(std::time::Duration::from_secs(3));
+                            }
+                        });
                     }
                     Err(e) => vlog!("[VEGA] 업데이트 설치 실패: {e}"),
                 }

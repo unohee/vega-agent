@@ -1284,6 +1284,27 @@ header button, header button *, header a, header a * { -webkit-app-region: no-dr
   padding: 6px 0; animation: pulse 1.2s infinite;
 }
 @keyframes pulse { 0%,100% { opacity: .5; } 50% { opacity: 1; } }
+/* 업데이트 준비됨 배너 — 비방해적(상단 고정, 작업 안 끊음). 다음 실행 시 적용 안내. */
+#update-banner {
+  position: fixed; left: 50%; top: 12px; transform: translateX(-50%) translateY(-200%);
+  z-index: 9000; display: flex; align-items: center; gap: 10px;
+  max-width: 92vw; padding: 9px 14px; border-radius: 10px;
+  background: var(--surface); border: 1px solid var(--border);
+  box-shadow: 0 6px 24px rgba(0,0,0,0.28);
+  font-size: 13px; color: var(--text);
+  transition: transform 0.35s cubic-bezier(.16,1,.3,1);
+}
+#update-banner.show { transform: translateX(-50%) translateY(0); }
+#update-banner .ub-icon { font-size: 15px; }
+#update-banner .ub-msg { line-height: 1.4; }
+#update-banner .ub-msg b { font-weight: 600; }
+#update-banner .ub-dismiss {
+  margin-left: 4px; padding: 3px 9px; border-radius: 6px;
+  border: 1px solid var(--border); background: transparent;
+  color: var(--muted); font-size: 12px; cursor: pointer;
+}
+#update-banner .ub-dismiss:hover { color: var(--text); background: var(--bg); }
+
 .compact-banner {
   margin: 12px 0; border: 1px solid var(--border);
   border-radius: 8px; overflow: hidden;
@@ -2516,6 +2537,45 @@ window.addEventListener('drop', (e) => {
     showUploadToast(`${e.dataTransfer.files.length}개 첨부 처리 중…`);
   }
 });
+
+// 자동 업데이트 알림 — 백엔드(lib.rs)가 새 버전을 백그라운드로 설치 완료하면
+// `update-ready` 이벤트를 emit 한다. 강제 재시작 없이 비방해적 배너로 안내하고,
+// 사용자가 다음에 앱을 껐다 켜면 새 버전이 적용된다 (Claude/ChatGPT 방식).
+// remote 페이지라 invoke 대신 event listen 으로 받는다(tauri-remote-acl-invoke-trap).
+(function setupUpdateReadyBanner() {
+  const t = window.__TAURI__;
+  const listen = t?.event?.listen;
+  if (typeof listen !== 'function') return;  // 브라우저 환경 — updater 없음
+
+  let _shown = false;  // 멱등 — 백엔드가 3회 재시도 emit 하므로 한 번만 표시
+  function showUpdateBanner(version) {
+    if (_shown) return;
+    _shown = true;
+    const ver = (typeof version === 'string' && version) ? version : '';
+    const bar = document.createElement('div');
+    bar.id = 'update-banner';
+    bar.innerHTML =
+      '<span class="ub-icon">✨</span>' +
+      '<span class="ub-msg">VEGA' + (ver ? ' <b>' + ver + '</b>' : ' 새 버전') +
+      ' 준비 완료 — 다음에 앱을 다시 열면 적용돼요.</span>' +
+      '<button class="ub-dismiss">확인</button>';
+    document.body.appendChild(bar);
+    requestAnimationFrame(() => bar.classList.add('show'));
+    const close = () => {
+      bar.classList.remove('show');
+      setTimeout(() => bar.remove(), 400);
+    };
+    bar.querySelector('.ub-dismiss').addEventListener('click', close);
+    // 12초 후 자동으로 접힘 (정보성 — 계속 떠 있을 필요 없음)
+    setTimeout(close, 12000);
+  }
+
+  try {
+    listen('update-ready', (e) => showUpdateBanner(e?.payload));
+  } catch (err) {
+    console.error('[vega] update-ready 리스너 등록 실패:', err);
+  }
+})();
 
 // Tauri 네이티브 드래그-드롭 — WebView가 HTML5 drag 이벤트를 가로채므로 이 경로가 실제 동작.
 // onDragDropEvent는 파일 경로를 직접 준다 (브라우저 File 객체 아님 → 경로 첨부).
