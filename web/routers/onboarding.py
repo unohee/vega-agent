@@ -627,12 +627,6 @@ async def finish_onboarding(payload: OnboardingPayload):
     except Exception as e:
         return JSONResponse({"ok": False, "error": f"DB init failed: {e}"}, status_code=500)
 
-    try:
-        from pipeline.tools import patch_account_enum
-        patch_account_enum()
-    except Exception:
-        pass
-
     return JSONResponse({"ok": True, "profile": load_profile()})
 
 

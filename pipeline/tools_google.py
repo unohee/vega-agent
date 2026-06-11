@@ -16,7 +16,7 @@ from pipeline.auth.google import get_access_token as _google_token
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
-def _gapi(path: str, account: str = "personal", params: dict | None = None,
+def _gapi(path: str, account: str = "", params: dict | None = None,
           method: str = "GET", body: dict | None = None) -> dict:
     """Google API helper with readable OAuth/API errors.
 
@@ -29,8 +29,8 @@ def _gapi(path: str, account: str = "personal", params: dict | None = None,
     token = _google_token(account)
     if not token:
         raise RuntimeError(
-            f"Google OAuth access token unavailable for account={account}. "
-            f"Re-authenticate with: python -m pipeline.auth.google --account {account}"
+            "Google OAuth access token unavailable. "
+            "설정 → 워크스페이스에서 Google 계정을 다시 연결하세요."
         )
 
     url = path if path.startswith("http") else f"https://{path}"
@@ -62,7 +62,7 @@ def _gapi(path: str, account: str = "personal", params: dict | None = None,
 
 # ── Gmail ──────────────────────────────────────────────────────────────────────
 
-def gmail_search(query: str, max_results: int = 10, account: str = "personal") -> list[dict]:
+def gmail_search(query: str, max_results: int = 10, account: str = "") -> list[dict]:
     base = "gmail.googleapis.com/gmail/v1/users/me"
     data = _gapi(f"{base}/messages", account=account,
                  params={"q": query, "maxResults": max_results})
@@ -98,7 +98,7 @@ def _html_to_text(html: str) -> str:
     return text.strip()
 
 
-def gmail_read(message_id: str, account: str = "personal", max_chars: int = 20000) -> dict:
+def gmail_read(message_id: str, account: str = "", max_chars: int = 20000) -> dict:
     import base64
     base = "gmail.googleapis.com/gmail/v1/users/me"
     detail = _gapi(f"{base}/messages/{message_id}", account=account,
@@ -142,7 +142,7 @@ def gmail_read(message_id: str, account: str = "personal", max_chars: int = 2000
     }
 
 
-def gmail_list_attachments(message_id: str, account: str = "personal") -> list[dict]:
+def gmail_list_attachments(message_id: str, account: str = "") -> list[dict]:
     """Returns the list of attachments for a message. Each entry: filename, mime_type, size, attachment_id."""
     import base64
     base = "gmail.googleapis.com/gmail/v1/users/me"
@@ -173,7 +173,7 @@ def gmail_download_attachment(
     message_id: str,
     attachment_id: str,
     save_path: str,
-    account: str = "personal",
+    account: str = "",
 ) -> dict:
     """
     Downloads a Gmail attachment and saves it to a local file.
@@ -296,7 +296,7 @@ def _build_mime(to: str, subject: str, body_text: str) -> bytes:
     return msg.as_bytes()
 
 
-def gmail_send(to: str, subject: str, body: str, account: str = "personal") -> dict:
+def gmail_send(to: str, subject: str, body: str, account: str = "") -> dict:
     import base64
     raw_bytes = _build_mime(to, subject, body)
     encoded = base64.urlsafe_b64encode(raw_bytes).decode()
@@ -305,7 +305,7 @@ def gmail_send(to: str, subject: str, body: str, account: str = "personal") -> d
                  method="POST", body={"raw": encoded})
 
 
-def gmail_draft(to: str, subject: str, body: str, account: str = "personal") -> dict:
+def gmail_draft(to: str, subject: str, body: str, account: str = "") -> dict:
     import base64
     raw_bytes = _build_mime(to, subject, body)
     encoded = base64.urlsafe_b64encode(raw_bytes).decode()
@@ -316,7 +316,7 @@ def gmail_draft(to: str, subject: str, body: str, account: str = "personal") -> 
 
 def gmail_modify_labels(message_id: str, add: list[str] | None = None,
                         remove: list[str] | None = None,
-                        account: str = "personal") -> dict:
+                        account: str = "") -> dict:
     base = "gmail.googleapis.com/gmail/v1/users/me"
     return _gapi(f"{base}/messages/{message_id}/modify", account=account,
                  method="POST",
@@ -327,7 +327,7 @@ def gmail_batch_modify(
     message_ids: list[str],
     add: list[str] | None = None,
     remove: list[str] | None = None,
-    account: str = "personal",
+    account: str = "",
 ) -> dict:
     """
     Modifies labels on multiple messages in a single call using the Gmail batchModify API.
@@ -368,7 +368,7 @@ def _calendar_ids(account: str) -> list[tuple[str, str]]:
 def calendar_list_events(
     days_from_today: int = 7,
     max_results: int = 20,
-    account: str = "personal",
+    account: str = "",
     calendar_name: str = "",
 ) -> list[dict]:
     from datetime import timedelta
@@ -420,7 +420,7 @@ def calendar_create_event(
     end_iso: str,
     description: str = "",
     location: str = "",
-    account: str = "personal",
+    account: str = "",
 ) -> dict:
     body = {
         "summary": summary,
@@ -448,7 +448,7 @@ def calendar_update_event(
     end_iso: str = "",
     description: str = "",
     location: str = "",
-    account: str = "personal",
+    account: str = "",
 ) -> dict:
     body: dict = {}
     if summary:     body["summary"] = summary
@@ -467,7 +467,7 @@ def calendar_update_event(
     return {"id": data.get("id"), "summary": data.get("summary"), "link": data.get("htmlLink")}
 
 
-def calendar_delete_event(event_id: str, account: str = "personal") -> dict:
+def calendar_delete_event(event_id: str, account: str = "") -> dict:
     _gapi(
         f"www.googleapis.com/calendar/v3/calendars/primary/events/{event_id}",
         account=account,
@@ -478,7 +478,7 @@ def calendar_delete_event(event_id: str, account: str = "personal") -> dict:
 
 # ── Google Drive ───────────────────────────────────────────────────────────────
 
-def drive_search(query: str, max_results: int = 10, account: str = "personal") -> list[dict]:
+def drive_search(query: str, max_results: int = 10, account: str = "") -> list[dict]:
     import re as _re2
     q = query.strip()
     is_drive_syntax = bool(_re2.search(
@@ -1042,7 +1042,7 @@ def file_read(path: str, sheet: str | None = None, max_rows: int = 500,
             return f"Read failed: {e}"
 
 
-def drive_read(file_id: str, account: str = "personal") -> str:
+def drive_read(file_id: str, account: str = "") -> str:
     import re as _re
     url_match = _re.search(r'[?&]id=([a-zA-Z0-9_-]+)', file_id)
     if url_match:
@@ -1290,7 +1290,7 @@ def _slide_requests(slides: list[dict], start_index: int = 0) -> list[dict]:
 def slides_create(
     title: str,
     slides: list[dict],
-    account: str = "personal",
+    account: str = "",
 ) -> dict:
     """Creates a new Google Slides presentation and populates it with slides.
 
@@ -1330,7 +1330,7 @@ def slides_create(
 def slides_append_slide(
     presentation_id: str,
     slides: list[dict],
-    account: str = "personal",
+    account: str = "",
 ) -> dict:
     """Appends slides to an existing Google Slides presentation."""
     pres = _gapi(
@@ -1443,7 +1443,7 @@ def _content_to_doc_requests(content: list[dict], insert_at: int = 1) -> list[di
 def docs_create(
     title: str,
     content: list[dict],
-    account: str = "personal",
+    account: str = "",
 ) -> dict:
     """Creates a new Google Docs document and inserts content.
 
@@ -1479,7 +1479,7 @@ def docs_create(
 def docs_append(
     document_id: str,
     content: list[dict],
-    account: str = "personal",
+    account: str = "",
 ) -> dict:
     """Appends content to the end of an existing Google Docs document."""
     doc = _gapi(

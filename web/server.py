@@ -97,7 +97,7 @@ from contextlib import asynccontextmanager
 
 from pipeline.streaming import build_system, stream_gpt
 from pipeline.mcp_client import init_mcp_tools
-from pipeline.tools import TOOL_SCHEMAS, patch_account_enum
+from pipeline.tools import TOOL_SCHEMAS
 from pipeline.contact_store import startup_sync
 from pipeline.compaction import KEEP_RECENT, compact_history, _needs_compaction, splice_compacted
 
@@ -134,12 +134,6 @@ async def lifespan(app: FastAPI):
             print(f"[MCP] init warning: {e}")
 
     asyncio.create_task(_init_mcp())
-
-    # Update Gmail/Calendar/Drive account enum from user_profile account list
-    try:
-        patch_account_enum()
-    except Exception as e:
-        print(f"[Profile] account enum patch warning: {e}")
 
     # Background warmup if active LLM provider is local (LM Studio/Ollama etc.) —
     # avoids 70-second prefill penalty on first real request

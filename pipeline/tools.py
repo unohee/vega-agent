@@ -168,8 +168,6 @@ TOOL_SCHEMAS: list[dict] = [
             "properties": {
                 "query": {"type": "string", "description": "Gmail 검색 쿼리"},
                 "max_results": {"type": "integer", "default": 10},
-                "account": {"type": "string", "enum": ["personal", "intrect"], "default": "personal",
-                            "description": "사용할 Gmail 계정 키 (personal 또는 intrect)"},
             },
             "required": ["query"],
         },
@@ -182,7 +180,6 @@ TOOL_SCHEMAS: list[dict] = [
             "type": "object",
             "properties": {
                 "message_id": {"type": "string", "description": "메시지 ID (gmail_search 결과의 id)"},
-                "account": {"type": "string", "enum": ["personal", "intrect"], "default": "personal"},
             },
             "required": ["message_id"],
         },
@@ -197,7 +194,6 @@ TOOL_SCHEMAS: list[dict] = [
                 "to": {"type": "string", "description": "수신자 이메일"},
                 "subject": {"type": "string", "description": "제목"},
                 "body": {"type": "string", "description": "본문"},
-                "account": {"type": "string", "enum": ["personal", "intrect"], "default": "personal"},
             },
             "required": ["to", "subject", "body"],
         },
@@ -212,7 +208,6 @@ TOOL_SCHEMAS: list[dict] = [
                 "to": {"type": "string", "description": "수신자 이메일"},
                 "subject": {"type": "string", "description": "제목"},
                 "body": {"type": "string", "description": "본문"},
-                "account": {"type": "string", "enum": ["personal", "intrect"], "default": "personal"},
             },
             "required": ["to", "subject", "body"],
         },
@@ -227,7 +222,6 @@ TOOL_SCHEMAS: list[dict] = [
                 "message_id": {"type": "string", "description": "메시지 ID (gmail_search 결과의 id)"},
                 "add": {"type": "array", "items": {"type": "string"}, "description": "추가할 라벨 ID 목록 (예: ['STARRED'])"},
                 "remove": {"type": "array", "items": {"type": "string"}, "description": "제거할 라벨 ID 목록 (예: ['UNREAD'])"},
-                "account": {"type": "string", "enum": ["personal", "intrect"], "default": "personal"},
             },
             "required": ["message_id"],
         },
@@ -261,7 +255,6 @@ TOOL_SCHEMAS: list[dict] = [
                     "description": "제거할 라벨 ID 목록. 예: ['INBOX'] (보관), ['UNREAD'] (읽음 처리)",
                     "default": [],
                 },
-                "account": {"type": "string", "enum": ["personal", "intrect"], "default": "personal"},
             },
             "required": ["message_ids"],
         },
@@ -274,7 +267,6 @@ TOOL_SCHEMAS: list[dict] = [
             "type": "object",
             "properties": {
                 "message_id": {"type": "string", "description": "메시지 ID (gmail_search 결과의 id)"},
-                "account": {"type": "string", "enum": ["personal", "intrect"], "default": "personal"},
             },
             "required": ["message_id"],
         },
@@ -289,7 +281,6 @@ TOOL_SCHEMAS: list[dict] = [
                 "message_id": {"type": "string", "description": "메시지 ID"},
                 "attachment_id": {"type": "string", "description": "attachment_id (gmail_list_attachments 결과의 attachment_id)"},
                 "save_path": {"type": "string", "description": "저장할 절대경로 (예: ~/Downloads/report.xlsx)"},
-                "account": {"type": "string", "enum": ["personal", "intrect"], "default": "personal"},
             },
             "required": ["message_id", "attachment_id", "save_path"],
         },
@@ -303,7 +294,6 @@ TOOL_SCHEMAS: list[dict] = [
             "properties": {
                 "days_from_today": {"type": "integer", "default": 7, "description": "오늘부터 N일 조회"},
                 "max_results": {"type": "integer", "default": 20},
-                "account": {"type": "string", "enum": ["personal", "intrect"], "default": "personal"},
                 "calendar_name": {"type": "string", "default": "", "description": "특정 캘린더 이름 필터. 빈 문자열이면 전체 조회."},
             },
             "required": [],
@@ -321,7 +311,6 @@ TOOL_SCHEMAS: list[dict] = [
                 "end_iso": {"type": "string", "description": "종료 시각 ISO 8601"},
                 "description": {"type": "string", "default": ""},
                 "location": {"type": "string", "default": ""},
-                "account": {"type": "string", "enum": ["personal", "intrect"], "default": "personal"},
             },
             "required": ["summary", "start_iso", "end_iso"],
         },
@@ -339,7 +328,6 @@ TOOL_SCHEMAS: list[dict] = [
                 "end_iso": {"type": "string", "description": "새 종료 시각 ISO 8601"},
                 "description": {"type": "string", "description": "새 설명"},
                 "location": {"type": "string", "description": "새 장소"},
-                "account": {"type": "string", "enum": ["personal", "intrect"], "default": "personal"},
             },
             "required": ["event_id"],
         },
@@ -352,7 +340,6 @@ TOOL_SCHEMAS: list[dict] = [
             "type": "object",
             "properties": {
                 "event_id": {"type": "string", "description": "삭제할 이벤트 ID"},
-                "account": {"type": "string", "enum": ["personal", "intrect"], "default": "personal"},
             },
             "required": ["event_id"],
         },
@@ -366,7 +353,6 @@ TOOL_SCHEMAS: list[dict] = [
             "properties": {
                 "query": {"type": "string", "description": "Drive 검색 쿼리 (예: name contains 'ArtifactNet')"},
                 "max_results": {"type": "integer", "default": 10},
-                "account": {"type": "string", "enum": ["personal", "intrect"], "default": "personal"},
             },
             "required": ["query"],
         },
@@ -379,7 +365,6 @@ TOOL_SCHEMAS: list[dict] = [
             "type": "object",
             "properties": {
                 "file_id": {"type": "string", "description": "파일 ID (drive_search 결과의 id)"},
-                "account": {"type": "string", "enum": ["personal", "intrect"], "default": "personal"},
             },
             "required": ["file_id"],
         },
@@ -670,7 +655,6 @@ TOOL_SCHEMAS: list[dict] = [
                     ),
                     "items": {"type": "object"},
                 },
-                "account": {"type": "string", "default": "personal"},
             },
             "required": ["title", "slides"],
         },
@@ -688,7 +672,6 @@ TOOL_SCHEMAS: list[dict] = [
                     "description": "추가할 슬라이드 리스트 (slides_create와 동일 형식)",
                     "items": {"type": "object"},
                 },
-                "account": {"type": "string", "default": "personal"},
             },
             "required": ["presentation_id", "slides"],
         },
@@ -717,7 +700,6 @@ TOOL_SCHEMAS: list[dict] = [
                     ),
                     "items": {"type": "object"},
                 },
-                "account": {"type": "string", "default": "personal"},
             },
             "required": ["title", "content"],
         },
@@ -735,7 +717,6 @@ TOOL_SCHEMAS: list[dict] = [
                     "description": "추가할 내용 블록 (docs_create와 동일 형식)",
                     "items": {"type": "object"},
                 },
-                "account": {"type": "string", "default": "personal"},
             },
             "required": ["document_id", "content"],
         },
@@ -746,7 +727,7 @@ TOOL_SCHEMAS: list[dict] = [
         "name": "linear_list_issues",
         "description": (
             "Linear 이슈 목록 조회. 팀·상태로 필터링. "
-            "team_key 예: INT(Intrect), STO(STONKS), KT(KYTE), AUD(audio), RES(Research)."
+            "team_key 는 Linear 워크스페이스의 팀 약어 (이슈 ID 접두사, 예: ENG-123 이면 ENG)."
         ),
         "parameters": {
             "type": "object",
@@ -1736,23 +1717,6 @@ TOOL_FUNCTIONS: dict[str, Any] = {
     "exit_plan_mode": _exit_plan_mode,
     "image_generate": image_generate,
 }
-
-
-def patch_account_enum() -> None:
-    """Update Gmail/Calendar/Drive account enum from user_profile email_accounts keys at server startup.
-    Keeps existing enum if onboarding has not been completed (no accounts registered)."""
-    from pipeline.user_profile import email_accounts
-    accs = email_accounts()
-    if not accs:
-        return
-    keys = [a["key"] for a in accs]
-    default_key = keys[0]
-    for schema in TOOL_SCHEMAS:
-        props = schema.get("parameters", {}).get("properties", {})
-        acc_prop = props.get("account")
-        if acc_prop and "enum" in acc_prop:
-            acc_prop["enum"] = keys
-            acc_prop["default"] = default_key
 
 
 def dispatch_tool(name: str, arguments: dict) -> str:
