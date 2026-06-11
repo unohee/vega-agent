@@ -27,7 +27,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 def client():
     """TestClient — lifespan 없이 라우트만 테스트."""
     from fastapi import FastAPI
-    from web.routers import oauth, upload, stt, sessions, admin
+    from web.routers import oauth, upload, stt, sessions, admin, onboarding
 
     app = FastAPI()
     app.include_router(oauth.router)
@@ -35,6 +35,7 @@ def client():
     app.include_router(stt.router)
     app.include_router(sessions.router)
     app.include_router(admin.router)
+    app.include_router(onboarding.router)
 
     with TestClient(app, raise_server_exceptions=False) as c:
         yield c
@@ -226,6 +227,83 @@ class TestSessionsRouter:
         resp = client.get("/api/sessions/any-sid/yolo-mode")
         assert resp.status_code == 200
         assert "yolo_mode" in resp.json()
+
+    # ── permission-mode (INT-1452) — chat.html 통합 토글 계약 ──
+
+    def test_permission_mode_default(self, client):
+        resp = client.get("/api/sessions/perm-sid-fresh/permission-mode")
+        assert resp.status_code == 200
+        assert resp.json()["permission_mode"] == "default"
+
+    def test_permission_mode_set_bypass_persists(self, client):
+        """버그 재현 케이스: bypass 설정 후 GET 이 default 로 풀리면 안 된다."""
+        resp = client.post("/api/sessions/perm-sid-a/permission-mode", json={"mode": "bypass"})
+        assert resp.status_code == 200
+        assert resp.json()["permission_mode"] == "bypass"
+        resp = client.get("/api/sessions/perm-sid-a/permission-mode")
+        assert resp.json()["permission_mode"] == "bypass"
+        # 백엔드 소비처와 같은 상태를 공유하는지
+        from web.state import yolo_on
+        assert yolo_on("perm-sid-a") is True
+        # 정리
+        client.post("/api/sessions/perm-sid-a/permission-mode", json={"mode": "default"})
+
+    def test_permission_mode_plan_bypass_exclusive(self, client):
+        from web.state import _PLAN_MODE, _YOLO_MODE
+        client.post("/api/sessions/perm-sid-b/permission-mode", json={"mode": "plan"})
+        assert _PLAN_MODE.get("perm-sid-b") is True
+        client.post("/api/sessions/perm-sid-b/permission-mode", json={"mode": "bypass"})
+        assert not _PLAN_MODE.get("perm-sid-b")
+        assert _YOLO_MODE.get("perm-sid-b") is True
+        client.post("/api/sessions/perm-sid-b/permission-mode", json={"mode": "default"})
+        assert not _PLAN_MODE.get("perm-sid-b") and not _YOLO_MODE.get("perm-sid-b")
+
+    def test_permission_mode_cycle(self, client):
+        """default → plan → bypass → default 순환 (프론트 {cycle:true} 계약)."""
+        sid = "perm-sid-cycle"
+        seen = []
+        for _ in range(3):
+            resp = client.post(f"/api/sessions/{sid}/permission-mode", json={"cycle": True})
+            seen.append(resp.json()["permission_mode"])
+        assert seen == ["plan", "bypass", "default"]
+
+    def test_permission_mode_unknown_rejected(self, client):
+        resp = client.post("/api/sessions/perm-sid-c/permission-mode", json={"mode": "yolo"})
+        assert resp.status_code == 400
+
+    def test_system_check_docker_available(self, client):
+        """INT-1453: Docker 가용 시 hint 없이 available=True."""
+        with patch("pipeline.sandbox.docker_available", return_value=True):
+            resp = client.get("/api/onboarding/system-check")
+        assert resp.status_code == 200
+        d = resp.json()["docker"]
+        assert d["available"] is True
+        assert d["hint"] is None
+
+    def test_system_check_docker_missing(self, client):
+        """INT-1453: Docker 미설치 시 비차단 안내(hint+install_url)를 내려준다."""
+        with patch("pipeline.sandbox.docker_available", return_value=False):
+            resp = client.get("/api/onboarding/system-check")
+        assert resp.status_code == 200
+        d = resp.json()["docker"]
+        assert d["available"] is False
+        assert "코드 실행" in d["hint"]
+        assert d["install_url"].startswith("https://")
+
+    def test_permission_mode_default_clears_global_yolo(self, client):
+        """전역 YOLO 가 켜진 상태에서 default 로 내리면 전역 플래그도 꺼져야 한다."""
+        import web.state as _state
+        prev = _state._YOLO_GLOBAL
+        try:
+            with patch("web.routers.sessions.save_yolo_global"):
+                _state._YOLO_GLOBAL = True
+                resp = client.post("/api/sessions/perm-sid-d/permission-mode", json={"mode": "default"})
+                assert resp.json()["permission_mode"] == "default"
+                assert _state._YOLO_GLOBAL is False
+                resp = client.get("/api/sessions/perm-sid-d/permission-mode")
+                assert resp.json()["permission_mode"] == "default"
+        finally:
+            _state._YOLO_GLOBAL = prev
 
     def test_active_sessions_empty(self, client):
         resp = client.get("/api/sessions/active")

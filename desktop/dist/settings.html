@@ -260,6 +260,15 @@
           </div>
           <div class="actions"><span class="status" id="search-status"></span><button class="btn primary" id="search-save">저장 · 연결 테스트</button></div>
         </div>
+
+        <h2 id="t-sys-h" style="margin-top:22px">시스템</h2>
+        <p class="desc" id="t-sys-d">코드 실행 샌드박스는 Docker Desktop이 필요합니다. 없어도 채팅·메모리·워크스페이스 연동은 정상 작동합니다.</p>
+        <div class="section">
+          <div class="row">
+            <div class="field"><label id="t-sys-docker-lbl">Docker</label><div class="hint" id="sys-docker">확인 중…</div></div>
+            <div id="sys-docker-action"></div>
+          </div>
+        </div>
       </div>
 
       <!-- ── Agent (지침 .md) ── -->
@@ -887,6 +896,27 @@ async function loadToolsPane() {
     }
   } catch (e) { box.innerHTML = '<div class="empty">도구 그룹 조회 실패</div>'; }
   loadSearchEndpoint();
+  loadSystemCheck();
+}
+
+// ── 시스템 의존성 (Docker 등, INT-1453) ──
+async function loadSystemCheck() {
+  const hint = $('sys-docker'); const action = $('sys-docker-action');
+  if (!hint) return;
+  try {
+    const r = await fetch(provBase() + '/api/onboarding/system-check', { signal: AbortSignal.timeout(8000) }).then(r => r.json());
+    const d = r.docker || {};
+    if (d.available) {
+      hint.textContent = '✓ 사용 가능 — 코드 실행(bash/python) 도구 활성';
+      action.innerHTML = '';
+    } else {
+      hint.textContent = d.hint || 'Docker 미설치 — 코드 실행 도구만 비활성화됩니다.';
+      action.innerHTML = '';
+      const btn = document.createElement('button'); btn.className = 'btn'; btn.textContent = 'Docker Desktop 설치';
+      btn.onclick = () => openExternalUrl(d.install_url || 'https://www.docker.com/products/docker-desktop/');
+      action.appendChild(btn);
+    }
+  } catch (e) { hint.textContent = '상태 확인 실패 (백엔드 미응답)'; }
 }
 
 // ── 검색 엔드포인트 (SearXNG) ──

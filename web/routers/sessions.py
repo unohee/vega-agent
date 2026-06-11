@@ -79,6 +79,61 @@ async def get_plan_mode(sid: str):
     return JSONResponse({"plan_mode": bool(_PLAN_MODE.get(sid, False))})
 
 
+# ── Permission 모드 (default | plan | bypass) — chat.html 통합 토글 (INT-1452) ──
+# 프론트는 이 단일 엔드포인트만 쓴다. plan→_PLAN_MODE, bypass→_YOLO_MODE 매핑으로
+# 기존 plan-mode/yolo-mode 소비처(server.py)와 상태를 공유한다.
+
+_PERM_ORDER = ["default", "plan", "bypass"]
+
+
+def _permission_mode_of(sid: str) -> str:
+    if _PLAN_MODE.get(sid):
+        return "plan"
+    if yolo_on(sid):
+        return "bypass"
+    return "default"
+
+
+def _set_permission_mode(sid: str, mode: str) -> None:
+    import web.state as _state
+    if mode == "plan":
+        _PLAN_MODE[sid] = True
+        _YOLO_MODE.pop(sid, None)
+    elif mode == "bypass":
+        _YOLO_MODE[sid] = True
+        _PLAN_MODE.pop(sid, None)
+    else:
+        _PLAN_MODE.pop(sid, None)
+        _YOLO_MODE.pop(sid, None)
+    # 전역 YOLO 플래그가 켜져 있으면 default/plan 으로 내려도 bypass 로 다시
+    # 표시된다 — UI에서 벗어날 수 없으므로 여기서 함께 끈다.
+    if mode != "bypass" and _state._YOLO_GLOBAL:
+        _state._YOLO_GLOBAL = False
+        save_yolo_global(False)
+
+
+@router.get("/api/sessions/{sid}/permission-mode")
+async def get_permission_mode(sid: str):
+    return JSONResponse({"permission_mode": _permission_mode_of(sid)})
+
+
+@router.post("/api/sessions/{sid}/permission-mode")
+async def set_permission_mode_ep(sid: str, request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    if body.get("cycle"):
+        cur = _permission_mode_of(sid)
+        mode = _PERM_ORDER[(_PERM_ORDER.index(cur) + 1) % len(_PERM_ORDER)]
+    else:
+        mode = body.get("mode", "default")
+        if mode not in _PERM_ORDER:
+            return JSONResponse({"error": f"unknown mode: {mode}"}, status_code=400)
+    _set_permission_mode(sid, mode)
+    return JSONResponse({"permission_mode": mode})
+
+
 @router.get("/api/sessions/{sid}/research-mode")
 async def get_research_mode(sid: str):
     return JSONResponse({"research_mode": bool(_RESEARCH_MODE.get(sid, False))})

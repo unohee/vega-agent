@@ -251,6 +251,36 @@ async def key_source():
     return JSONResponse({"keys": out, "env_paths": env_paths})
 
 
+# ── 시스템 의존성 체크 ─────────────────────────────────────────────────────────
+
+@router.get("/api/onboarding/system-check")
+async def system_check():
+    """선택 의존성 상태 — 설치 마법사·설정 창 표시용 (INT-1453).
+
+    번들 백엔드는 Xcode CLT/Homebrew 없이 동작한다. Docker 만 코드 실행
+    샌드박스(bash_exec/python_exec)에 필요한 선택 의존성이고, 없으면 해당
+    도구만 비활성화된다 — 그 사실을 UI에 드러내는 것이 이 엔드포인트의 목적."""
+    import asyncio
+    import platform
+    try:
+        from pipeline.sandbox import docker_available
+        docker_ok = await asyncio.to_thread(docker_available)
+    except Exception:
+        docker_ok = False
+    return JSONResponse({
+        "platform": platform.system(),
+        "docker": {
+            "available": docker_ok,
+            "required_for": "code_exec",
+            "hint": None if docker_ok else (
+                "Docker Desktop 미설치/미기동 — 코드 실행(bash/python) 도구만 비활성화됩니다. "
+                "채팅·메모리·워크스페이스 연동은 정상 작동합니다."
+            ),
+            "install_url": None if docker_ok else "https://www.docker.com/products/docker-desktop/",
+        },
+    })
+
+
 # ── 프로바이더 설정 (키/URL/PKCE) ─────────────────────────────────────────────
 
 class ProviderPayload(BaseModel):

@@ -125,6 +125,7 @@
       <h2>워크플레이스 연결</h2>
       <div class="sub">연결할 서비스를 고르세요. 온보딩 후에도 언제든 추가할 수 있습니다.</div>
       <div class="plugin-grid" id="plugGrid"></div>
+      <div id="sysNotice" class="hidden" style="margin-top:14px; font-size:12px; color:var(--muted); line-height:1.5"></div>
       <div class="row" style="margin-top:20px">
         <button class="btn ghost" id="plugSkipAll">건너뛰기</button>
         <div class="grow"></div>
@@ -298,6 +299,21 @@ async function enterPluginStep(){
   $('plugSelect').classList.remove('hidden');
   $('plugAuth').classList.add('hidden');
   renderPlugins();
+  showSystemNotice();
+}
+
+// 선택 의존성 안내 (비차단, INT-1453) — Docker 없으면 코드 실행 도구만 비활성임을 알린다.
+async function showSystemNotice(){
+  try{
+    const r = await fetch('/api/onboarding/system-check'); const s = await r.json();
+    if(s.docker && !s.docker.available){
+      const el = $('sysNotice');
+      el.innerHTML = 'ℹ️ ' + (s.docker.hint || 'Docker 미설치 — 코드 실행 도구만 비활성화됩니다.')
+        + ' <a href="#" id="sysDockerLink">Docker Desktop 설치</a>';
+      el.classList.remove('hidden');
+      $('sysDockerLink').onclick = (e)=>{ e.preventDefault(); openExternal(s.docker.install_url); };
+    }
+  }catch(e){ /* 백엔드 미지원 시 조용히 무시 */ }
 }
 
 $('plugSkipAll').onclick = finishOnboarding;
