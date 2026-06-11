@@ -33,6 +33,18 @@
       }
       .label { font-size: 12px; color: #8b949e; }
       .pct { font-size: 12px; color: #484f58; font-variant-numeric: tabular-nums; }
+      .console {
+        width: 520px; max-width: 84vw; height: 148px;
+        margin-top: 26px; padding: 10px 12px;
+        background: #010409; border: 1px solid #21262d; border-radius: 8px;
+        overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11px; line-height: 1.55; color: #6e7681;
+        -webkit-user-select: text; user-select: text;
+      }
+      .console .ln { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .console .ln:last-child { color: #9aa4b2; }
+      .console .ln .t { color: #388bfd; margin-right: 6px; }
     </style>
   </head>
   <body>
@@ -42,6 +54,7 @@
       <span class="label" id="label">시작하는 중…</span>
       <span class="pct" id="pct">0%</span>
     </div>
+    <div class="console" id="console"></div>
     <script>
       // Rust(wait_and_navigate)가 부팅 단계마다 window.vegaProgress(pct, label)를 호출.
       // 호출이 끊겨도(예: 빠른 부팅) 화면이 멈춰 보이지 않도록, 목표치까지
@@ -69,6 +82,29 @@
       window.vegaProgress = function (pct, label) {
         if (typeof pct === 'number' && pct > target) target = Math.min(100, pct);
         if (label) labelEl.textContent = label;
+      };
+
+      // Rust(wait_and_navigate)가 셸/백엔드 로그의 새 라인을 그대로 전달.
+      // 가짜 단계 연출이 아니라 실제 로그 tail — 최근 12줄만 유지.
+      const consoleEl = document.getElementById('console');
+      const MAX_LINES = 12;
+      window.vegaLog = function (line) {
+        if (!line) return;
+        // 파이썬 로그의 'YYYY-MM-DD HH:MM:SS,mmm [LEVEL] ' 프리픽스에서 시간만 남긴다.
+        let t = '';
+        let body = String(line);
+        const m = body.match(/^\d{4}-\d{2}-\d{2}[ T](\d{2}:\d{2}:\d{2})[,.]\d+\s+(?:\[\w+\]\s+)?(.*)$/);
+        if (m) { t = m[1]; body = m[2]; }
+        const div = document.createElement('div');
+        div.className = 'ln';
+        if (t) {
+          const ts = document.createElement('span');
+          ts.className = 't'; ts.textContent = t;
+          div.appendChild(ts);
+        }
+        div.appendChild(document.createTextNode(body));
+        consoleEl.appendChild(div);
+        while (consoleEl.children.length > MAX_LINES) consoleEl.removeChild(consoleEl.firstChild);
       };
 
       // Rust 신호가 전혀 없을 때(이론상)를 대비한 완만한 자동 진행 — 85%에서 멈춤.

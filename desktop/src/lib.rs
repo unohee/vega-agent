@@ -146,7 +146,66 @@ fn backend_url() -> String {
 /// 모바일(iOS/Android)에서는 sidecar 백엔드가 없고 원격 서버에 붙으므로
 /// 로컬 TCP 폴링을 건너뛰고 곧바로 원격 URL을 로드한다. 도달 불가 시
 /// WebView 자체가 네트워크 오류를 표시한다.
-fn wait_and_navigate(win: tauri::WebviewWindow, url: String) {
+/// 오프셋 기반 로그 파일 tail — 폴링마다 새로 추가된 라인만 반환.
+/// 파일이 없으면 조용히 빈 결과, 로테이션(길이 감소) 시 처음부터 다시 읽는다.
+struct LogTail {
+    path: std::path::PathBuf,
+    pos: u64,
+}
+
+impl LogTail {
+    /// start_pos=None 이면 현재 EOF부터(이전 세션 라인 제외), Some(n)이면 n부터.
+    fn new(path: std::path::PathBuf, start_pos: Option<u64>) -> Self {
+        let pos = start_pos.unwrap_or_else(|| {
+            std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0)
+        });
+        Self { path, pos }
+    }
+
+    fn read_new_lines(&mut self) -> Vec<String> {
+        use std::io::{Read, Seek, SeekFrom};
+        let Ok(mut f) = std::fs::File::open(&self.path) else { return Vec::new() };
+        let len = f.metadata().map(|m| m.len()).unwrap_or(0);
+        if len < self.pos {
+            self.pos = 0; // 로테이션/truncate
+        }
+        if len == self.pos {
+            return Vec::new();
+        }
+        if f.seek(SeekFrom::Start(self.pos)).is_err() {
+            return Vec::new();
+        }
+        let mut buf = String::new();
+        if f.take(64 * 1024).read_to_string(&mut buf).is_err() {
+            // UTF-8 경계가 깨졌으면 이번 틱은 건너뛴다 (다음 틱에 재시도)
+            return Vec::new();
+        }
+        // 마지막 라인이 개행 없이 잘려 있으면 다음 틱으로 미룬다.
+        let consumed = match buf.rfind('\n') {
+            Some(i) => i + 1,
+            None => return Vec::new(),
+        };
+        self.pos += consumed as u64;
+        buf[..consumed]
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .map(|l| {
+                let mut s = l.to_string();
+                if s.len() > 240 {
+                    let mut cut = 240;
+                    while cut > 0 && !s.is_char_boundary(cut) {
+                        cut -= 1;
+                    }
+                    s.truncate(cut);
+                    s.push('…');
+                }
+                s
+            })
+            .collect()
+    }
+}
+
+fn wait_and_navigate(win: tauri::WebviewWindow, url: String, shell_log_from: u64) {
     if IS_MOBILE {
         let _ = win.eval(&format!("window.location.href = {url:?}")); // cxt-ignore: security
         return;
@@ -160,6 +219,29 @@ fn wait_and_navigate(win: tauri::WebviewWindow, url: String) {
             let _ = win.eval(&format!("window.vegaProgress && window.vegaProgress({pct}, '{safe}')")); // cxt-ignore: security
         };
 
+        // 실제 기동 로그 tail — 셸 로그(업데이트 체크·LaunchAgent·spawn)와 백엔드
+        // stdout/stderr(uvicorn·DB·MCP 초기화)를 그대로 로딩 화면 콘솔에 흘린다.
+        // 연출된 가짜 단계가 아니라 진짜 로그다 (INT-1465).
+        let log = log_dir();
+        let mut tails = [
+            LogTail::new(shell_log_path(), Some(shell_log_from)),
+            LogTail::new(log.join("vega-backend.stdout.log"), None),
+            LogTail::new(log.join("vega-backend.stderr.log"), None),
+        ];
+        let push_logs = |win: &tauri::WebviewWindow, tails: &mut [LogTail]| {
+            let mut lines: Vec<String> = Vec::new();
+            for t in tails.iter_mut() {
+                lines.extend(t.read_new_lines());
+            }
+            // 폭주 방지 — 틱당 마지막 10줄만
+            let skip = lines.len().saturating_sub(10);
+            for line in lines.into_iter().skip(skip) {
+                if let Ok(js_str) = serde_json::to_string(&line) {
+                    let _ = win.eval(&format!("window.vegaLog && window.vegaLog({js_str})")); // cxt-ignore: security
+                }
+            }
+        };
+
         // 폴링: 500ms × 240 = 최대 120초.
         // 단계별 실제 신호로 진행률을 채운다.
         //  - 프로세스 부팅 대기(TCP 미연결): 경과 시간 기반 0→80% (백엔드 spawn~uvicorn 기동)
@@ -167,9 +249,11 @@ fn wait_and_navigate(win: tauri::WebviewWindow, url: String) {
         //  - health 200: 100% 후 navigate (앱 startup·MCP 등록까지 완료)
         let mut listening_seen = false;
         for i in 0..240u32 {
+            push_logs(&win, &mut tails);
             if backend_health_ok() {
+                push_logs(&win, &mut tails);
                 progress(&win, 100, "준비 완료");
-                std::thread::sleep(std::time::Duration::from_millis(180));
+                std::thread::sleep(std::time::Duration::from_millis(380));
                 let _ = win.eval(&format!("window.location.href = {:?}", url)); // cxt-ignore: security
                 return;
             }
@@ -633,6 +717,12 @@ pub fn run() {
 
             let win = win_builder.build()?;
 
+            // 로딩 콘솔 tail 기준점 — 이 시점 이후의 셸 로그(업데이트 체크·
+            // LaunchAgent 등록·spawn)만 로딩 화면에 보여준다 (INT-1465).
+            let shell_log_from = std::fs::metadata(shell_log_path())
+                .map(|m| m.len())
+                .unwrap_or(0);
+
             // 자동 업데이트 백그라운드 체크 (데스크탑 전용)
             #[cfg(all(desktop, not(any(target_os = "android", target_os = "ios"))))]
             {
@@ -650,7 +740,7 @@ pub fn run() {
             spawn_backend_directly(&app.handle());
 
             // 백엔드 준비 후 실제 URL로 전환 (흰 화면 방지)
-            wait_and_navigate(win, backend_url());
+            wait_and_navigate(win, backend_url(), shell_log_from);
 
             // 트레이 메뉴 — 데스크탑 전용 (모바일엔 시스템 트레이가 없음)
             #[cfg(desktop)]
@@ -737,4 +827,51 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("VEGA desktop error"); // cxt-ignore: panic_risk
+}
+
+#[cfg(test)]
+mod log_tail_tests {
+    use super::LogTail;
+    use std::io::Write;
+
+    fn tmp(name: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!("vega-tail-test-{}-{name}.log", std::process::id()))
+    }
+
+    #[test]
+    fn skips_existing_reads_appended_and_handles_partial_lines() {
+        let p = tmp("basic");
+        std::fs::write(&p, "old-line\n").unwrap();
+        let mut t = LogTail::new(p.clone(), None); // EOF 부터 — 기존 라인 제외
+        assert!(t.read_new_lines().is_empty());
+
+        let mut f = std::fs::OpenOptions::new().append(true).open(&p).unwrap();
+        write!(f, "a\nb\n").unwrap();
+        assert_eq!(t.read_new_lines(), vec!["a", "b"]);
+
+        // 개행 없는 부분 라인은 보류했다가 완성되면 반환
+        write!(f, "partial").unwrap();
+        assert!(t.read_new_lines().is_empty());
+        writeln!(f).unwrap();
+        assert_eq!(t.read_new_lines(), vec!["partial"]);
+        let _ = std::fs::remove_file(&p);
+    }
+
+    #[test]
+    fn resets_on_truncate_and_starts_from_offset() {
+        let p = tmp("rotate");
+        std::fs::write(&p, "first\nsecond\n").unwrap();
+        let mut t = LogTail::new(p.clone(), Some(6)); // "first\n" 이후부터
+        assert_eq!(t.read_new_lines(), vec!["second"]);
+
+        std::fs::write(&p, "rotated\n").unwrap(); // truncate + 새 내용
+        assert_eq!(t.read_new_lines(), vec!["rotated"]);
+        let _ = std::fs::remove_file(&p);
+    }
+
+    #[test]
+    fn missing_file_is_silent() {
+        let mut t = LogTail::new(tmp("nope-not-created"), None);
+        assert!(t.read_new_lines().is_empty());
+    }
 }
