@@ -8,6 +8,7 @@ from __future__ import annotations
 import datetime
 import json
 import re
+import shutil
 import subprocess
 import textwrap
 import time
@@ -69,16 +70,57 @@ def _rewrite_host_paths(text: str) -> str:
 
 # ── Container state ───────────────────────────────────────────────────────────
 
-def docker_available() -> bool:
-    """Docker 데몬이 응답하는지 확인. 미설치/미기동이면 False (조용히 skip 용)."""
+# Docker 부재 시 사용자에게 보여줄 메시지 (INT-1459).
+# raw FileNotFoundError("[Errno 2] ... 'docker'")가 도구 결과로 노출되지 않게 한다.
+_DOCKER_MISSING_MSG = (
+    "Docker가 설치되어 있지 않아 샌드박스 코드 실행(bash/python)을 사용할 수 없습니다. "
+    "OrbStack(https://orbstack.dev) 또는 Docker Desktop"
+    "(https://www.docker.com/products/docker-desktop/)을 설치한 뒤 다시 시도해주세요. "
+    "채팅·메모리·워크스페이스 연동 등 나머지 기능은 정상 작동합니다."
+)
+_DOCKER_DOWN_MSG = (
+    "Docker는 설치되어 있지만 데몬이 실행 중이 아닙니다. "
+    "OrbStack 또는 Docker Desktop 앱을 실행한 뒤 다시 시도해주세요."
+)
+
+# 'ok' 판정만 짧게 캐시 — 정상 경로에서 매 도구 호출마다 `docker info`(수십 ms)를
+# 반복하지 않기 위함. 부정 판정(missing/down)은 캐시하지 않아, 사용자가 Docker를
+# 설치/기동한 직후의 재시도가 즉시 감지된다.
+_DOCKER_OK_TTL = 60.0
+_docker_ok_until = 0.0
+
+
+def docker_state() -> str:
+    """Docker 가용성 3분류: 'ok' | 'missing'(CLI 미설치) | 'down'(데몬 미기동).
+    which()는 매번 재평가(싸다) — 설치 후 재시도하면 바로 감지."""
+    global _docker_ok_until
+    if shutil.which("docker") is None:
+        return "missing"
+    if time.monotonic() < _docker_ok_until:
+        return "ok"
     try:
         r = subprocess.run(
             ["docker", "info", "--format", "{{.ServerVersion}}"],
             capture_output=True, text=True, timeout=5,
         )
-        return r.returncode == 0
     except Exception:
-        return False
+        return "down"
+    if r.returncode == 0:
+        _docker_ok_until = time.monotonic() + _DOCKER_OK_TTL
+        return "ok"
+    return "down"
+
+
+def docker_available() -> bool:
+    """Docker 데몬이 응답하는지 확인. 미설치/미기동이면 False (조용히 skip 용)."""
+    return docker_state() == "ok"
+
+
+def _docker_error(state: str) -> dict:
+    """missing/down 상태를 사용자 친화 에러 dict로 (도구 결과 포맷과 동일 스키마)."""
+    msg = _DOCKER_MISSING_MSG if state == "missing" else _DOCKER_DOWN_MSG
+    return {"stdout": "", "stderr": "", "returncode": -1,
+            "error": msg, "docker": state, "sandbox_disabled": True}
 
 
 def _container_running() -> bool:
@@ -135,8 +177,10 @@ def ensure_sandbox_ready(timeout: float = 0) -> dict:
     없으면 조용히 skip한다(에러로 죽지 않음). 코드 실행 도구가 항상 준비되도록 한다.
 
     반환: {"ready": bool, "reason": str} — 호출부 로깅용."""
-    if not docker_available():
-        return {"ready": False, "reason": "docker_unavailable"}
+    state = docker_state()
+    if state != "ok":
+        # docker_missing(미설치) / docker_down(데몬 미기동) 구분 — UI/로그 진단용 (INT-1459)
+        return {"ready": False, "reason": f"docker_{state}"}
     try:
         if _container_running():
             return {"ready": True, "reason": "already_running"}
@@ -190,6 +234,11 @@ def _exec_project(cmd: list[str], project_dir: str, timeout: int = TIMEOUT_DEFAU
 def _exec(cmd: list[str], timeout: int = TIMEOUT_DEFAULT) -> dict:
     """Run via docker exec → {stdout, stderr, returncode}.
     Routes to an ephemeral project container if a project dir is set."""
+    # Docker 미설치/미기동이면 크래시 대신 친화 에러 반환 (INT-1459).
+    # 모든 sandbox_* 도구가 이 함수를 거치므로 여기 한 곳에서 게이트한다.
+    state = docker_state()
+    if state != "ok":
+        return _docker_error(state)
     proj = _PROJECT_DIR.get()
     if proj:
         return _exec_project(cmd, proj, timeout=timeout)
@@ -244,6 +293,12 @@ def sandbox_pip_install(packages: str) -> dict:
     2. Install inside the container with pip install --no-index --find-links /vega_data/.pip_cache
        --target /workspace/site-packages
     """
+    # Docker 부재 시 wheel 다운로드 전에 바로 안내 (아래 _exec의 error dict는
+    # 이 함수의 반환 조립에서 유실되므로 여기서 선제 차단) — INT-1459
+    state = docker_state()
+    if state != "ok":
+        return _docker_error(state)
+
     cache_dir = VEGA_DATA / ".pip_cache"
     cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -464,6 +519,11 @@ ls /workspace/history 2>/dev/null || echo '(없음)'
 
 def sandbox_status() -> dict:
     """Query container status and internal resource usage."""
+    state = docker_state()
+    if state != "ok":
+        # docker CLI 호출(_container_running) 전에 차단 — FileNotFoundError 방지 (INT-1459)
+        return {"running": False, "docker": state,
+                "error": _DOCKER_MISSING_MSG if state == "missing" else _DOCKER_DOWN_MSG}
     running = _container_running()
     if not running:
         return {"running": False}
