@@ -44,7 +44,7 @@ def test_manifest_url_matches_endpoint_prefix():
     """latest.json 의 자산 url 과 tauri.conf endpoints 가 같은 공개 prefix 아래여야
     한 곳(R2)만 올리면 updater 가 자산까지 도달한다."""
     m = _load_mlj()
-    conf = json.loads((REPO / "desktop" / "tauri.conf.json").read_text())
+    conf = json.loads((REPO / "desktop" / "tauri.conf.json").read_text(encoding="utf-8"))
     endpoint = conf["plugins"]["updater"]["endpoints"][0]
     assert endpoint == "https://download.intrect.io/vega/updates/latest.json"
     asset = m._r2_url(m.DEFAULT_UPDATE_BASE, "0.1.10", "VEGA-0.1.10-x86_64.app.tar.gz")
@@ -53,15 +53,15 @@ def test_manifest_url_matches_endpoint_prefix():
 
 def test_no_placeholder_left_in_endpoints():
     """placeholder 가 남아있으면 업데이트가 조용히 죽는다 — 명시적으로 막는다."""
-    conf = json.loads((REPO / "desktop" / "tauri.conf.json").read_text())
+    conf = json.loads((REPO / "desktop" / "tauri.conf.json").read_text(encoding="utf-8"))
     for ep in conf["plugins"]["updater"]["endpoints"]:
         assert "PLACEHOLDER" not in ep and "example.com" not in ep
 
 
 def test_version_sync():
     """tauri.conf.json 과 Cargo.toml 버전 일치 — 어긋나면 산출물 이름이 꼬인다."""
-    conf_ver = json.loads((REPO / "desktop" / "tauri.conf.json").read_text())["version"]
-    cargo = (REPO / "desktop" / "Cargo.toml").read_text()
+    conf_ver = json.loads((REPO / "desktop" / "tauri.conf.json").read_text(encoding="utf-8"))["version"]
+    cargo = (REPO / "desktop" / "Cargo.toml").read_text(encoding="utf-8")
     cargo_ver = next(
         l.split('"')[1] for l in cargo.splitlines() if l.startswith("version = ")
     )

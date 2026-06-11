@@ -49,6 +49,8 @@ playwright==1.58.0
 
 # 시스템 유틸
 psutil==7.2.2
+# cron 작업 스케줄 검증/다음 실행 계산 (pipeline/cron_jobs.py) — 빠지면 cron 생성이 전부 거부됨
+croniter==6.0.0
 tenacity==9.1.4
 rich==13.9.4
 nltk==3.9.4

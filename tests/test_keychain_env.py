@@ -67,7 +67,7 @@ def test_no_bundle_env_falls_to_default(tmp_path, monkeypatch):
 
 def test_spec_bundles_both_oauth_clients():
     from pathlib import Path
-    spec = (Path(__file__).resolve().parent.parent / "bin" / "vega-backend.spec").read_text()
+    spec = (Path(__file__).resolve().parent.parent / "bin" / "vega-backend.spec").read_text(encoding="utf-8")
     # slack 은 무조건 datas 에 명시
     assert "slack_oauth_client.json" in spec, "spec 에 slack OAuth client 번들 누락"
     # google 은 조건부(os.path.exists)지만 spec 에 반드시 등장해야 함

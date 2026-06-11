@@ -22,9 +22,10 @@ def test_chat_interleave_dom_sequence():
     회귀: 과거엔 도구 배지를 버블 맨 위에 모으고(insertBefore firstChild) 텍스트를
     아래 한 덩어리로 쌓아 시간순이 사라졌다. 인터리빙 도입 후 순서가 보존돼야 한다."""
     assert _RUNNER.exists(), f"러너 없음: {_RUNNER}"
+    # encoding 명시: Windows 기본 cp1252 로는 러너의 ✓ 출력을 디코드 못 한다
     r = subprocess.run(
         ["node", str(_RUNNER)],
-        capture_output=True, text=True, timeout=30,
+        capture_output=True, encoding="utf-8", errors="replace", timeout=30,
     )
     # 실패 시 러너의 stdout(어떤 시나리오가 깨졌는지)을 그대로 노출
     assert r.returncode == 0, f"인터리빙 시나리오 실패:\n{r.stdout}\n{r.stderr}"
