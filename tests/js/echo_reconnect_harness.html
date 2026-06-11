@@ -13,21 +13,59 @@ if (typeof marked === 'undefined') {
   window.marked = { parse: (t) => t.replace(/&/g,'&amp;').replace(/</g,'&lt;') };
 }
 
-// chat.html에서 렌더러 관련 함수만 추출해 주입 (테스트 대상 = 운영 코드).
+// 타이머 콜백 등 비동기 경로의 미포착 에러를 모아 RESULT_JSON에 노출 —
+// "detail이 비어 있는데 원인을 알 수 없는" 실패를 차단 (INT-1454).
+const __errors = [];
+window.addEventListener('error', (e) => __errors.push(String(e.message || e.error)));
+window.addEventListener('unhandledrejection', (e) => __errors.push(String(e.reason)));
+
+// chat.html에서 렌더러 관련 함수를 추출해 주입 (테스트 대상 = 운영 코드).
+// INT-1454: 대상 함수가 참조하는 최상위 헬퍼 함수·ALL_CAPS 상수를 chat.html에서
+// 자동 수집한다 — 렌더러에 의존성이 추가돼도(예: CATCHUP_AT/fenceBalanced)
+// 하니스 스텁 누락으로 조용히 깨지지 않게.
 async function loadFns() {
   const html = await fetch('../../web/static/chat.html').then(r => r.text());
   const m = html.match(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/);
   const script = m[1];
   function extract(name) {
-    const re = new RegExp('function ' + name + '\\([\\s\\S]*?\\n\\}');
+    // 최상위 함수 선언만 (컬럼 0 시작 ~ 컬럼 0의 닫는 중괄호)
+    const re = new RegExp('^function ' + name + '\\([\\s\\S]*?\\n\\}', 'm');
     const mm = script.match(re);
     if (!mm) throw new Error('함수 추출 실패: ' + name);
     return mm[0];
   }
-  const names = ['getStreamContent', 'closeStreamSegment', 'renderMarkdown', 'makeTyper'];
-  let src = 'var TYPING_SPEED = 4;\nvar CHUNK_SIZE = 8;\nfunction scrollBottom(){}\n';
-  for (const n of names) src += extract(n) + '\n';
-  src += '\nwindow._fns = { getStreamContent, closeStreamSegment, makeTyper };';
+  const roots = ['getStreamContent', 'closeStreamSegment', 'renderMarkdown', 'makeTyper'];
+  const stubs = { scrollBottom: 'function scrollBottom(){}' };
+  // 1) 대상 함수 + 호출하는 최상위 함수 의존성 (transitive)
+  const fnSrc = new Map();
+  const queue = [...roots];
+  while (queue.length) {
+    const n = queue.shift();
+    if (fnSrc.has(n) || stubs[n]) continue;
+    fnSrc.set(n, extract(n));
+    for (const mm of fnSrc.get(n).matchAll(/(?<![.\w$])([a-zA-Z_$][\w$]*)\s*\(/g)) {
+      const dep = mm[1];
+      if (!fnSrc.has(dep) && !stubs[dep]
+          && new RegExp('^function ' + dep + '\\(', 'm').test(script)) {
+        queue.push(dep);
+      }
+    }
+  }
+  // 2) 함수 본문이 참조하는 ALL_CAPS 상수 선언을 운영 코드에서 그대로 가져온다
+  //    (TYPING_SPEED/CHUNK_SIZE/CATCHUP_AT 등 — 운영 값 사용 = 충실도 ↑)
+  const bodies = [...fnSrc.values()].join('\n');
+  let constSrc = '';
+  const seen = new Set();
+  for (const mm of bodies.matchAll(/\b([A-Z][A-Z0-9_]{2,})\b/g)) {
+    const name = mm[1];
+    if (seen.has(name)) continue;
+    seen.add(name);
+    const dm = script.match(new RegExp('(?:const|let|var)\\s+' + name + '\\s*=[^;\\n]*;'));
+    if (dm) constSrc += dm[0] + '\n';
+  }
+  let src = constSrc + Object.values(stubs).join('\n') + '\n'
+          + [...fnSrc.values()].join('\n') + '\n';
+  src += 'window._fns = { getStreamContent, closeStreamSegment, makeTyper };';
   (0, eval)(src);
 }
 
@@ -97,6 +135,7 @@ async function run() {
   }
 
   const out = { ok: results.every(r => r.pass), results };
+  if (__errors.length) out.errors = __errors.slice(0, 5);  // 진단용 — 빈 detail 원인 노출
   window.__RESULT__ = out;
   const sink = document.createElement('pre');
   sink.id = 'result-sink';
@@ -107,7 +146,8 @@ async function run() {
 run().catch(e => {
   const sink = document.createElement('pre');
   sink.id = 'result-sink';
-  sink.textContent = 'RESULT_JSON:' + JSON.stringify({ ok: false, error: String(e && e.stack || e) });
+  sink.textContent = 'RESULT_JSON:' + JSON.stringify(
+    { ok: false, error: String(e && e.stack || e), errors: __errors.slice(0, 5) });
   document.body.appendChild(sink);
   document.title = 'DONE';
 });
