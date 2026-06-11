@@ -144,6 +144,17 @@ def authorize_url(redirect_uri: str | None = None) -> str:
     return f"{_AUTHORIZE_URL}?{params}"
 
 
+def _open_with_error_body(req: urllib.request.Request) -> dict:
+    """urlopen + HTTPError 본문 보존 — 'HTTP Error 400'만 남고 원인이 사라지는 것을 막는다."""
+    import urllib.error
+    try:
+        with urllib.request.urlopen(req, timeout=15, context=_ssl_context()) as r:
+            return json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode("utf-8", errors="replace")[:300]
+        raise RuntimeError(f"HTTP {e.code}: {detail}") from e
+
+
 def _post_form(url: str, data: dict, headers: dict | None = None) -> dict:
     body = urllib.parse.urlencode(data).encode("utf-8")
     hdrs = {
@@ -153,37 +164,36 @@ def _post_form(url: str, data: dict, headers: dict | None = None) -> dict:
     }
     if headers:
         hdrs.update(headers)
-    req = urllib.request.Request(url, data=body, headers=hdrs)
-    with urllib.request.urlopen(req, timeout=15, context=_ssl_context()) as r:
-        return json.loads(r.read().decode())
+    return _open_with_error_body(urllib.request.Request(url, data=body, headers=hdrs))
 
 
 def _get_json(url: str, headers: dict | None = None) -> dict:
     hdrs = {"User-Agent": _UA, "Accept": "application/json"}
     if headers:
         hdrs.update(headers)
-    req = urllib.request.Request(url, headers=hdrs)
-    with urllib.request.urlopen(req, timeout=15, context=_ssl_context()) as r:
-        return json.loads(r.read().decode())
+    return _open_with_error_body(urllib.request.Request(url, headers=hdrs))
 
 
-def _discover_workspace_id(access_token: str) -> str | None:
-    """사용자가 속한 워크스페이스(team) ID 발견 — GET /v1/users/me 의 user.teams[].
+def _discover_team_ids(access_token: str) -> list[str]:
+    """사용자가 속한 워크스페이스(team) ID 목록 — GET /v1/users/me 의 user.teams[].
 
     과거엔 개발자 워크스페이스 ID 가 하드코딩돼 타 사용자의 PAT 발급이
-    항상 실패했다(INT-1451). 복수 팀이면 첫 번째를 쓴다."""
+    항상 실패했다(INT-1451)."""
     try:
         resp = _get_json(
             f"{_API_BASE}/users/me",
             headers={"Authorization": f"Bearer {access_token}"},
         )
     except Exception:
-        return None
+        return []
     teams = (resp.get("user") or {}).get("teams") or []
-    for t in teams:
-        if t.get("id"):
-            return str(t["id"])
-    return None
+    return [str(t["id"]) for t in teams if t.get("id")]
+
+
+def _discover_workspace_id(access_token: str) -> str | None:
+    """첫 번째 소속 워크스페이스 ID (도구 폴백용 — tools_superthread._workspace_id)."""
+    ids = _discover_team_ids(access_token)
+    return ids[0] if ids else None
 
 
 def _post_json(url: str, payload: dict, headers: dict | None = None) -> dict:
@@ -195,9 +205,7 @@ def _post_json(url: str, payload: dict, headers: dict | None = None) -> dict:
     }
     if headers:
         hdrs.update(headers)
-    req = urllib.request.Request(url, data=body, headers=hdrs)
-    with urllib.request.urlopen(req, timeout=15, context=_ssl_context()) as r:
-        return json.loads(r.read().decode())
+    return _open_with_error_body(urllib.request.Request(url, data=body, headers=hdrs))
 
 
 def exchange_code(code: str, state: str | None = None) -> dict:
@@ -230,20 +238,29 @@ def exchange_code(code: str, state: str | None = None) -> dict:
                 "error": f"access_token 미수신: {json.dumps(token_resp)[:200]}"}
 
     # 2. 사용자 워크스페이스 발견 — PAT 는 워크스페이스 단위로 발급된다.
-    workspace_id = _discover_workspace_id(access_token)
-    if not workspace_id:
+    team_ids = _discover_team_ids(access_token)
+    if not team_ids:
         return {"ok": False, "expires_at": None,
                 "error": "워크스페이스 발견 실패 — Superthread 계정에 소속된 팀이 없거나 users/me 조회가 거부됨."}
 
-    # 3. PAT 발급 (365일)
-    try:
-        pat_resp = _post_json(
-            f"{_API_BASE}/auth/{workspace_id}/pats",
-            {"name": PAT_NAME, "expires_in": PAT_EXPIRES_DAYS},
-            headers={"Authorization": f"Bearer {access_token}"},
-        )
-    except Exception as e:
-        return {"ok": False, "expires_at": None, "error": f"PAT 발급 실패: {e}"}
+    # 3. PAT 발급 (365일) — 첫 팀이 거부하면(게스트 멤버십 등) 다음 팀에 순차 시도.
+    pat_resp: dict | None = None
+    workspace_id = ""
+    errors: list[str] = []
+    for ws in team_ids:
+        try:
+            pat_resp = _post_json(
+                f"{_API_BASE}/auth/{ws}/pats",
+                {"name": PAT_NAME, "expires_in": PAT_EXPIRES_DAYS},
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+            workspace_id = ws
+            break
+        except Exception as e:
+            errors.append(f"{ws}: {e}")
+    if pat_resp is None:
+        return {"ok": False, "expires_at": None,
+                "error": "PAT 발급 실패 — " + " / ".join(errors)}
 
     token = pat_resp.get("token") or (pat_resp.get("pat") or {}).get("token")
     if not token:

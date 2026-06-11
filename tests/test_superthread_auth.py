@@ -61,6 +61,41 @@ def test_exchange_code_fails_clearly_without_workspace():
     mock_save.assert_not_called()
 
 
+def test_exchange_code_falls_back_to_next_team():
+    """첫 팀에서 PAT 발급이 거부되면(400 등) 다음 팀에 시도한다."""
+    _prime_pending_state()
+    pat_urls = []
+
+    def fake_post_json(url, payload, headers=None):
+        pat_urls.append(url)
+        if "tmGUEST" in url:
+            raise RuntimeError("HTTP 400: pat not allowed")
+        return {"token": "pat-ok", "pat": {}}
+
+    with patch.object(st, "_post_form", return_value={"access_token": "at-123"}), \
+         patch.object(st, "_get_json", return_value={"user": {"teams": [{"id": "tmGUEST"}, {"id": "tmMINE"}]}}), \
+         patch.object(st, "_post_json", side_effect=fake_post_json), \
+         patch.object(st, "keychain_save") as mock_save:
+        result = st.exchange_code("auth-code", state="test-state")
+
+    assert result["ok"] is True, result
+    assert pat_urls == [f"{st._API_BASE}/auth/tmGUEST/pats", f"{st._API_BASE}/auth/tmMINE/pats"]
+    saved = {c.args[0]: c.args[1] for c in mock_save.call_args_list}
+    assert saved["workspace_id"] == "tmMINE"
+
+
+def test_exchange_code_reports_all_team_errors():
+    """모든 팀에서 실패하면 팀별 에러(HTTP 본문 포함)를 모아 반환한다."""
+    _prime_pending_state()
+    with patch.object(st, "_post_form", return_value={"access_token": "at-123"}), \
+         patch.object(st, "_get_json", return_value={"user": {"teams": [{"id": "tmA"}]}}), \
+         patch.object(st, "_post_json", side_effect=RuntimeError("HTTP 400: some api reason")), \
+         patch.object(st, "keychain_save"):
+        result = st.exchange_code("auth-code", state="test-state")
+    assert result["ok"] is False
+    assert "tmA" in result["error"] and "some api reason" in result["error"]
+
+
 def test_no_hardcoded_workspace_id():
     """개발자 개인 워크스페이스 ID 하드코딩이 되살아나면 안 된다 (INT-1450/1451)."""
     src = Path(st.__file__).read_text(encoding="utf-8")
