@@ -296,7 +296,21 @@ async def fs_open_in_editor(request: Request):
     if not p.exists():
         return JSONResponse({"error": f"경로 없음: {raw}"}, status_code=404)
 
-    editor = (body.get("editor") or "").strip() or _find_editor()
+    # INT-1468 H3: editor 는 화이트리스트(_EDITOR_CANDIDATES)로 제한한다.
+    # 과거엔 body 값을 검증 없이 Popen 해 임의 로컬 실행파일을 띄울 수 있었다.
+    requested = (body.get("editor") or "").strip()
+    if requested:
+        if requested not in _EDITOR_CANDIDATES:
+            return JSONResponse(
+                {"error": f"허용되지 않은 에디터: {requested} (허용: {', '.join(_EDITOR_CANDIDATES)})"},
+                status_code=400,
+            )
+        import shutil
+        editor = shutil.which(requested)
+        if not editor:
+            return JSONResponse({"error": f"에디터 미설치: {requested}"}, status_code=404)
+    else:
+        editor = _find_editor()
     if not editor:
         return JSONResponse({"error": "설치된 에디터를 찾을 수 없음 (cursor/code/idea/subl/zed)"}, status_code=404)
 

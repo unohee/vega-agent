@@ -339,11 +339,12 @@ class TestSessionsRouter:
 
 
 # ── Admin 라우터 ──────────────────────────────────────────────────────────────
-# TestClient의 request.client가 None이므로 _is_loopback을 True로 패치해서 테스트
+# TestClient의 request.client가 None이므로 is_loopback을 True로 패치해서 테스트
+# (loopback 판정은 web.state.is_loopback 단일 출처 — admin이 import한 이름을 patch)
 
 class TestAdminRouter:
     def test_keys_list_local(self, client):
-        with patch("web.routers.admin._is_loopback", return_value=True), \
+        with patch("web.routers.admin.is_loopback", return_value=True), \
              patch("web.routers.admin.load_enterprise_keys", return_value=frozenset(["vk_abc", "vk_def"])):
             resp = client.get("/api/admin/keys")
         assert resp.status_code == 200
@@ -352,7 +353,7 @@ class TestAdminRouter:
         assert data["count"] == 2
 
     def test_keys_add_valid(self, client):
-        with patch("web.routers.admin._is_loopback", return_value=True), \
+        with patch("web.routers.admin.is_loopback", return_value=True), \
              patch("pipeline.keychain.get_secret", return_value=""), \
              patch("pipeline.keychain.set_secret"):
             resp = client.post("/api/admin/keys", json={"key": "vk_newkey"})
@@ -360,17 +361,17 @@ class TestAdminRouter:
         assert resp.json()["ok"] is True
 
     def test_keys_add_invalid_prefix(self, client):
-        with patch("web.routers.admin._is_loopback", return_value=True):
+        with patch("web.routers.admin.is_loopback", return_value=True):
             resp = client.post("/api/admin/keys", json={"key": "invalid_key"})
         assert resp.status_code == 400
 
     def test_keys_add_missing_key(self, client):
-        with patch("web.routers.admin._is_loopback", return_value=True):
+        with patch("web.routers.admin.is_loopback", return_value=True):
             resp = client.post("/api/admin/keys", json={})
         assert resp.status_code == 400
 
     def test_keys_delete(self, client):
-        with patch("web.routers.admin._is_loopback", return_value=True), \
+        with patch("web.routers.admin.is_loopback", return_value=True), \
              patch("pipeline.keychain.get_secret", return_value="vk_abc,vk_def"), \
              patch("pipeline.keychain.set_secret"):
             resp = client.delete("/api/admin/keys/vk_abc")
@@ -379,6 +380,6 @@ class TestAdminRouter:
 
     def test_keys_remote_blocked(self, client):
         """원격 접속은 403으로 차단돼야 한다."""
-        with patch("web.routers.admin._is_loopback", return_value=False):
+        with patch("web.routers.admin.is_loopback", return_value=False):
             resp = client.get("/api/admin/keys")
         assert resp.status_code == 403

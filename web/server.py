@@ -268,6 +268,27 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ── 원격 침입 차단 미들웨어 (INT-1468 H2) ────────────────────────────────────
+# 백엔드는 127.0.0.1 전용 바인드라 정상 상태에선 원격 peer 가 닿지 않지만,
+# 사용자가 터널/프록시(예: Tailscale)로 노출할 때를 대비한 명시 게이트.
+# 허용: loopback · Tailscale 대역 · VEGA_REMOTE_ALLOW_CIDRS · 유효 enterprise 키.
+# 그 외 원격은 403. /api/health 만 예외(가용성 프로브).
+_REMOTE_GATE_EXEMPT = {"/api/health"}
+
+
+@app.middleware("http")
+async def _remote_access_gate(request: Request, call_next):
+    path = request.url.path
+    if path not in _REMOTE_GATE_EXEMPT and not _state_mod.is_remote_allowed(request):
+        from fastapi.responses import JSONResponse as _JR
+        return _JR(
+            {"error": "원격 접속이 허용되지 않았습니다. 로컬 앱에서 사용하거나, "
+                      "Tailscale/신뢰 네트워크 또는 enterprise 키로 접속하세요."},
+            status_code=403,
+        )
+    return await call_next(request)
+
+
 app.mount("/api/charts", StaticFiles(directory=str(CHART_DIR)), name="charts")
 
 # 공유 런타임 상태 — web/state.py에서 관리. 모두 같은 객체를 참조함.
@@ -279,7 +300,6 @@ from web.state import (  # noqa: E402
     _GOAL_MODE,
     _TASK_REGISTRY,
     _ACCESS,
-    _LOOPBACK,
     _ENT_KEY_KC,
     _heartbeat_resumes,
     HEARTBEAT_INTERVAL,
@@ -340,27 +360,6 @@ def _save_autopilot(data: dict) -> None:
     _sa(data)
 
 
-def _is_loopback(request: Request) -> bool:
-    forwarded = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
-    if forwarded:
-        return forwarded in _LOOPBACK or forwarded.startswith("127.")
-    host = request.client.host if request.client else "127.0.0.1"
-    return host in _LOOPBACK or host.startswith("127.") or host.startswith("::ffff:127.")
-
-
-def _get_access_level(request: Request) -> str:
-    if _is_loopback(request):
-        return "local"
-    key = request.headers.get("x-vega-key", "").strip()
-    if key and key in _load_enterprise_keys():
-        return "enterprise"
-    return "local"
-
-
-def _ce_mode_from_access(level: str) -> bool:
-    return False
-
-
 _RESEARCH_MODE_GUIDE = """## 연구 모드 (Research Mode) 활성화
 
 지금 이 요청은 **연구 모드**로 처리된다. 다음 원칙을 반드시 따른다:
@@ -383,10 +382,9 @@ _RESEARCH_MODE_GUIDE = """## 연구 모드 (Research Mode) 활성화
 # Access level — per session.
 # "local"      : loopback connection (Tauri app, local terminal)
 # "enterprise" : remote client with valid X-VEGA-Key header
-# "ce"         : remote connection without key — local system tools excluded
+# 원격 차단은 _remote_access_gate 미들웨어 + state.is_remote_allowed 가 담당.
 _ACCESS: dict[str, str] = {}
 
-_LOOPBACK = {"127.0.0.1", "::1", "::ffff:127.0.0.1", "localhost", "0.0.0.0"}
 _ENT_KEY_KC = "vega-enterprise-keys"   # Keychain service name
 
 
@@ -400,26 +398,23 @@ def _load_enterprise_keys() -> frozenset[str]:
         return frozenset()
 
 
+# _is_loopback / _get_access_level 은 web/state.py 단일 출처로 위임한다
+# (INT-1468 H1: XFF 신뢰 로직 중복 제거 + 신뢰 프록시 opt-in 일원화).
 def _is_loopback(request: Request) -> bool:
-    forwarded = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
-    if forwarded:
-        return forwarded in _LOOPBACK or forwarded.startswith("127.")
-    host = request.client.host if request.client else "127.0.0.1"
-    return host in _LOOPBACK or host.startswith("127.") or host.startswith("::ffff:127.")
+    return _state_mod.is_loopback(request)
 
 
 def _get_access_level(request: Request) -> str:
-    """요청의 접근 레벨 반환: 'local' | 'enterprise'
+    """요청의 접근 레벨: 'local' | 'enterprise'.
 
-    CE 모드 제거(2026-06-02): 비-loopback·키 없는 원격 접속도 더 이상 'ce'로
-    강등하지 않는다. 모든 세션이 로컬 시스템 도구 전체를 받는다.
+    원격 차단은 _remote_access_gate 미들웨어가 담당(허용된 원격만 여기 도달).
+    여기서는 loopback→local, 유효 키→enterprise, 그 외(허용된 Tailscale 등)→local.
     """
-    if _is_loopback(request):
+    if _state_mod.is_loopback(request):
         return "local"
     key = request.headers.get("x-vega-key", "").strip()
     if key and key in _load_enterprise_keys():
         return "enterprise"
-    # 과거엔 "ce"(로컬 도구 차단)였으나 CE 모드 폐지로 local과 동일 취급.
     return "local"
 
 
