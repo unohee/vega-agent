@@ -650,7 +650,9 @@ fn open_url(url: String) -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default()
-        .plugin(tauri_plugin_dialog::init());
+        .plugin(tauri_plugin_dialog::init())
+        // 클립보드 — chat.html(원격 origin)에서 navigator.clipboard 차단 시 폴백 경로 (INT-1472)
+        .plugin(tauri_plugin_clipboard_manager::init());
 
     // 자동 업데이트 플러그인 — 데스크탑 전용 (모바일은 스토어 정책상 자체 업데이트 불가).
     #[cfg(all(desktop, not(any(target_os = "android", target_os = "ios"))))]

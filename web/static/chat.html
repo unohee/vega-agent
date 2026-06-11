@@ -4526,11 +4526,43 @@ function insertAtCursor(el, text) {
   el.focus();
 }
 
+// ── 클립보드 공통 헬퍼 (INT-1472) ──────────────────────────────────────────
+// Tauri WebView는 원격 origin(localhost:8100)이라 navigator.clipboard가 차단될 수 있다.
+// 우선순위: Tauri clipboard-manager 플러그인 → navigator.clipboard → execCommand 폴백.
+// 성공: 사용한 경로 문자열 반환. 실패: 단계별 원인을 담은 Error throw.
+async function copyText(text) {
+  const errs = [];
+  const cm = window.__TAURI__?.clipboardManager;
+  if (cm?.writeText) {
+    try { await cm.writeText(text); return 'tauri'; }
+    catch (e) { errs.push('tauri: ' + (e.message || e)); }
+  }
+  if (navigator.clipboard?.writeText) {
+    try { await navigator.clipboard.writeText(text); return 'navigator'; }
+    catch (e) { errs.push('navigator: ' + (e.message || e)); }
+  }
+  // 최후 폴백 — 임시 textarea + execCommand (user gesture 컨텍스트에서 동작)
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0';
+    document.body.appendChild(ta);
+    ta.select();
+    ta.setSelectionRange(0, text.length);
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    if (ok) return 'execCommand';
+    errs.push('execCommand 거부');
+  } catch (e) { errs.push('execCommand: ' + (e.message || e)); }
+  throw new Error(errs.join(' · ') || '클립보드 사용 불가');
+}
+
 async function handleCtxAction(action, path, isDir, name) {
   switch (action) {
     case 'copy-path':
-      try { await navigator.clipboard.writeText(path); showToast('경로를 복사했어'); }
-      catch { showToast('복사 실패 — 권한 없음'); }
+      try { await copyText(path); showToast('경로를 복사했어'); }
+      catch (e) { showToast('복사 실패 — ' + (e.message || e)); }
       break;
     case 'insert-path':
       insertAtCursor(inputEl, path);
@@ -4596,12 +4628,12 @@ async function handleSessionCtxAction(action, sid, sname) {
   if (!sid) return;
   switch (action) {
     case 'copy-short-id':
-      try { await navigator.clipboard.writeText(sid.slice(0, 8)); showToast(`${sid.slice(0,8)} 복사됨`); }
-      catch { showToast('복사 실패 — 권한 없음'); }
+      try { await copyText(sid.slice(0, 8)); showToast(`${sid.slice(0,8)} 복사됨`); }
+      catch (e) { showToast('복사 실패 — ' + (e.message || e)); }
       break;
     case 'copy-uuid':
-      try { await navigator.clipboard.writeText(sid); showToast('UUID 복사됨'); }
-      catch { showToast('복사 실패 — 권한 없음'); }
+      try { await copyText(sid); showToast('UUID 복사됨'); }
+      catch (e) { showToast('복사 실패 — ' + (e.message || e)); }
       break;
     case 'copy-content': {
       try {
@@ -4624,7 +4656,7 @@ async function handleSessionCtxAction(action, sid, sname) {
           lines.push('', '---', '');
         }
         const md = lines.join('\n');
-        await navigator.clipboard.writeText(md);
+        await copyText(md);
         showToast(`내용 복사됨 (${data.messages?.length || 0}개 메시지, ${md.length}자)`);
       } catch (e) {
         showToast('복사 실패: ' + (e.message || e));
