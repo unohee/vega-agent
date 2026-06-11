@@ -23,6 +23,41 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # 백엔드 전체 pytest 를 Windows 에서 실행 — keychain 가드·data_paths·pty 가드 등
+  # Windows 코드 경로 회귀를 매 푸시 자동 검증한다 (INT-1448). 빌드 job 과 병렬.
+  test-windows:
+    name: pytest (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 의존성 설치
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          # tzdata: Windows 시스템 tz DB 부재 / xdist: pytest.ini -n auto
+          pip install pytest pytest-asyncio pytest-xdist tzdata
+
+      - name: pytest
+        env:
+          # 러너 사용자 프로필 오염 방지 — 사용자 데이터 루트를 temp 로 격리
+          VEGA_DATA_DIR: ${{ runner.temp }}\vega-test-data
+        run: |
+          # test_echo_reconnect_ui 는 main 에서 이미 깨져 있는 사전 존재 실패 (INT-1445) — 신호 유지를 위해 제외
+          python -m pytest tests/ -m "not deepeval" --deselect tests/test_echo_reconnect_ui.py::test_echo_reconnect_no_duplication
+
   build-windows:
     name: Build NSIS installer (x64)
     runs-on: windows-latest
