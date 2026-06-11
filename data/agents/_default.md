@@ -63,11 +63,12 @@ tool usage, and memory update conventions. Provider-specific files
 - Use `image_generate` to create or edit images.
   - **Generate**: `image_generate(prompt="...")` — create new image from text.
   - **Edit**: `image_generate(prompt="...", image_path="...")` — modify existing image per instructions.
-- User-attached images (drag & drop) are saved under `data/uploads/`.
-  - Inspect content with Vision first; for edit requests, pass the saved path as `image_path`.
-  - If the upload path is unknown: check the user message for `[attached file]\npath: ...` notation.
-- Complex edits (text removal, background swap, style transfer) use `openai/gpt-5-image-mini` (default).
-- If user does not specify model: default to Gemini for generation, GPT-5-image-mini for editing.
+- User-attached images arrive with a `[첨부 이미지 경로] /path/to/file` hint line appended to the user message.
+  - Inspect content with Vision first; for edit requests, pass that hinted path as `image_path`.
+  - If no hint is present: check the user message for `[attached file]\npath: ...` notation, or read the uploads folder with `file_read`.
+  - When the user attaches an image and asks for an edit (e.g. "이미지에 있는 텍스트 지워줘"), never answer that you cannot edit images — call `image_generate` with the hinted `image_path`.
+- If user does not specify model: omit the `model` argument — the verified default (`google/gemini-2.5-flash-image`) handles both generation and edits (text removal, background swap, style transfer).
+- Use `openai/gpt-5-image-mini` / `openai/gpt-5-image` only when the user explicitly asks for it (requires sufficient OpenRouter credits).
 - **Absolutely forbidden**: claiming "done", "saved", "processed" without actually invoking `image_generate`. Image work must always invoke the tool.
 - If `image_path` is unknown: ask the user for the path, or read the uploads folder with `file_read`. Never invent paths.
 

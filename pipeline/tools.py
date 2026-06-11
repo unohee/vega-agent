@@ -1129,7 +1129,10 @@ TOOL_SCHEMAS.extend([
             "- image_path 있음: 기존 이미지를 프롬프트 지시에 따라 편집 "
             "(예: 텍스트 제거, 배경 교체, 스타일 변경 등)\n"
             "사용자가 '이미지 만들어줘', '그림 그려줘', '이 이미지에서 X 지워줘', "
-            "'배경 바꿔줘' 등을 요청할 때 사용."
+            "'배경 바꿔줘' 등을 요청할 때 사용.\n"
+            "사용자가 이미지를 첨부하고 편집을 요청하면(예: '이미지에 있는 텍스트 지워줘') "
+            "직접 편집할 수 없다고 답하지 말고 반드시 이 도구를 호출한다 — "
+            "image_path는 사용자 메시지의 '[첨부 이미지 경로]' 힌트에서 가져온다."
         ),
         "parameters": {
             "type": "object",
@@ -1142,13 +1145,14 @@ TOOL_SCHEMAS.extend([
                     "type": "string",
                     "description": (
                         "편집할 원본 이미지 파일 경로 (절대경로 또는 ~/로 시작). "
-                        "사용자가 이미지를 첨부했다면 data/uploads/ 아래 경로를 사용. "
+                        "사용자가 이미지를 첨부했다면 사용자 메시지의 "
+                        "'[첨부 이미지 경로]' 힌트에 적힌 경로를 그대로 사용. "
                         "생략하면 새 이미지 생성 모드."
                     ),
                 },
                 "model": {
                     "type": "string",
-                    "description": "사용할 모델. 편집 모드 기본값: openai/gpt-5-image-mini, 생성 모드 기본값: google/gemini-2.5-flash-image",
+                    "description": "사용할 모델. 생략 시 생성/편집 모두 google/gemini-2.5-flash-image (검증된 기본값). gpt-5 계열은 OpenRouter 크레딧이 충분할 때만 명시 선택.",
                     "enum": [
                         "google/gemini-2.5-flash-image",
                         "google/gemini-3.1-flash-image-preview",
@@ -1170,7 +1174,7 @@ def image_generate(
     model: str = "",
 ) -> dict:
     """Call OpenRouter image generation/editing model → save PNG to data/charts/.
-    Edit mode if image_path provided (default gpt-5-image-mini), else generate mode (default gemini-2.5-flash-image).
+    Edit mode if image_path provided. Default model (both modes): gemini-2.5-flash-image.
     Returns: {"__type": "image", "path": str} | {"error": str}
     """
     import base64
@@ -1179,13 +1183,27 @@ def image_generate(
     import uuid
     from pathlib import Path
 
+    # 키 해석은 다른 프로바이더 키와 동일한 체인(Keychain → .env → 환경변수)을 탄다.
+    # os.getenv만 보면 온보딩에서 Keychain에 키를 넣은 배포본에서 항상 실패 (INT-1457).
     api_key = os.getenv("OPENROUTER_API", "")
     if not api_key:
-        return {"error": "OPENROUTER_API environment variable not set"}
+        try:
+            from pipeline import keychain
+            api_key = keychain.get("OPENROUTER_API")
+        except Exception:
+            api_key = ""
+    if not api_key:
+        return {"error": (
+            "OpenRouter API 키가 설정되지 않아 이미지 생성/편집을 사용할 수 없습니다. "
+            "설정 → 모델/키에서 OpenRouter API 키(OPENROUTER_API)를 입력해주세요."
+        )}
 
     edit_mode = bool(image_path)
     if not model:
-        model = "openai/gpt-5-image-mini" if edit_mode else "google/gemini-2.5-flash-image"
+        # 편집 기본값도 gemini-2.5-flash-image (INT-1457 실측: gpt-5-image-mini는
+        # max_tokens 65536 요구로 OpenRouter 크레딧 402가 잦고, gemini는 편집 검증 완료).
+        # gpt-5 계열이 필요하면 model 인자로 명시 선택.
+        model = "google/gemini-2.5-flash-image"
 
     # Build message content
     pad_top = pad_left = 0  # for crop restoration
@@ -1274,6 +1292,11 @@ def image_generate(
                         break
 
     if not b64_data:
+        # 응답 레벨 에러(크레딧 부족 402, 모델 미지원 등)를 먼저 노출 — 삼키면
+        # "No image data" 빈 메시지만 남아 원인 진단이 불가능 (INT-1457 실측).
+        api_err = resp.get("error")
+        if isinstance(api_err, dict) and api_err.get("message"):
+            return {"error": f"이미지 모델 호출 실패 ({model}): {api_err['message'][:300]}"}
         text = msg.get("content") or ""
         if isinstance(text, list):
             text = " ".join(b.get("text", "") for b in text if isinstance(b, dict))

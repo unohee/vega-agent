@@ -1936,6 +1936,24 @@ async def _run_gpt_task(sid: str, history: list[dict], images: list[dict]) -> No
         asyncio.create_task(_cleanup())
 
 
+def _persist_attached_image(img: dict) -> str:
+    """첨부 이미지(base64)를 uploads/에 저장하고 호스트 경로를 반환 (INT-1457).
+
+    프론트의 /api/upload/image 가 실패해 path 없이 도착한 첨부도
+    image_generate(image_path=...) 편집이 가능하도록 서버에서 경로를 보장한다."""
+    import base64 as _b64
+    import uuid as _uuid
+    ext_map = {"image/png": "png", "image/jpeg": "jpg", "image/jpg": "jpg",
+               "image/webp": "webp", "image/gif": "gif",
+               "image/heic": "heic", "image/heif": "heif"}
+    ext = ext_map.get((img.get("media_type") or "").lower(), "png")
+    dest_dir = _uploads_dir()
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / f"{_uuid.uuid4().hex[:8]}_attached.{ext}"
+    dest.write_bytes(_b64.b64decode(img["data"]))
+    return str(dest)
+
+
 @app.post("/api/chat/stream")
 async def chat_stream(request: Request):
     data = await request.json()
@@ -2027,9 +2045,21 @@ async def chat_stream(request: Request):
         # user_text: content sent to GPT (expanded instruction if command)
         keyword_hits = search_events(display_text[:500], limit=5)
         augmented = user_text + _format_db_context(keyword_hits)
-        # Image path hint — used by image_generate(image_path=...) for editing
+        # Image path hint — used by image_generate(image_path=...) for editing.
+        # path 없는 첨부(프론트 업로드 실패/생략)는 서버가 직접 저장해 경로를 보장한다 —
+        # 경로 힌트가 없으면 편집 요청이 이미지 도구로 연결되지 못한다 (INT-1457).
         if images:
-            paths = [img["path"] for img in images if img.get("path")]
+            paths = []
+            for img in images:
+                p = img.get("path") or ""
+                if not p and img.get("data"):
+                    try:
+                        p = _persist_attached_image(img)
+                        img["path"] = p
+                    except Exception:
+                        p = ""
+                if p:
+                    paths.append(p)
             if paths:
                 path_hints = "\n".join(f"[첨부 이미지 경로] {p}" for p in paths)
                 augmented = augmented + f"\n\n{path_hints}"
