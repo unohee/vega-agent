@@ -1542,7 +1542,9 @@ async def _run_gpt_task(sid: str, history: list[dict], images: list[dict]) -> No
         try:
             import time as _t
             from pipeline.run_log import record_start
-            row_id = record_start(session_id, name, args, call_id)
+            # sid: _run_gpt_task 클로저 변수 — session_id 오타(NameError)가
+            # except pass에 삼켜져 run_log가 한 번도 기록되지 않던 버그 (INT-1487 점검 발견)
+            row_id = record_start(sid, name, args, call_id)
             reg.setdefault("_run_log", {})[call_id] = (row_id, _t.monotonic())
         except Exception:
             pass
