@@ -696,6 +696,28 @@ pub fn run() {
                     _ => {}
                 })
                 .build(app)?;
+
+            // macOS 앱 메뉴에 "설정… (⌘,)" — 기본 메뉴(Edit 복사/붙여넣기 단축키 포함)를
+            // 유지한 채 앱 서브메뉴의 About 다음 위치에 삽입한다 (표준 macOS 배치).
+            #[cfg(target_os = "macos")]
+            {
+                use tauri::menu::{Menu, MenuItemKind};
+                let menu = Menu::default(app.handle())?;
+                let settings_menu_item = MenuItemBuilder::with_id("menu-settings", s.settings)
+                    .accelerator("Cmd+,")
+                    .build(app)?;
+                if let Some(MenuItemKind::Submenu(app_submenu)) =
+                    menu.items()?.into_iter().next()
+                {
+                    app_submenu.insert(&settings_menu_item, 1)?;
+                }
+                app.set_menu(menu)?;
+                app.on_menu_event(|app, event| {
+                    if event.id().as_ref() == "menu-settings" {
+                        open_settings_window(app);
+                    }
+                });
+            }
             } // end #[cfg(desktop)] 트레이 블록
 
             Ok(())
