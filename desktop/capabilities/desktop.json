@@ -5,6 +5,7 @@
   "platforms": ["macOS", "windows", "linux"],
   "windows": ["main", "settings"],
   "permissions": [
-    "updater:default"
+    "updater:default",
+    "notification:default"
   ]
 }

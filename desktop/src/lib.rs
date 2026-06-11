@@ -321,6 +321,20 @@ fn spawn_update_check(app: tauri::AppHandle) {
                 match update.download_and_install(|_chunk, _total| {}, || {}).await {
                     Ok(_) => {
                         vlog!("[VEGA] 업데이트 설치 완료(대기) — 다음 재시작 시 v{version} 적용");
+                        // OS 알림 — 앱 창을 안 보고 있어도 재시작 안내가 보이도록 (INT-1467).
+                        // 실패(권한 거부 등)는 무시 — 채팅 배너가 폴백.
+                        {
+                            use tauri_plugin_notification::NotificationExt;
+                            if let Err(e) = app
+                                .notification()
+                                .builder()
+                                .title("VEGA 업데이트 준비 완료")
+                                .body(format!("v{version} 설치됨 — 앱을 재시작하면 적용됩니다."))
+                                .show()
+                            {
+                                vlog!("[VEGA] 업데이트 OS 알림 실패(무시): {e}");
+                            }
+                        }
                         // 프론트(웹뷰)가 아직 로드 전이거나 리스너가 늦게 붙을 수 있으니
                         // 별도 OS 스레드에서 간격을 두고 3회 emit(멱등 — 프론트가 중복 무시).
                         // tokio 직접 의존이 없어 std::thread 로 sleep 한다(기존 코드 관례).
@@ -642,6 +656,8 @@ pub fn run() {
     #[cfg(all(desktop, not(any(target_os = "android", target_os = "ios"))))]
     {
         builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+        // OS 알림 — 업데이트 설치 완료 시 "재시작하면 적용" 안내 (INT-1467)
+        builder = builder.plugin(tauri_plugin_notification::init());
     }
 
     // client feature 또는 모바일: 서버 URL/언어 변경 커맨드 등록.
