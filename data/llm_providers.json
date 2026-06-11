@@ -42,7 +42,9 @@
       "extra_headers": {
         "HTTP-Referer": "https://github.com/unohee/VEGA",
         "X-Title": "VEGA"
-      }
+      },
+      "vision_model": "google/gemini-3.1-flash-lite",
+      "_vision_comment": "이미지 포함 턴에서 자동 사용 — 기본 모델(deepseek)이 이미지 입력 미지원 (INT-1466)"
     },
     "anthropic": {
       "label": "Anthropic (Claude)",

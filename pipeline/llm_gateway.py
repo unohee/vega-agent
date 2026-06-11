@@ -294,6 +294,27 @@ def update_model(name: str, model: str) -> None:
 
 # ── Request building ─────────────────────────────────────────────────────────
 
+# 이미지가 포함된 턴에서 활성 모델이 비전 미지원일 때 쓸 프로바이더별 비전 모델.
+# 사용자 llm_providers.json 의 "vision_model" 필드가 우선하고, 없으면 이 맵을 쓴다.
+# openrouter: deepseek-v4-flash(기본)가 이미지 입력 미지원 → 404 "No endpoints found
+# that support image input" (INT-1466). gemini-3.1-flash-lite 는 OR /models 실측으로
+# 비전 지원·최저가군 확인 + OCR 라이브 검증 완료.
+_VISION_MODEL_FALLBACK = {
+    "openrouter": "google/gemini-3.1-flash-lite",
+}
+
+
+def _has_image_input(input_items: list) -> bool:
+    """input_items 에 이미지 블록(input_image/image)이 하나라도 있는지."""
+    for item in input_items:
+        content = item.get("content") if isinstance(item, dict) else None
+        if isinstance(content, list):
+            for c in content:
+                if isinstance(c, dict) and c.get("type") in ("input_image", "image"):
+                    return True
+    return False
+
+
 def build_request(input_items: list, system: str, tool_schemas: list[dict], research_mode: bool = False, tier: str | None = None):
     """Builds a urllib.request.Request for the active provider (or the given tier).
     Replaces _build_request in streaming.py. Returns a (Request, kind) tuple.
@@ -308,6 +329,11 @@ def build_request(input_items: list, system: str, tool_schemas: list[dict], rese
     prov = get_provider_for_tier(tier) if tier else get_active_provider()
     kind = prov.get("kind", "chat_completions")
     model = prov.get("default_model") or ""
+    # 이미지 포함 턴 — 비전 모델로 스위치 (기본 모델이 이미지 미지원인 프로바이더용, INT-1466)
+    if _has_image_input(input_items):
+        vision_model = prov.get("vision_model") or _VISION_MODEL_FALLBACK.get(prov.get("name", ""))
+        if vision_model:
+            model = vision_model
     auth_type = prov.get("auth_type", "none")
     base_url = prov.get("base_url", "")
     extra_headers = dict(prov.get("extra_headers") or {})
