@@ -15,7 +15,7 @@ server = importlib.import_module("web.server")
 
 
 @pytest.mark.parametrize("command,expected", [
-    ("cd /Users/unohee/dev/alv-dump && find . -maxdepth 4 -name '*.js'", "find"),
+    ("cd /home/user/dev/sample-repo && find . -maxdepth 4 -name '*.js'", "find"),
     ("cd X && python3 - <<'PY'\nprint(1)\nPY", "python3"),
     ("grep -R 'cwr' .", "grep"),
     ("FOO=1 BAR=2 python3 script.py", "python3"),         # env 할당 프리픽스

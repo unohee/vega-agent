@@ -20,9 +20,12 @@ PROMPTS = [
 
 
 def _key():
-    for line in open(os.path.expanduser("/Users/unohee/dev/kyte-portal/.env")):
-        if line.startswith("OPENROUTER_API="):
-            return line.split("=", 1)[1].strip().strip('"').strip("'")
+    # 레포 .env → 환경변수 순으로 OPENROUTER_API 탐색 (개인 경로 하드코딩 금지 — INT-1450)
+    env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
+    if os.path.exists(env_path):
+        for line in open(env_path):
+            if line.startswith("OPENROUTER_API="):
+                return line.split("=", 1)[1].strip().strip('"').strip("'")
     return os.getenv("OPENROUTER_API", "")
 
 

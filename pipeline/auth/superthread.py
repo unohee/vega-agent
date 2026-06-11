@@ -33,7 +33,6 @@ KEYCHAIN_SERVICE = "vega-superthread-oauth"
 # Superthread 공식 CLI 가 쓰는 public OAuth client (client_secret 없음).
 CLIENT_ID = "ocstcli"
 SCOPE = "offline_access"
-WORKSPACE_ID = "tmBp7DYU"
 PAT_NAME = "vega-agent"
 PAT_EXPIRES_DAYS = 365
 
@@ -114,6 +113,11 @@ def pat_token() -> str | None:
     return token
 
 
+def stored_workspace_id() -> str | None:
+    """PAT 발급에 사용한 사용자 워크스페이스(team) ID."""
+    return keychain_load("workspace_id")
+
+
 def is_authenticated() -> bool:
     return bool(pat_token())
 
@@ -152,6 +156,34 @@ def _post_form(url: str, data: dict, headers: dict | None = None) -> dict:
     req = urllib.request.Request(url, data=body, headers=hdrs)
     with urllib.request.urlopen(req, timeout=15, context=_ssl_context()) as r:
         return json.loads(r.read().decode())
+
+
+def _get_json(url: str, headers: dict | None = None) -> dict:
+    hdrs = {"User-Agent": _UA, "Accept": "application/json"}
+    if headers:
+        hdrs.update(headers)
+    req = urllib.request.Request(url, headers=hdrs)
+    with urllib.request.urlopen(req, timeout=15, context=_ssl_context()) as r:
+        return json.loads(r.read().decode())
+
+
+def _discover_workspace_id(access_token: str) -> str | None:
+    """사용자가 속한 워크스페이스(team) ID 발견 — GET /v1/users/me 의 user.teams[].
+
+    과거엔 개발자 워크스페이스 ID 가 하드코딩돼 타 사용자의 PAT 발급이
+    항상 실패했다(INT-1451). 복수 팀이면 첫 번째를 쓴다."""
+    try:
+        resp = _get_json(
+            f"{_API_BASE}/users/me",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+    except Exception:
+        return None
+    teams = (resp.get("user") or {}).get("teams") or []
+    for t in teams:
+        if t.get("id"):
+            return str(t["id"])
+    return None
 
 
 def _post_json(url: str, payload: dict, headers: dict | None = None) -> dict:
@@ -197,10 +229,16 @@ def exchange_code(code: str, state: str | None = None) -> dict:
         return {"ok": False, "expires_at": None,
                 "error": f"access_token 미수신: {json.dumps(token_resp)[:200]}"}
 
-    # 2. PAT 발급 (365일)
+    # 2. 사용자 워크스페이스 발견 — PAT 는 워크스페이스 단위로 발급된다.
+    workspace_id = _discover_workspace_id(access_token)
+    if not workspace_id:
+        return {"ok": False, "expires_at": None,
+                "error": "워크스페이스 발견 실패 — Superthread 계정에 소속된 팀이 없거나 users/me 조회가 거부됨."}
+
+    # 3. PAT 발급 (365일)
     try:
         pat_resp = _post_json(
-            f"{_API_BASE}/auth/{WORKSPACE_ID}/pats",
+            f"{_API_BASE}/auth/{workspace_id}/pats",
             {"name": PAT_NAME, "expires_in": PAT_EXPIRES_DAYS},
             headers={"Authorization": f"Bearer {access_token}"},
         )
@@ -222,6 +260,7 @@ def exchange_code(code: str, state: str | None = None) -> dict:
             pass
 
     keychain_save("pat", token)
+    keychain_save("workspace_id", workspace_id)
     if expires_at:
         keychain_save("pat_expires_at", expires_at)
     _pending_state.pop("state", None)
@@ -231,5 +270,5 @@ def exchange_code(code: str, state: str | None = None) -> dict:
 
 
 def logout() -> None:
-    for a in ("pat", "pat_expires_at"):
+    for a in ("pat", "pat_expires_at", "workspace_id"):
         keychain_delete(a)
