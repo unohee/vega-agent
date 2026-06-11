@@ -3,21 +3,14 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from web.state import _ENT_KEY_KC, _LOOPBACK, load_enterprise_keys
+from web.state import _ENT_KEY_KC, is_loopback, load_enterprise_keys
 
 router = APIRouter()
 
 
-def _is_loopback(request: Request) -> bool:
-    forwarded = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
-    if forwarded:
-        return forwarded in _LOOPBACK or forwarded.startswith("127.")
-    host = request.client.host if request.client else "127.0.0.1"
-    return host in _LOOPBACK or host.startswith("127.") or host.startswith("::ffff:127.")
-
-
 def _require_local(request: Request) -> None:
-    if not _is_loopback(request):
+    # INT-1468 H1: loopback 판정은 state.is_loopback 단일 출처(클라이언트 XFF 미신뢰).
+    if not is_loopback(request):
         raise HTTPException(status_code=403, detail="Only local connections are allowed.")
 
 

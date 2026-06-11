@@ -62,7 +62,82 @@ _TASK_REGISTRY: dict[str, dict] = {}
 _ACCESS: dict[str, str] = {}
 _ENT_KEY_KC = "vega-enterprise-keys"
 
-_LOOPBACK = {"127.0.0.1", "::1", "::ffff:127.0.0.1", "localhost", "0.0.0.0"}
+# loopback 주소 집합. "0.0.0.0"은 제거했다 — 이는 바인드 와일드카드이지
+# peer 주소가 아니므로 loopback 판정에 넣으면 매치 폭만 넓힌다 (INT-1468 H1).
+_LOOPBACK = {"127.0.0.1", "::1", "::ffff:127.0.0.1", "localhost"}
+
+
+def _trusted_proxy_enabled() -> bool:
+    """X-Forwarded-For 를 신뢰할지. 기본 비활성 — 클라이언트가 보낸 XFF 로
+    loopback/원격 판정을 우회하는 것을 막는다(INT-1468 H1). 사용자가 의도적으로
+    리버스 프록시 뒤에 둘 때만 VEGA_TRUSTED_PROXY=1 로 켠다."""
+    import os
+    return os.environ.get("VEGA_TRUSTED_PROXY", "").strip().lower() in ("1", "true", "yes")
+
+
+def _client_host(request) -> str:
+    """판정에 쓸 peer 주소. 신뢰 프록시 모드일 때만 XFF 첫 값을 채택하고,
+    그 외에는 위조 불가능한 실제 소켓 peer(request.client.host)만 신뢰한다."""
+    if _trusted_proxy_enabled():
+        fwd = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+        if fwd:
+            return fwd
+    return request.client.host if request.client else "127.0.0.1"
+
+
+def is_loopback_host(host: str) -> bool:
+    return host in _LOOPBACK or host.startswith("127.") or host.startswith("::ffff:127.")
+
+
+def is_loopback(request) -> bool:
+    """루프백(로컬) 연결 여부. XFF 는 신뢰 프록시 모드에서만 반영(INT-1468 H1)."""
+    return is_loopback_host(_client_host(request))
+
+
+def _tailscale_extra_cidrs() -> list:
+    """추가 허용 CIDR (VEGA_REMOTE_ALLOW_CIDRS, 쉼표 구분). 비면 빈 목록."""
+    import os
+    import ipaddress
+    raw = os.environ.get("VEGA_REMOTE_ALLOW_CIDRS", "").strip()
+    out = []
+    for part in raw.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            out.append(ipaddress.ip_network(part, strict=False))
+        except ValueError:
+            continue
+    return out
+
+
+# Tailscale 가 노드에 할당하는 CGNAT 대역 (100.64.0.0/10) + IPv6 ULA (fd7a:115c:a1e0::/48).
+# 사용자가 "tailscale 원격만 허용"을 요구 — 이 대역의 peer 는 원격이라도 허용한다.
+_TAILSCALE_CIDRS_RAW = ["100.64.0.0/10", "fd7a:115c:a1e0::/48"]
+
+
+def is_remote_allowed(request) -> bool:
+    """원격 침입 차단 게이트(INT-1468 H2). 다음 중 하나면 허용:
+      - loopback (로컬 앱/터미널)
+      - Tailscale 대역 peer (사용자 요구: tailscale 원격만 허용)
+      - VEGA_REMOTE_ALLOW_CIDRS 에 포함된 peer
+      - 유효한 enterprise 키 보유
+    그 외 모든 원격 접속은 거부한다."""
+    import ipaddress
+    if is_loopback(request):
+        return True
+    host = _client_host(request)
+    try:
+        ip = ipaddress.ip_address(host.replace("::ffff:", "") if "." in host else host)
+        allow = [ipaddress.ip_network(c) for c in _TAILSCALE_CIDRS_RAW] + _tailscale_extra_cidrs()
+        if any(ip in net for net in allow):
+            return True
+    except ValueError:
+        pass
+    key = request.headers.get("x-vega-key", "").strip()
+    if key and key in load_enterprise_keys():
+        return True
+    return False
 
 
 def load_enterprise_keys() -> frozenset[str]:
