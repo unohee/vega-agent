@@ -567,6 +567,7 @@ async function loadWorkspacePane() {
   }));
   list.innerHTML = '';
   for (const { s, st } of rows) {
+    if (s.id === 'google') { renderGoogleRows(list, s, st); continue; }
     const row = document.createElement('div'); row.className = 'row';
     const acct = st.email ? ` — ${st.email}` : st.team ? ` — ${st.team}` : '';
     const stateTxt = !st.configured ? '구성 안 됨 (빌드에 OAuth client 없음)'
@@ -577,9 +578,17 @@ async function loadWorkspacePane() {
     if (st.configured && st.authenticated) {
       const dis = document.createElement('button'); dis.className = 'btn'; dis.textContent = '해제';
       dis.onclick = async () => {
-        dis.disabled = true;
-        try { await fetch(provBase() + `/api/onboarding/${s.id}/disconnect`, { method: 'POST' }); } catch {}
-        loadWorkspacePane();
+        dis.disabled = true; dis.textContent = '해제 중…';
+        try {
+          const res = await fetch(provBase() + `/api/onboarding/${s.id}/disconnect`, { method: 'POST', signal: AbortSignal.timeout(10000) });
+          const d = await res.json().catch(() => ({}));
+          // 응답 ok 확인 — 실패면 낙관 갱신하지 않고 원인 표시 (INT-1471)
+          if (!res.ok || !d.ok) throw new Error(d.error || `HTTP ${res.status}`);
+          loadWorkspacePane();
+        } catch (e) {
+          dis.disabled = false; dis.textContent = '해제';
+          $('ws-hint-' + s.id).textContent = s.desc + ' · 해제 실패: ' + (e.message || e);
+        }
       };
       btns.appendChild(dis);
     } else if (st.configured) {
@@ -601,6 +610,93 @@ async function loadWorkspacePane() {
     row.appendChild(btns);
     list.appendChild(row);
   }
+}
+
+// ── Google 멀티계정 (INT-1471) — 계정 목록 + 계정별 해제 + 계정 추가 ──
+function renderGoogleRows(list, s, st) {
+  const accounts = st.accounts || [];
+  const head = document.createElement('div'); head.className = 'row';
+  const stateTxt = !st.configured ? '구성 안 됨 (빌드에 OAuth client 없음)'
+    : accounts.length ? `${accounts.length}개 계정 연결됨` : '연결 안 됨';
+  head.innerHTML = `<div class="field"><label>${s.label}</label>
+    <div class="hint" id="ws-hint-google">${s.desc} · ${stateTxt}</div></div>`;
+  const btns = document.createElement('div');
+  if (st.configured) {
+    const add = document.createElement('button'); add.className = 'btn primary';
+    add.textContent = accounts.length ? '계정 추가' : '연결';
+    add.onclick = () => wsGoogleAdd(add);
+    btns.appendChild(add);
+  }
+  head.appendChild(btns);
+  list.appendChild(head);
+  for (const a of accounts) {
+    const row = document.createElement('div'); row.className = 'row';
+    const field = document.createElement('div'); field.className = 'field'; field.style.paddingLeft = '14px';
+    const label = document.createElement('label'); label.textContent = a.email;
+    const hint = document.createElement('div'); hint.className = 'hint';
+    hint.textContent = a.is_default ? '기본 계정' : '';
+    field.appendChild(label); field.appendChild(hint); row.appendChild(field);
+    const dis = document.createElement('button'); dis.className = 'btn'; dis.textContent = '해제';
+    dis.onclick = () => wsGoogleDisconnect(a.email, dis);
+    row.appendChild(dis);
+    list.appendChild(row);
+  }
+}
+
+async function wsGoogleDisconnect(email, btn) {
+  if (!confirm(`${email} 연결을 해제할까요?\nGmail·Calendar·Drive 도구가 이 계정에 접근할 수 없게 됩니다.`)) return;
+  btn.disabled = true; btn.textContent = '해제 중…';
+  try {
+    const res = await fetch(provBase() + '/api/onboarding/google/disconnect', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account: email }),
+      signal: AbortSignal.timeout(10000),
+    });
+    const d = await res.json().catch(() => ({}));
+    // 응답 ok 확인 — 실패면 갱신하지 않고 표시 (INT-1471: catch{} 낙관 갱신 금지).
+    // 서버는 삭제 후 Keychain 실측 확정값(accounts/authenticated)을 반환하므로
+    // 성공 시의 재조회는 레이스 없이 같은 상태를 보여준다.
+    if (!res.ok || !d.ok) throw new Error(d.error || `HTTP ${res.status}`);
+    loadWorkspacePane();
+  } catch (e) {
+    btn.disabled = false; btn.textContent = '해제';
+    const h = $('ws-hint-google'); if (h) h.textContent = '해제 실패: ' + (e.message || e);
+  }
+}
+
+async function wsGoogleAdd(btn) {
+  const hint = $('ws-hint-google');
+  openExternalUrl(provBase() + '/google/auth');
+  if (hint) hint.textContent = '브라우저에서 로그인을 완료하세요… (계정 선택 화면이 표시됩니다)';
+  btn.disabled = true;
+
+  let before = 0;
+  try { before = ((await wsStatus('google')).accounts || []).length; } catch {}
+
+  // OAuth 완료 폴링 — 에러를 조용히 삼키지 않는다 (연속 3회 실패 시 표시, INT-1473 부수)
+  stopWsPoll();
+  let ticks = 0, consecErr = 0;
+  wsPoll = setInterval(async () => {
+    ticks++;
+    try {
+      const st = await wsStatus('google');
+      consecErr = 0;
+      const n = (st.accounts || []).length;
+      if (n > before || (before === 0 && st.authenticated)) {
+        stopWsPoll();
+        loadWorkspacePane();
+        return;
+      }
+    } catch (e) {
+      consecErr++;
+      if (consecErr >= 3 && hint) hint.textContent = `상태 확인 실패 (${e.message || e}) — 백엔드 연결을 확인하세요. 재시도 중…`;
+    }
+    if (ticks >= 90) {  // 3분 초과 — 폴링 중단
+      stopWsPoll();
+      btn.disabled = false;
+      if (hint) hint.textContent = '시간 초과 — 로그인을 완료했다면 패널을 다시 열어 확인하세요';
+    }
+  }, 2000);
 }
 
 // ── Model 패널 ──

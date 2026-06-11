@@ -556,16 +556,60 @@ async def superthread_status():
 
 @router.get("/api/onboarding/google")
 async def google_status():
-    """Google 연동 상태. configured(빌드에 client.json 있음) + authenticated(refresh_token 보유)."""
+    """Google 연동 상태. configured(빌드에 client.json 있음) + authenticated(refresh_token 보유)
+    + accounts(연결된 계정 목록 — INT-1471 멀티계정)."""
     try:
         from pipeline.auth import google
         return JSONResponse({
             "configured": google.is_configured(),
             "authenticated": google.is_authenticated(),
             "email": google.stored_email(),
+            "accounts": google.stored_accounts(),
         })
     except Exception as e:
-        return JSONResponse({"configured": False, "authenticated": False, "error": str(e)})
+        return JSONResponse({"configured": False, "authenticated": False, "email": None,
+                             "accounts": [], "error": str(e)})
+
+
+class GoogleDisconnectPayload(BaseModel):
+    account: str = ""   # 비우면 전체 해제, 이메일 지정 시 해당 계정만
+
+
+# 주의: 동적 라우트 /{service}/disconnect 보다 먼저 등록해야 이 전용 라우트가 매칭된다.
+@router.post("/api/onboarding/google/disconnect")
+async def google_disconnect(payload: GoogleDisconnectPayload):
+    """Google 연결 해제 (INT-1471).
+
+    낙관 응답이 아니라 **삭제 후 Keychain 실측 재조회 확정값**을 반환한다 —
+    프론트는 authenticated/accounts를 그대로 반영하면 되고 재폴링 레이스가 없다.
+    """
+    import asyncio
+    from pipeline.auth import google as _g
+    account = (payload.account or "").strip() or None
+    loop = asyncio.get_event_loop()
+    try:
+        # Keychain 삭제는 subprocess 동기 호출 — 이벤트루프 블로킹 방지
+        result = await loop.run_in_executor(None, _g.disconnect, account)
+    except Exception as e:
+        return JSONResponse(
+            {"ok": False, "authenticated": _g.is_authenticated(),
+             "accounts": [], "error": f"해제 실패: {e}"},
+            status_code=500,
+        )
+    result["email"] = _g.stored_email() if result.get("authenticated") else None
+    # 해제 즉시 워크스페이스 도구 가용성 캐시 반영 (pipeline/tool_registry.py, TTL 30s)
+    try:
+        from pipeline.tool_registry import invalidate_check_fn_cache
+        invalidate_check_fn_cache()
+    except Exception:
+        pass
+    if result.get("ok"):
+        status = 200
+    elif "연결되지 않은 계정" in (result.get("error") or ""):
+        status = 404   # 클라이언트 오류 — 없는 계정 지정
+    else:
+        status = 500   # Keychain 삭제 실패
+    return JSONResponse(result, status_code=status)
 
 
 # ── 연결 해제 ─────────────────────────────────────────────────────────────────

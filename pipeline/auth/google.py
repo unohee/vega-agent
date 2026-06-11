@@ -35,7 +35,11 @@ import webbrowser
 from pipeline.data_paths import google_oauth_client_path
 
 KEYCHAIN_SERVICE = "vega-google-oauth"
-KEYCHAIN_ACCOUNT = "refresh_token"   # 단일 계정 — 이메일 무관
+KEYCHAIN_ACCOUNT = "refresh_token"   # 레거시/기본 계정 미러 슬롯 — 단일계정 경로 하위호환
+# 멀티계정 (INT-1471): 계정별 토큰은 refresh_token::<email> 슬롯에, 연결 목록은
+# accounts 슬롯(JSON 배열)에 저장. index[0]이 기본 계정이며 레거시 슬롯에 미러된다.
+_ACCOUNTS_INDEX_SLOT = "accounts"
+_TOKEN_SLOT_PREFIX = "refresh_token::"
 
 _AUTHORIZE_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 _TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -112,11 +116,153 @@ def keychain_load(account: str) -> str | None:
     return r.stdout.strip() if r.returncode == 0 else None
 
 
-def keychain_delete(account: str) -> None:
-    subprocess.run(
+def keychain_delete(account: str) -> bool:
+    """Keychain 항목 삭제. 항목이 원래 없으면 멱등 성공(True).
+    실제 삭제 실패(권한 등)는 False — 호출 측이 확정 상태를 보고해야 한다 (INT-1471)."""
+    r = subprocess.run(
         ["security", "delete-generic-password", "-s", KEYCHAIN_SERVICE, "-a", account],
-        capture_output=True,
+        capture_output=True, text=True,
     )
+    if r.returncode == 0:
+        return True
+    # errSecItemNotFound(44) — 이미 없음은 멱등 성공
+    if r.returncode == 44 or "could not be found" in (r.stderr or ""):
+        return True
+    return False
+
+
+# ── 멀티계정 인덱스 (INT-1471) ────────────────────────────────────────────────
+
+def _load_account_index() -> list[str]:
+    """accounts 슬롯의 JSON 배열(이메일 목록). 없거나 깨지면 빈 리스트."""
+    raw = keychain_load(_ACCOUNTS_INDEX_SLOT)
+    if not raw:
+        return []
+    try:
+        data = json.loads(raw)
+    except Exception:
+        return []
+    if not isinstance(data, list):
+        return []
+    return [str(e) for e in data if isinstance(e, str) and e.strip()]
+
+
+def _save_account_index(emails: list[str]) -> None:
+    keychain_save(_ACCOUNTS_INDEX_SLOT, json.dumps(emails, ensure_ascii=False))
+
+
+def _token_slot(email: str) -> str:
+    return _TOKEN_SLOT_PREFIX + email
+
+
+def _ensure_account_index() -> list[str]:
+    """인덱스 보장. 비어있는데 기존 단일 슬롯에 토큰이 있으면(구버전 설치)
+    그 토큰을 기본 계정으로 마이그레이션해 인덱스에 등록한다."""
+    emails = _load_account_index()
+    if emails:
+        return emails
+    token = stored_refresh_token()
+    if not token:
+        return []
+    email = stored_email() or "default"
+    keychain_save(_token_slot(email), token)
+    _save_account_index([email])
+    return [email]
+
+
+def stored_accounts() -> list[dict]:
+    """연결된 Google 계정 목록 — [{'email','is_default'}]. index[0]이 기본 계정."""
+    return [{"email": e, "is_default": i == 0} for i, e in enumerate(_ensure_account_index())]
+
+
+def _resolve_account_email(account: str | None) -> str | None:
+    """계정 식별자(이메일 · user_profile key('personal' 등) · 로컬파트) → 인덱스의 이메일.
+    미지정·미일치면 기본(첫) 계정. 연결 계정이 없으면 None."""
+    emails = _ensure_account_index()
+    if not emails:
+        return None
+    if account:
+        a = account.strip().lower()
+        for e in emails:
+            if e.lower() == a:
+                return e
+        try:
+            from pipeline.user_profile import email_accounts
+            for acc in email_accounts():
+                if (acc.get("key") or "").lower() == a:
+                    target = (acc.get("email") or "").lower()
+                    for e in emails:
+                        if e.lower() == target:
+                            return e
+        except Exception:
+            pass
+        for e in emails:
+            if e.split("@")[0].lower() == a:
+                return e
+    return emails[0]
+
+
+def stored_refresh_token_for(account: str | None = None) -> str | None:
+    """계정 지정 토큰 조회. account 미지정이면 레거시 단일 슬롯 경로(하위호환)."""
+    if account:
+        email = _resolve_account_email(account)
+        if email:
+            token = keychain_load(_token_slot(email))
+            if token:
+                return token
+    return stored_refresh_token()
+
+
+def disconnect(account: str | None = None) -> dict:
+    """계정 연결 해제 — 삭제 후 Keychain 실측 재조회로 확정 상태 반환 (INT-1471).
+
+    account 미지정: 전체 해제. 지정: 해당 계정만 제거(기본 계정이면 다음 계정 승격).
+    반환: {"ok", "authenticated", "accounts", "error"?} — 프론트는 이 확정값을 그대로
+    반영하면 되고 재폴링이 필요 없다.
+    """
+    emails = _ensure_account_index()
+    failed: list[str] = []
+
+    def _delete_verified(slot: str) -> bool:
+        ok = keychain_delete(slot)
+        return ok and keychain_load(slot) is None
+
+    def _wipe_default_slots() -> None:
+        for slot in (KEYCHAIN_ACCOUNT, "email", _ACCOUNTS_INDEX_SLOT):
+            if not _delete_verified(slot):
+                failed.append(slot)
+
+    if account is None:
+        for e in emails:
+            if not _delete_verified(_token_slot(e)):
+                failed.append(e)
+        _wipe_default_slots()
+    else:
+        a = account.strip().lower()
+        email = next((e for e in emails if e.lower() == a), None)
+        if email is None:
+            return {"ok": False, "authenticated": is_authenticated(),
+                    "accounts": stored_accounts(),
+                    "error": f"연결되지 않은 계정: {account}"}
+        if not _delete_verified(_token_slot(email)):
+            failed.append(email)
+        remaining = [e for e in emails if e != email]
+        was_default = emails[0] == email
+        if remaining:
+            _save_account_index(remaining)
+            if was_default:
+                # 다음 계정을 기본으로 승격 — 레거시 미러·email 슬롯 동기화
+                token = keychain_load(_token_slot(remaining[0]))
+                if token:
+                    keychain_save(KEYCHAIN_ACCOUNT, token)
+                    keychain_save("email", remaining[0])
+        else:
+            _wipe_default_slots()
+
+    out = {"ok": not failed, "authenticated": is_authenticated(), "accounts": stored_accounts()}
+    if failed:
+        out["error"] = "Keychain 삭제 실패: " + ", ".join(failed)
+    return out
 
 
 # ── 토큰 상태 ─────────────────────────────────────────────────────────────────
@@ -148,7 +294,9 @@ def authorize_url(redirect_uri: str | None = None) -> str:
         "response_type": "code",
         "scope": " ".join(client["scopes"]),
         "access_type": "offline",
-        "prompt": "consent",          # refresh_token 을 매번 받기 위해
+        # consent: refresh_token 을 매번 받기 위해 / select_account: 멀티계정 추가 시
+        # 이미 로그인된 계정으로 자동 통과하지 않고 계정을 고르게 (INT-1471)
+        "prompt": "consent select_account",
         "state": state,
     })
     return f"{_AUTHORIZE_URL}?{params}"
@@ -206,9 +354,19 @@ def exchange_code(code: str, state: str | None = None) -> dict:
         except Exception:
             pass
 
-    keychain_save(KEYCHAIN_ACCOUNT, refresh_token)
-    if email:
-        keychain_save("email", email)
+    # 멀티계정 등록 (INT-1471) — userinfo 이메일을 라벨로 사용 (하드코딩 금지).
+    # 이메일 조회 실패 시 'default' 라벨로 등록.
+    label = email or "default"
+    emails = _ensure_account_index()  # 구버전 단일 슬롯이 있으면 먼저 기본 계정으로 인식
+    if label not in emails:
+        emails = emails + [label]
+    keychain_save(_token_slot(label), refresh_token)
+    _save_account_index(emails)
+    # 기본 계정(index[0])이면 레거시 단일 슬롯 미러 — 구버전 호출 경로 호환
+    if emails[0] == label:
+        keychain_save(KEYCHAIN_ACCOUNT, refresh_token)
+        if email:
+            keychain_save("email", email)
     _pending_state.pop("state", None)
     _pending_state.pop("redirect_uri", None)
     return {"ok": True, "email": email or None, "error": None}
@@ -239,12 +397,12 @@ def refresh_access_token(refresh_token: str, client_id: str, client_secret: str)
 
 
 def get_access_token(account: str | None = None) -> str | None:
-    """저장된 refresh_token → access_token. 단일 계정이라 account 인자는 무시(하위호환).
+    """저장된 refresh_token → access_token.
 
-    과거 시그니처 get_access_token('personal') 호출과 호환되도록 인자를 받되,
-    실제론 단일 계정 토큰을 반환한다.
+    account에 이메일·user_profile key('personal' 등)를 주면 해당 계정 토큰 (INT-1471 멀티계정).
+    미지정·미일치 시 기본(첫) 계정 토큰 — 과거 단일계정 호출과 호환.
     """
-    refresh_token = stored_refresh_token()
+    refresh_token = stored_refresh_token_for(account)
     if not refresh_token:
         return None
     try:
@@ -255,8 +413,8 @@ def get_access_token(account: str | None = None) -> str | None:
 
 
 def logout() -> None:
-    for a in (KEYCHAIN_ACCOUNT, "email"):
-        keychain_delete(a)
+    """전체 연결 해제 — disconnect(None)와 동일 (하위호환 유지)."""
+    disconnect(None)
 
 
 # ── 개발용 CLI (브라우저 + 로컬 콜백 서버; 백엔드 없이 단독 인증) ──────────────
