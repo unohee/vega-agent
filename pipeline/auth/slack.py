@@ -11,6 +11,7 @@ import hashlib
 import json
 import secrets
 import subprocess
+import time
 import urllib.parse
 import urllib.request
 
@@ -91,9 +92,76 @@ def keychain_delete(account: str) -> None:
     )
 
 
+def _post_token_endpoint(params: dict[str, str]) -> dict:
+    """oauth.v2.access 호출 (인증 교환·rotation 갱신 공용)."""
+    import ssl
+    data = urllib.parse.urlencode(params).encode("utf-8")
+    req = urllib.request.Request(
+        _TOKEN_URL, data=data,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    try:
+        import certifi
+        ctx = ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        ctx = ssl.create_default_context()
+    with urllib.request.urlopen(req, timeout=15, context=ctx) as r:
+        return json.loads(r.read().decode())
+
+
+def _save_rotation(authed: dict) -> None:
+    """token rotation 활성 앱이면 refresh_token/expires_in 이 같이 온다 — 자동 갱신용 저장."""
+    refresh = authed.get("refresh_token") or ""
+    expires_in = authed.get("expires_in")
+    if refresh:
+        keychain_save("user_refresh", refresh)
+    if expires_in:
+        keychain_save("user_expires_at", str(int(time.time()) + int(expires_in)))
+
+
+def refresh_user_token() -> str | None:
+    """rotation refresh_token 으로 user token 갱신. 실패/미보유 시 None."""
+    refresh = keychain_load("user_refresh")
+    if not refresh:
+        return None
+    try:
+        client = _load_client()
+        resp = _post_token_endpoint({
+            "client_id": client["client_id"],
+            "client_secret": client["client_secret"],
+            "grant_type": "refresh_token",
+            "refresh_token": refresh,
+        })
+    except Exception:
+        return None
+    if not resp.get("ok"):
+        return None
+    # user-token refresh 응답은 top-level access_token(token_type=user) 또는
+    # authed_user 안에 올 수 있다 — 둘 다 처리.
+    authed = resp.get("authed_user") or {}
+    token = authed.get("access_token") or (
+        resp.get("access_token") if resp.get("token_type") == "user" else None
+    )
+    if not token:
+        return None
+    keychain_save("user", token)
+    _save_rotation(authed if authed.get("refresh_token") else resp)
+    return token
+
+
 def user_token() -> str | None:
-    """저장된 Slack user token(xoxp). 없으면 None."""
-    return keychain_load("user")
+    """유효한 Slack user token(xoxp). rotation 앱이면 만료 임박 시 자동 갱신. 없으면 None."""
+    token = keychain_load("user")
+    if not token:
+        return None
+    exp = keychain_load("user_expires_at")
+    if exp:
+        try:
+            if time.time() >= int(exp) - 300:  # 5분 마진
+                return refresh_user_token()
+        except ValueError:
+            pass
+    return token
 
 
 def stored_team() -> str | None:
@@ -170,6 +238,7 @@ def exchange_code(code: str, state: str | None = None) -> dict:
     team_id = (resp.get("team") or {}).get("id", "")
     user_id = authed.get("id", "")
     keychain_save("user", xoxp)
+    _save_rotation(authed)
     if team_id:
         keychain_save("team_id", team_id)
     if user_id:
@@ -180,5 +249,5 @@ def exchange_code(code: str, state: str | None = None) -> dict:
 
 
 def logout() -> None:
-    for a in ("user", "team_id", "user_id"):
+    for a in ("user", "team_id", "user_id", "user_refresh", "user_expires_at"):
         keychain_delete(a)

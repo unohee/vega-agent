@@ -5,13 +5,34 @@
     "drive",
     "gmail",
     "icloud",
+    "image",
     "mcp_admin",
     "memory",
     "messages",
     "misc",
     "office",
+    "slack",
+    "superthread",
     "system",
-    "web",
-    "image"
+    "web"
+  ],
+  "known": [
+    "calendar",
+    "code",
+    "drive",
+    "gmail",
+    "icloud",
+    "image",
+    "kis",
+    "mcp_admin",
+    "memory",
+    "messages",
+    "misc",
+    "office",
+    "slack",
+    "superthread",
+    "system",
+    "things",
+    "web"
   ]
 }

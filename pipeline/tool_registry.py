@@ -35,12 +35,36 @@ def _linear_check() -> bool:
     return True
 
 
+def _slack_check() -> bool:
+    from pipeline.auth.slack import is_authenticated
+    return is_authenticated()
+
+
+def _superthread_check() -> bool:
+    from pipeline.auth.superthread import is_authenticated
+    return is_authenticated()
+
+
 # ── toolset 정의 ──────────────────────────────────────────────────────────────
 # hermes-agent toolsets.py의 TOOLSETS 패턴 — 서비스(toolset) 단위로 도구를 묶고
-# check_fn 하나로 가용성을 판정한다. Slack/Superthread는 auth 모듈만 있고 네이티브
-# 도구가 아직 없으므로 미등록 — 도구가 생기면 항목 추가 + is_authenticated 연결.
+# check_fn 하나로 가용성을 판정한다.
 
 WORKSPACE_TOOLSETS: dict[str, dict] = {
+    "slack": {
+        "description": "Slack (검색/채널/히스토리 읽기)",
+        "tools": ["slack_search", "slack_list_channels", "slack_read_channel"],
+        "check_fn": _slack_check,
+        "connect_hint": "설정 → 워크스페이스에서 Slack 계정을 연결하라 (GET /slack/auth).",
+    },
+    "superthread": {
+        "description": "Superthread (프로젝트/보드/카드)",
+        "tools": [
+            "superthread_list_projects", "superthread_list_boards",
+            "superthread_search_cards", "superthread_get_card", "superthread_create_card",
+        ],
+        "check_fn": _superthread_check,
+        "connect_hint": "설정 → 워크스페이스에서 Superthread 를 연결하라 (GET /superthread/auth).",
+    },
     "google": {
         "description": "Google Workspace (Gmail/Calendar/Drive/Slides/Docs)",
         "tools": [

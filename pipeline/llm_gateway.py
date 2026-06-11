@@ -28,6 +28,8 @@ _TOOL_GROUP_RULES = [
     ("xlsx_", "docx_", "pptx_",                               "office"),
     ("memory_", "persona_", "event_", "entity_",              "memory"),
     ("mcp_",                                                  "mcp_admin"),
+    ("slack_",                                                "slack"),
+    ("superthread_",                                          "superthread"),
     ("host_", "bash_", "python_", "sandbox_",                 "code"),
     ("web_",                                                  "web"),
     ("image_",                                                "image"),
@@ -44,15 +46,20 @@ def _tool_group_of(name: str) -> str:
 
 
 def get_enabled_groups() -> set[str]:
-    """Returns the set of enabled tool groups. If the file is missing, all groups are active (legacy behavior)."""
+    """Returns the set of enabled tool groups. If the file is missing, all groups are active (legacy behavior).
+
+    파일 저장 이후에 새로 도입된 그룹("known"에 없는 그룹)은 기본 활성 —
+    업데이트로 추가된 도구(slack/superthread 등)가 기존 사용자에게
+    보이지 않는 문제를 막는다. 사용자가 명시적으로 끈 그룹은 유지."""
     if not _TOOL_GROUPS_PATH.exists():
         return _ALL_GROUPS
     try:
         data = json.loads(_TOOL_GROUPS_PATH.read_text(encoding="utf-8"))
         enabled = data.get("enabled")
-        if isinstance(enabled, list):
-            return set(enabled)
-        return _ALL_GROUPS
+        if not isinstance(enabled, list):
+            return _ALL_GROUPS
+        known = set(data.get("known") or _LEGACY_KNOWN_GROUPS)
+        return set(enabled) | (_ALL_GROUPS - known)
     except Exception:
         return _ALL_GROUPS
 
@@ -60,7 +67,8 @@ def get_enabled_groups() -> set[str]:
 def set_enabled_groups(groups: list[str]) -> None:
     _TOOL_GROUPS_PATH.parent.mkdir(parents=True, exist_ok=True)
     _TOOL_GROUPS_PATH.write_text(
-        json.dumps({"enabled": list(groups)}, indent=2, ensure_ascii=False),
+        json.dumps({"enabled": list(groups), "known": sorted(_ALL_GROUPS)},
+                   indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
 
@@ -94,7 +102,12 @@ def tool_group_stats(schemas: list[dict]) -> list[dict]:
 _ALL_GROUPS = {
     "gmail", "calendar", "drive", "icloud", "messages", "things",
     "kis", "office", "memory", "mcp_admin", "code", "web", "image", "system", "misc",
+    "slack", "superthread",
 }
+
+# "known" 필드 도입(2026-06-11, INT-1456) 이전에 저장된 파일이 알던 그룹 집합 —
+# 이 집합에 없는 그룹은 구버전 파일에서 "사용자가 껐다"가 아니라 "몰랐다"로 해석한다.
+_LEGACY_KNOWN_GROUPS = _ALL_GROUPS - {"slack", "superthread"}
 
 
 def _expand_env(value: Any) -> Any:

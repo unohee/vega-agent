@@ -108,6 +108,8 @@ _PLAN_BLOCKED_TOOLS: frozenset[str] = frozenset({
     "session_delete", "session_clean",
     # Discord notification (external send)
     "discord_notify",
+    # Superthread write
+    "superthread_create_card",
     # KIS trading — blocked (read-only counterparts pass if they exist as separate functions)
     "kis_order_cash", "kis_order_cancel", "kis_order_modify",
 })
@@ -973,10 +975,15 @@ SESSION_TOOL_SCHEMAS: list[dict] = [
 from pipeline.tools_code import CODE_TOOL_SCHEMAS, CODE_TOOL_FUNCTIONS
 from pipeline.vega_query import persona_upsert, event_add, entity_upsert
 
+from pipeline.tools_slack import SLACK_TOOL_SCHEMAS, SLACK_TOOL_FUNCTIONS
+from pipeline.tools_superthread import SUPERTHREAD_TOOL_SCHEMAS, SUPERTHREAD_TOOL_FUNCTIONS
+
 TOOL_SCHEMAS.extend(MEMORY_TOOL_SCHEMAS)
 TOOL_SCHEMAS.extend(SESSION_TOOL_SCHEMAS)
 TOOL_SCHEMAS.extend(CODE_TOOL_SCHEMAS)
 TOOL_SCHEMAS.extend(OFFICE_TOOL_SCHEMAS)
+TOOL_SCHEMAS.extend(SLACK_TOOL_SCHEMAS)
+TOOL_SCHEMAS.extend(SUPERTHREAD_TOOL_SCHEMAS)
 
 # vega-agent: 네이티브 linear_* 도구는 pipeline.linear_client(개인 VEGA 전용, 여기 없음)에
 # 의존한다. 모듈이 없으면 호출 시 무조건 실패하고 self_improve 가 폭주하므로,
@@ -1717,6 +1724,8 @@ TOOL_FUNCTIONS: dict[str, Any] = {
     "exit_plan_mode": _exit_plan_mode,
     "image_generate": image_generate,
 }
+TOOL_FUNCTIONS.update(SLACK_TOOL_FUNCTIONS)
+TOOL_FUNCTIONS.update(SUPERTHREAD_TOOL_FUNCTIONS)
 
 
 def dispatch_tool(name: str, arguments: dict) -> str:
