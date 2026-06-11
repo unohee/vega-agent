@@ -689,6 +689,14 @@ async def reset_onboarding(request: Request):
     })
 
 
+# chat.html의 프로필 모달(상태바 '프로필' 버튼 + 자동 온보딩 모달)이
+# POST /api/onboarding 으로 프로필을 저장한다. install_wizard(신버전)는 /finish 를
+# 쓰지만, 이 별칭은 chat.html 호환을 위해 유지한다. 동작은 finish 와 동일 (INT-1473).
+@router.post("/api/onboarding")
+async def post_onboarding_compat(payload: OnboardingPayload):
+    return await finish_onboarding(payload)
+
+
 # ── 검색 엔드포인트 (SearXNG) — 설정 창 Tools & Keys + 첫 실행 안내 ──
 class SearchEndpointPayload(BaseModel):
     url: str = ""

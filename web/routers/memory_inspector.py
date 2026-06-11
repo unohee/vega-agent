@@ -8,7 +8,7 @@ import sqlite3
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -279,3 +279,28 @@ async def memory_summary():
         "entities": {"total": entities_total, "by_kind": [dict(r) for r in entity_kinds]},
         "sessions": {"total": sessions_total},
     })
+
+
+# ── Memory & Context 설정 ─────────────────────────────────────────
+# compaction 임계값·보존 메시지 수·메모리 자동 업데이트 on/off.
+# 저장소: VEGA_DATA_DIR/memory_settings.json (compaction.load/save_memory_settings).
+# settings.html Memory & Context 패널이 GET/POST로 사용 (INT-1473 버그2).
+
+@router.get("/api/memory/settings")
+async def memory_settings_get():
+    from pipeline.compaction import load_memory_settings, _SETTINGS_DEFAULTS
+    return JSONResponse({"settings": load_memory_settings(), "defaults": _SETTINGS_DEFAULTS})
+
+
+@router.post("/api/memory/settings")
+async def memory_settings_set(request: Request):
+    from pipeline.compaction import save_memory_settings
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"ok": False, "error": "invalid JSON"}, status_code=400)
+    try:
+        saved = save_memory_settings(body or {})
+        return JSONResponse({"ok": True, "settings": saved})
+    except (ValueError, TypeError) as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=400)

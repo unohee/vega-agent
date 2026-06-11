@@ -99,7 +99,7 @@ from pipeline.streaming import build_system, stream_gpt
 from pipeline.mcp_client import init_mcp_tools
 from pipeline.tools import TOOL_SCHEMAS
 from pipeline.contact_store import startup_sync
-from pipeline.compaction import KEEP_RECENT, compact_history, _needs_compaction, splice_compacted
+from pipeline.compaction import _keep_recent, compact_history, _needs_compaction, splice_compacted
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -1890,7 +1890,9 @@ async def _run_gpt_task(sid: str, history: list[dict], images: list[dict]) -> No
             # 새 메시지는 보존된다. 알림 배너는 다음 턴 시작 시 전송.
             _COMPACTING.add(sid)
             _compact_snapshot = list(history)
-            _n_summarized = max(0, len(_compact_snapshot) - KEEP_RECENT)
+            # keep_recent는 memory_settings.json 핫리로드 — compact_history와 같은 값을 봐야
+            # splice_compacted 접합 지점이 어긋나지 않는다.
+            _n_summarized = max(0, len(_compact_snapshot) - _keep_recent())
 
             async def _bg_compact():
                 try:

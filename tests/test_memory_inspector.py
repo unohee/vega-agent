@@ -85,3 +85,67 @@ async def test_persona_active_only():
     for r in d["rows"]:
         assert r["is_active"] == 1
         assert "section_key" in r and "content" in r
+
+
+# ── memory settings: Memory & Context 패널 (INT-1473 버그2 회귀) ─────────────
+class TestMemorySettingsAPI:
+    """GET/POST /api/memory/settings — settings.html Memory&Context 패널 계약."""
+
+    @pytest.fixture
+    def client(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            "pipeline.data_paths.memory_settings_path",
+            lambda: tmp_path / "memory_settings.json",
+        )
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+        app = FastAPI()
+        app.include_router(mi.router)
+        return TestClient(app)
+
+    def test_get_returns_settings_and_defaults(self, client):
+        r = client.get("/api/memory/settings")
+        assert r.status_code == 200
+        body = r.json()
+        # settings.html Memory & Context 패널이 읽는 키
+        s = body["settings"]
+        assert "compact_threshold" in s and "keep_recent" in s and "auto_memory_update" in s
+        assert "defaults" in body
+
+    def test_post_saves_and_returns_saved(self, client):
+        r = client.post("/api/memory/settings",
+                        json={"compact_threshold": 30, "keep_recent": 8,
+                              "auto_memory_update": False})
+        assert r.status_code == 200
+        body = r.json()
+        assert body["ok"] is True
+        assert body["settings"]["compact_threshold"] == 30
+        assert body["settings"]["keep_recent"] == 8
+        assert body["settings"]["auto_memory_update"] is False
+        # GET 재조회로 영속 확인
+        again = client.get("/api/memory/settings").json()["settings"]
+        assert again["compact_threshold"] == 30
+
+    def test_post_clamps_validation_rules(self, client):
+        """검증 규칙: threshold>=4, keep>=2, keep<threshold (서버가 보정)."""
+        r = client.post("/api/memory/settings",
+                        json={"compact_threshold": 1, "keep_recent": 99})
+        assert r.status_code == 200
+        s = r.json()["settings"]
+        assert s["compact_threshold"] >= 4
+        assert s["keep_recent"] >= 2
+        assert s["keep_recent"] < s["compact_threshold"]
+
+    def test_post_invalid_value_400(self, client):
+        r = client.post("/api/memory/settings", json={"compact_threshold": "abc"})
+        assert r.status_code == 400
+        assert r.json()["ok"] is False
+
+    def test_saved_settings_drive_compaction(self, client):
+        """저장된 설정이 실제 compaction 트리거에 반영되는지 — 죽은 설정 방지."""
+        from pipeline.compaction import _needs_compaction
+        client.post("/api/memory/settings", json={"compact_threshold": 6, "keep_recent": 2})
+        history_5 = [{"role": "user", "content": str(i)} for i in range(5)]
+        history_6 = [{"role": "user", "content": str(i)} for i in range(6)]
+        assert _needs_compaction(history_5) is False
+        assert _needs_compaction(history_6) is True

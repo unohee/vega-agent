@@ -692,14 +692,24 @@ async function loadSuggestions() {
 }
 async function acceptSuggest(idx, title, project, btn) {
   btn.disabled = true;
+  const orig = btn.textContent;
+  btn.textContent = '추가 중…';
   try {
-    await fetch('/api/todos/suggest/accept', {
+    const res = await fetch('/api/todos/suggest/accept', {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ title, project }),
     });
+    // HTTP 에러(4xx/5xx) 또는 본문 ok:false면 실패로 처리 — 성공 표시는 ok일 때만 (INT-1473)
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok || d.ok === false) throw new Error(d.error || `HTTP ${res.status}`);
     btn.textContent = '✓ 추가됨';
     document.getElementById(`suggest-${idx}`).style.opacity = '.4';
-  } catch { btn.disabled = false; }
+  } catch (e) {
+    btn.textContent = '✗ 실패 — 재시도';
+    btn.title = String(e.message || e);
+    btn.disabled = false;
+    setTimeout(() => { btn.textContent = orig; }, 3000);
+  }
 }
 
 // ── 오늘 탭 (일정/메일/이슈/프로젝트 + 커스텀 위젯) ──

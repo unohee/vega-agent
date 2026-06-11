@@ -30,6 +30,56 @@ COMPACT_TOKEN_THRESHOLD = 8000
 COMPACT_THRESHOLD = 60
 # Number of recent messages to preserve after compaction (keeps conversation context post-summary)
 KEEP_RECENT = 6
+# 메모리 자동 업데이트(요약 시 persona/event/rule 갱신) 기본 on
+AUTO_MEMORY_UPDATE = True
+
+# 설정 기본값 — memory_settings.json이 없거나 키가 빠졌을 때 사용(하위호환).
+# 토큰 임계값(COMPACT_TOKEN_THRESHOLD)은 주 트리거로 고정이고, 메시지 수 백스톱
+# (compact_threshold)·보존 수(keep_recent)·자동 메모리 갱신만 사용자 설정 대상.
+_SETTINGS_DEFAULTS = {
+    "compact_threshold": COMPACT_THRESHOLD,
+    "keep_recent": KEEP_RECENT,
+    "auto_memory_update": AUTO_MEMORY_UPDATE,
+}
+
+
+def load_memory_settings() -> dict:
+    """memory_settings.json을 매번 읽어 반환(핫리로드). 없거나 깨지면 기본값."""
+    from pipeline.data_paths import memory_settings_path
+    p = memory_settings_path()
+    out = dict(_SETTINGS_DEFAULTS)
+    if p.exists():
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+            for k in _SETTINGS_DEFAULTS:
+                if k in data:
+                    out[k] = data[k]
+        except Exception:
+            pass
+    return out
+
+
+def save_memory_settings(settings: dict) -> dict:
+    """memory_settings.json 저장. 알려진 키만 기록(검증). 저장된 전체 설정 반환."""
+    from pipeline.data_paths import memory_settings_path
+    cur = load_memory_settings()
+    if "compact_threshold" in settings:
+        cur["compact_threshold"] = max(4, int(settings["compact_threshold"]))
+    if "keep_recent" in settings:
+        cur["keep_recent"] = max(2, int(settings["keep_recent"]))
+    if "auto_memory_update" in settings:
+        cur["auto_memory_update"] = bool(settings["auto_memory_update"])
+    # keep_recent는 threshold보다 작아야 의미가 있다.
+    if cur["keep_recent"] >= cur["compact_threshold"]:
+        cur["keep_recent"] = max(2, cur["compact_threshold"] - 2)
+    p = memory_settings_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(cur, ensure_ascii=False, indent=2), encoding="utf-8")
+    return cur
+
+
+def _keep_recent() -> int:
+    return load_memory_settings()["keep_recent"]
 
 
 def _estimate_tokens(history: list[dict]) -> int:
@@ -41,7 +91,7 @@ def _estimate_tokens(history: list[dict]) -> int:
 def _needs_compaction(history: list[dict]) -> bool:
     if not history:
         return False
-    if len(history) >= COMPACT_THRESHOLD:
+    if len(history) >= load_memory_settings()["compact_threshold"]:
         return True
     return _estimate_tokens(history) >= COMPACT_TOKEN_THRESHOLD
 
@@ -112,15 +162,16 @@ async def compact_history(
     Run history compaction.
 
     Returns: (new_history, summary_text)
-    - new_history: [{"role":"system","content":"[SUMMARY] ..."}] + history[-KEEP_RECENT:]
+    - new_history: [{"role":"system","content":"[SUMMARY] ..."}] + history[-keep_recent:]
     - summary_text: for frontend display
     """
     if on_status:
         await on_status("📦 대화 압축 중…")
 
-    # Messages to summarize: all except the last KEEP_RECENT
-    to_summarize = history[:-KEEP_RECENT] if len(history) > KEEP_RECENT else history
-    recent = history[-KEEP_RECENT:] if len(history) > KEEP_RECENT else []
+    # Messages to summarize: all except the last keep_recent (memory_settings.json 핫리로드)
+    keep = _keep_recent()
+    to_summarize = history[:-keep] if len(history) > keep else history
+    recent = history[-keep:] if len(history) > keep else []
 
     # Serialize conversation to text
     from pipeline.user_profile import display_name as _dn
@@ -141,12 +192,15 @@ async def compact_history(
         )
     except Exception as e:
         logger.warning(f"Compaction LLM call failed: {e}")
-        summary = f"[이전 대화 {len(to_summarize)}턴 — 요약 실패, 최근 {KEEP_RECENT}턴 보존]"
+        summary = f"[이전 대화 {len(to_summarize)}턴 — 요약 실패, 최근 {keep}턴 보존]"
         new_history = [{"role": "assistant", "content": summary}] + recent
         return new_history, summary
 
     # Execute memory/rule tool calls — whitelist as a second defense (ignore any other tool the compaction model tries to call)
+    # auto_memory_update가 off면 요약만 하고 persona/event/rule 갱신은 건너뛴다.
     saved_rules: list[str] = []
+    if not load_memory_settings().get("auto_memory_update", True):
+        tool_calls = []
     for tc in tool_calls:
         name = tc.get("name", "")
         args = tc.get("arguments", {})

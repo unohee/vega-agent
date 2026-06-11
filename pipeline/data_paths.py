@@ -86,6 +86,11 @@ def widgets_path() -> Path:
     return data_dir() / "widgets.json"
 
 
+def memory_settings_path() -> Path:
+    """메모리·컨텍스트 설정(JSON) — compaction 임계값 등. 사용자 데이터 root 기준."""
+    return data_dir() / "memory_settings.json"
+
+
 def llm_providers_path() -> Path:
     return data_dir() / "llm_providers.json"
 
