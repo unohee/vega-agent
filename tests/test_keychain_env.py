@@ -75,3 +75,72 @@ def test_spec_bundles_both_oauth_clients():
         "spec 에 google OAuth client 번들 누락 — frozen 앱에서 "
         "google.is_configured()=False → '구성 안 됨'으로 연결 불가"
     )
+
+
+# ── 크로스플랫폼 토큰 저장 (Windows OAuth, INT-1494) ──────────────────────────
+# Windows/Linux 에선 macOS `security` CLI 가 없어 OAuth 토큰 저장이 깨졌다.
+# set/get/delete 가 비-macOS 에서 keyring 으로 위임되는지, auth 모듈이 중앙
+# keychain 에 위임하는지 검증한다.
+
+def test_non_macos_uses_keyring_backend(monkeypatch):
+    """비-macOS(_HAS_KEYCHAIN=False)에서 set/get/delete 가 keyring 으로 라우팅된다."""
+    store: dict[tuple[str, str], str] = {}
+
+    class _FakeKeyring:
+        class errors:
+            class PasswordDeleteError(Exception):
+                pass
+
+        def get_keyring(self):  # not fail backend
+            return self
+
+        def get_password(self, svc, key):
+            return store.get((svc, key))
+
+        def set_password(self, svc, key, val):
+            store[(svc, key)] = val
+
+        def delete_password(self, svc, key):
+            if (svc, key) not in store:
+                raise self.errors.PasswordDeleteError()
+            del store[(svc, key)]
+
+    monkeypatch.setattr(kc, "_HAS_KEYCHAIN", False)
+    monkeypatch.setattr(kc, "_keyring", lambda: _FakeKeyring())
+
+    assert kc.set_secret("refresh_token", "tok-abc", service="vega-google-oauth") is True
+    assert kc.get_secret("refresh_token", service="vega-google-oauth") == "tok-abc"
+    # 네임스페이스 격리: 같은 key, 다른 service 는 충돌하지 않는다
+    assert kc.get_secret("refresh_token", service="vega-slack-oauth") is None
+    assert kc.delete_secret("refresh_token", service="vega-google-oauth") is True
+    assert kc.get_secret("refresh_token", service="vega-google-oauth") is None
+    # 멱등 삭제 (이미 없음)
+    assert kc.delete_secret("refresh_token", service="vega-google-oauth") is True
+
+
+def test_non_macos_no_backend_returns_falsy(monkeypatch):
+    """keyring 도 없으면(헤드리스) set=False·get=None — 예외 전파 없이 폴백."""
+    monkeypatch.setattr(kc, "_HAS_KEYCHAIN", False)
+    monkeypatch.setattr(kc, "_keyring", lambda: None)
+    assert kc.set_secret("k", "v", service="s") is False
+    assert kc.get_secret("k", service="s") is None
+    assert kc.delete_secret("k", service="s") is False
+
+
+def test_auth_modules_delegate_to_central_keychain():
+    """google/slack/superthread 의 keychain_save/load 가 중앙 _kc 에 위임한다
+    (각자 `security` 직접 호출하던 Windows-깨짐 패턴 제거 회귀)."""
+    import inspect
+    from pipeline.auth import google, slack, superthread
+    for mod in (google, slack, superthread):
+        src = inspect.getsource(mod.keychain_save) + inspect.getsource(mod.keychain_load)
+        assert "_kc." in src, f"{mod.__name__}.keychain_* 가 중앙 keychain 에 위임하지 않음"
+        assert "security" not in src, f"{mod.__name__} 가 여전히 `security` CLI 직접 호출"
+
+
+def test_spec_bundles_keyring_windows_backend():
+    """spec 이 keyring Windows 백엔드를 hiddenimport 로 못박는지 — 안 그러면 frozen
+    Windows 앱에서 keyring 이 fail 백엔드로 떨어져 OAuth 토큰 저장이 또 깨진다."""
+    from pathlib import Path
+    spec = (Path(__file__).resolve().parent.parent / "bin" / "vega-backend.spec").read_text(encoding="utf-8")
+    assert "keyring.backends.Windows" in spec, "spec 에 keyring Windows 백엔드 hiddenimport 누락 (INT-1494)"

@@ -95,6 +95,24 @@ try:
 except Exception:
     pass
 
+# keyring: OAuth 토큰 저장 백엔드(Windows=Credential Manager, Linux=SecretService).
+# 백엔드를 entry_points/동적 import 로 찾으므로 정적 분석이 못 잡는다 → 명시 수집
+# (INT-1494). 없으면 frozen 앱에서 keyring 이 fail 백엔드로 떨어져 Windows OAuth
+# 토큰 저장이 다시 깨진다. metadata 는 backend entry_points 등록에 필요.
+try:
+    hiddenimports += collect_submodules("keyring")
+    datas += copy_metadata("keyring")
+    # 동적으로만 참조되는 OS별 백엔드를 못박는다.
+    hiddenimports += [
+        "keyring.backends.Windows",      # WinVaultKeyring (Credential Manager)
+        "keyring.backends.macOS",        # macOS Keychain (폴백 경로)
+        "keyring.backends.SecretService",  # Linux
+        "keyring.backends.fail",
+        "win32ctypes.core",              # WinVaultKeyring 의존(pywin32-ctypes)
+    ]
+except Exception:
+    pass
+
 # 백엔드가 import 하는 자체 패키지 전부
 hiddenimports += collect_submodules("pipeline")
 hiddenimports += collect_submodules("web")

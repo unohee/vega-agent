@@ -28,6 +28,8 @@ import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 
+from pipeline import keychain as _kc
+
 KEYCHAIN_SERVICE = "vega-superthread-oauth"
 
 # Superthread 공식 CLI 가 쓰는 public OAuth client (client_secret 없음).
@@ -69,28 +71,20 @@ def _ssl_context() -> ssl.SSLContext:
 
 # ── Keychain ─────────────────────────────────────────────────────────────────
 
+# 토큰 저장은 크로스플랫폼 중앙 백엔드에 위임 (pipeline/keychain.py, INT-1494) —
+# macOS=Keychain, Windows=Credential Manager. 과거 `security` 직접 호출은 Windows
+# 에서 OAuth 토큰 저장을 깨뜨렸다.
 def keychain_save(account: str, value: str) -> None:
-    subprocess.run(
-        ["security", "add-generic-password",
-         "-s", KEYCHAIN_SERVICE, "-a", account, "-w", value, "-U"],
-        check=True, capture_output=True,
-    )
+    if not _kc.set_secret(account, value, service=KEYCHAIN_SERVICE):
+        raise RuntimeError(f"토큰 저장 실패(secure store 미가용): {account}")
 
 
 def keychain_load(account: str) -> str | None:
-    r = subprocess.run(
-        ["security", "find-generic-password",
-         "-s", KEYCHAIN_SERVICE, "-a", account, "-w"],
-        capture_output=True, text=True,
-    )
-    return r.stdout.strip() if r.returncode == 0 else None
+    return _kc.get_secret(account, service=KEYCHAIN_SERVICE)
 
 
 def keychain_delete(account: str) -> None:
-    subprocess.run(
-        ["security", "delete-generic-password", "-s", KEYCHAIN_SERVICE, "-a", account],
-        capture_output=True,
-    )
+    _kc.delete_secret(account, service=KEYCHAIN_SERVICE)
 
 
 # ── 토큰 상태 ─────────────────────────────────────────────────────────────────

@@ -59,28 +59,30 @@ _FAKE_CLIENT = {
 
 
 class TestKeychainDelete:
-    """keychain_delete returncode 검증 (INT-1471) — subprocess mock, 실제 Keychain 접근 없음."""
+    """keychain_delete returncode 검증 (INT-1471). 토큰 저장은 크로스플랫폼 중앙
+    keychain(_security)에 위임되므로(INT-1494), macOS 경로의 `_security` 를 mock 한다.
+    멱등(없는 항목=True)·실제 실패(권한 등=False) 계약은 위임 후에도 보존돼야 한다."""
 
     def test_keychain_delete_success(self):
-        with patch("pipeline.auth.google.subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0, stderr="")
+        with patch("pipeline.keychain._HAS_KEYCHAIN", True), \
+             patch("pipeline.keychain._security", return_value=(0, "")):
             assert keychain_delete("refresh_token") is True
 
     def test_keychain_delete_not_found_is_idempotent(self):
         """항목이 원래 없으면(44 / could not be found) 멱등 성공 (INT-1471)."""
-        with patch("pipeline.auth.google.subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=44, stderr="")
+        with patch("pipeline.keychain._HAS_KEYCHAIN", True), \
+             patch("pipeline.keychain._security", return_value=(44, "")):
             assert keychain_delete("refresh_token") is True
-        with patch("pipeline.auth.google.subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(
-                returncode=1, stderr="The specified item could not be found in the keychain.")
+        with patch("pipeline.keychain._HAS_KEYCHAIN", True), \
+             patch("pipeline.keychain._security",
+                   return_value=(1, "The specified item could not be found in the keychain.")):
             assert keychain_delete("refresh_token") is True
 
     def test_keychain_delete_real_failure_returns_false(self):
         """returncode 비0 + not-found 가 아닌 에러는 실패로 보고해야 한다 (INT-1471 회귀)."""
-        with patch("pipeline.auth.google.subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(
-                returncode=51, stderr="User interaction is not allowed.")
+        with patch("pipeline.keychain._HAS_KEYCHAIN", True), \
+             patch("pipeline.keychain._security",
+                   return_value=(51, "User interaction is not allowed.")):
             assert keychain_delete("refresh_token") is False
 
 

@@ -15,6 +15,7 @@ import time
 import urllib.parse
 import urllib.request
 
+from pipeline import keychain as _kc
 from pipeline.data_paths import slack_oauth_client_path
 
 KEYCHAIN_SERVICE = "vega-slack-oauth"
@@ -68,28 +69,20 @@ def is_configured() -> bool:
         return False
 
 
+# 토큰 저장은 크로스플랫폼 중앙 백엔드에 위임 (pipeline/keychain.py, INT-1494) —
+# macOS=Keychain, Windows=Credential Manager. 과거 `security` 직접 호출은 Windows
+# 에서 OAuth 토큰 저장을 깨뜨렸다.
 def keychain_save(account: str, value: str) -> None:
-    subprocess.run(
-        ["security", "add-generic-password",
-         "-s", KEYCHAIN_SERVICE, "-a", account, "-w", value, "-U"],
-        check=True, capture_output=True,
-    )
+    if not _kc.set_secret(account, value, service=KEYCHAIN_SERVICE):
+        raise RuntimeError(f"토큰 저장 실패(secure store 미가용): {account}")
 
 
 def keychain_load(account: str) -> str | None:
-    r = subprocess.run(
-        ["security", "find-generic-password",
-         "-s", KEYCHAIN_SERVICE, "-a", account, "-w"],
-        capture_output=True, text=True,
-    )
-    return r.stdout.strip() if r.returncode == 0 else None
+    return _kc.get_secret(account, service=KEYCHAIN_SERVICE)
 
 
 def keychain_delete(account: str) -> None:
-    subprocess.run(
-        ["security", "delete-generic-password", "-s", KEYCHAIN_SERVICE, "-a", account],
-        capture_output=True,
-    )
+    _kc.delete_secret(account, service=KEYCHAIN_SERVICE)
 
 
 def _post_token_endpoint(params: dict[str, str]) -> dict:

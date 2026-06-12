@@ -11,9 +11,11 @@ from pathlib import Path
 
 _SERVICE = "VEGA"
 
-# `security` CLI는 macOS 전용. Windows/Linux에선 모든 Keychain 연산을 "없음"으로
-# 처리해 get()이 .env → 환경변수 폴백 체인으로 넘어가게 한다 (INT-1438).
-# 가드 없이 호출하면 FileNotFoundError가 모든 keychain.get() 사용처로 전파된다.
+# `security` CLI는 macOS 전용. 그 외 플랫폼(Windows/Linux)에선 `keyring`
+# (Windows=Credential Manager, Linux=Secret Service)으로 안전 저장한다 (INT-1494).
+# keyring 도 없으면 모든 Keychain 연산을 "없음"으로 처리해 get()이 .env →
+# 환경변수 폴백 체인으로 넘어가게 한다 (INT-1438). 가드 없이 macOS `security`
+# 를 직접 호출하면 FileNotFoundError 가 모든 사용처로 전파된다.
 _HAS_KEYCHAIN = sys.platform == "darwin"
 
 
@@ -31,28 +33,75 @@ def _security(*args: str, input_text: str | None = None) -> tuple[int, str]:
     return result.returncode, (result.stdout + result.stderr).strip()
 
 
+def _keyring():
+    """비-macOS 안전 저장 백엔드(keyring). 미설치/비가용이면 None.
+    keyring 의 service 는 '<_SERVICE>:<service>' 로 네임스페이스해 충돌을 막는다."""
+    if _HAS_KEYCHAIN:
+        return None
+    try:
+        import keyring  # Windows=WinVaultKeyring, Linux=SecretService
+        # 사용 가능한 실제 백엔드가 있는지 확인(헤드리스 Linux 등에선 fail 백엔드)
+        from keyring.backends import fail as _fail
+        if isinstance(keyring.get_keyring(), _fail.Keyring):
+            return None
+        return keyring
+    except Exception:
+        return None
+
+
 def get_secret(key: str, service: str = _SERVICE) -> str | None:
-    """Look up a secret in Keychain. Returns None if not found."""
-    rc, out = _security("find-generic-password", "-s", service, "-a", key, "-w")
-    if rc == 0:
-        return out.strip() or None
-    return None
+    """Look up a secret. macOS=Keychain, 그 외=keyring. 없으면 None."""
+    if _HAS_KEYCHAIN:
+        rc, out = _security("find-generic-password", "-s", service, "-a", key, "-w")
+        return (out.strip() or None) if rc == 0 else None
+    kr = _keyring()
+    if kr is None:
+        return None
+    try:
+        return kr.get_password(f"{_SERVICE}:{service}", key) or None
+    except Exception:
+        return None
 
 
 def set_secret(key: str, value: str, service: str = _SERVICE) -> bool:
-    """Store a secret in Keychain (updates if already present)."""
-    # Delete existing entry then re-add (no update command available)
-    _security("delete-generic-password", "-s", service, "-a", key)
-    rc, _ = _security(
-        "add-generic-password", "-s", service, "-a", key, "-w", value
-    )
-    return rc == 0
+    """Store a secret (updates if present). macOS=Keychain, 그 외=keyring."""
+    if _HAS_KEYCHAIN:
+        # Delete existing entry then re-add (no update command available)
+        _security("delete-generic-password", "-s", service, "-a", key)
+        rc, _ = _security("add-generic-password", "-s", service, "-a", key, "-w", value)
+        return rc == 0
+    kr = _keyring()
+    if kr is None:
+        return False
+    try:
+        kr.set_password(f"{_SERVICE}:{service}", key, value)
+        return True
+    except Exception:
+        return False
 
 
 def delete_secret(key: str, service: str = _SERVICE) -> bool:
-    """Delete a secret from Keychain."""
-    rc, _ = _security("delete-generic-password", "-s", service, "-a", key)
-    return rc == 0
+    """Delete a secret. macOS=Keychain, 그 외=keyring.
+    원래 없는 항목은 멱등 성공(True), 실제 삭제 실패(권한 등)는 False (INT-1471)."""
+    if _HAS_KEYCHAIN:
+        rc, out = _security("delete-generic-password", "-s", service, "-a", key)
+        if rc == 0:
+            return True
+        # errSecItemNotFound(44) / "could not be found" — 이미 없음은 멱등 성공
+        if rc == 44 or "could not be found" in (out or ""):
+            return True
+        return False  # 실제 실패(예: 51 User interaction not allowed)
+    kr = _keyring()
+    if kr is None:
+        return False
+    try:
+        kr.delete_password(f"{_SERVICE}:{service}", key)
+        return True
+    except Exception as e:
+        # PasswordDeleteError(이미 없음)는 멱등 성공으로 흡수
+        if type(e).__name__ == "PasswordDeleteError":
+            return True
+        return False
 
 
 def _env_file_paths() -> list[Path]:

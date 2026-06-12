@@ -32,6 +32,7 @@ import urllib.parse
 import urllib.request
 import webbrowser
 
+from pipeline import keychain as _kc
 from pipeline.data_paths import google_oauth_client_path
 
 KEYCHAIN_SERVICE = "vega-google-oauth"
@@ -99,36 +100,22 @@ def _ssl_context() -> ssl.SSLContext:
 
 # ── Keychain ─────────────────────────────────────────────────────────────────
 
+# 토큰 저장은 크로스플랫폼 중앙 백엔드에 위임 — macOS=Keychain, Windows=Credential
+# Manager, Linux=Secret Service (pipeline/keychain.py, INT-1494). 과거엔 여기서
+# `security` CLI 를 직접 호출해 Windows 에서 OAuth 토큰 저장이 깨졌다.
 def keychain_save(account: str, value: str) -> None:
-    subprocess.run(
-        ["security", "add-generic-password",
-         "-s", KEYCHAIN_SERVICE, "-a", account, "-w", value, "-U"],
-        check=True, capture_output=True,
-    )
+    if not _kc.set_secret(account, value, service=KEYCHAIN_SERVICE):
+        raise RuntimeError(f"토큰 저장 실패(secure store 미가용): {account}")
 
 
 def keychain_load(account: str) -> str | None:
-    r = subprocess.run(
-        ["security", "find-generic-password",
-         "-s", KEYCHAIN_SERVICE, "-a", account, "-w"],
-        capture_output=True, text=True,
-    )
-    return r.stdout.strip() if r.returncode == 0 else None
+    return _kc.get_secret(account, service=KEYCHAIN_SERVICE)
 
 
 def keychain_delete(account: str) -> bool:
-    """Keychain 항목 삭제. 항목이 원래 없으면 멱등 성공(True).
-    실제 삭제 실패(권한 등)는 False — 호출 측이 확정 상태를 보고해야 한다 (INT-1471)."""
-    r = subprocess.run(
-        ["security", "delete-generic-password", "-s", KEYCHAIN_SERVICE, "-a", account],
-        capture_output=True, text=True,
-    )
-    if r.returncode == 0:
-        return True
-    # errSecItemNotFound(44) — 이미 없음은 멱등 성공
-    if r.returncode == 44 or "could not be found" in (r.stderr or ""):
-        return True
-    return False
+    """항목 삭제. 원래 없으면 멱등 성공(True). 실제 삭제 실패는 False —
+    호출 측이 확정 상태를 보고해야 한다 (INT-1471). 백엔드가 멱등 처리."""
+    return _kc.delete_secret(account, service=KEYCHAIN_SERVICE)
 
 
 # ── 멀티계정 인덱스 (INT-1471) ────────────────────────────────────────────────
