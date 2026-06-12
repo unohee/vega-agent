@@ -28,7 +28,7 @@ cd "$REPO_ROOT"
 # 버전의 단일 출처 = tauri.conf.json. CI(release-dmg.yml)가 이 줄을 sed 로
 # tauri.conf 값과 맞춰 주입한다(^VERSION="..." 패턴 의존). 로컬 수동 빌드 시엔
 # 이 값을 tauri.conf.json 과 손으로 맞춰야 한다 (INT-1432).
-VERSION="0.1.11"
+VERSION="0.1.20"
 APP_NAME="VEGA"
 SIGN_APP="Developer ID Application: Heewon Oh (635QK74RYK)"
 BUILD_DIR="$REPO_ROOT/build_output"
@@ -119,9 +119,12 @@ build_arch() {
     fi
     echo "  ✓ VEGA.app ($ARCH)"
 
-    # 1.5. 재서명
-    echo "[1.5] 재서명 (Developer ID + entitlements)..."
-    VEGA_SIGN_ID="$SIGN_APP" VEGA_NOTARY_PROFILE="" \
+    # 1.5. 재서명 + (프로필 있으면) .app 공증·staple
+    # .app 자체를 staple 해야 OTA updater tar.gz 안의 앱이 ticket 을 갖는다.
+    # (DMG 만 공증하면 직접설치는 되지만 tar.gz 안 .app 은 staple 누락 → 오프라인/
+    #  자동설치 Gatekeeper 리스크). VEGA_NOTARY_PROFILE 을 그대로 전파.
+    echo "[1.5] 재서명 (Developer ID + entitlements)$([ -n "${VEGA_NOTARY_PROFILE:-}" ] && echo ' + .app 공증·staple')..."
+    VEGA_SIGN_ID="$SIGN_APP" \
         bash "$REPO_ROOT/scripts/sign_and_notarize.sh" "$TAURI_APP"
 
     # 2. DMG 스테이징
