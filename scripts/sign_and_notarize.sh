@@ -155,9 +155,16 @@ NOTARIZE_TARGET="${ARTIFACT:-$APP_PATH}"
 echo ""
 echo "=== 공증 (notarytool, 프로필: $NOTARY_PROFILE) ==="
 echo "  대상: $NOTARIZE_TARGET"
-xcrun notarytool submit "$NOTARIZE_TARGET" \
-    --keychain-profile "$NOTARY_PROFILE" \
-    --wait
+# notarytool 은 .app 디렉터리를 직접 못 받는다(.zip/.pkg/.dmg 만). .app 이면
+# ditto 로 임시 zip 을 떠 제출하고, staple 은 원본 .app 에 박는다. (.dmg/.pkg 는 직접 제출)
+if [[ "$NOTARIZE_TARGET" == *.app ]]; then
+    SUBMIT_ZIP="$(dirname "$NOTARIZE_TARGET")/.$(basename "$NOTARIZE_TARGET").notarize.zip"
+    ditto -c -k --keepParent "$NOTARIZE_TARGET" "$SUBMIT_ZIP"
+    xcrun notarytool submit "$SUBMIT_ZIP" --keychain-profile "$NOTARY_PROFILE" --wait
+    rm -f "$SUBMIT_ZIP"
+else
+    xcrun notarytool submit "$NOTARIZE_TARGET" --keychain-profile "$NOTARY_PROFILE" --wait
+fi
 
 echo "=== staple ==="
 xcrun stapler staple "$NOTARIZE_TARGET"
