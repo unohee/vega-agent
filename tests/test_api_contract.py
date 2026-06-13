@@ -108,3 +108,28 @@ def test_extractor_catches_known_calls():
     # 양적 가드 — 추출이 비정상적으로 적으면 regex가 깨진 것
     assert len(chat_calls) >= 10
     assert len(settings_calls) >= 10
+
+
+# ── read_image 응답 키 계약 (INT-1505) ────────────────────────────────────────
+# 파일 미리보기 openFilePreview() 가 /api/fs/read_image 응답에서 잘못된 키
+# (data.base64)를 읽어 이미지가 항상 빈 채로 렌더됐다. 백엔드 정본 키는
+# data / media_type / name. 프론트가 이 키로 src 를 조립하는지 정적 대조한다.
+
+def test_read_image_response_keys_match_frontend():
+    import inspect
+    from web.routers import fs
+
+    src = inspect.getsource(fs.fs_read_image)
+    # 백엔드가 반환하는 정본 키
+    assert '"data"' in src and '"media_type"' in src, "read_image 응답 키 변경됨 — 테스트 갱신 필요"
+
+    chat = (ROOT / "web" / "static" / "chat.html").read_text(encoding="utf-8")
+    # read_image 를 쓰는 미리보기/첨부 코드가 base64 키를 참조하면 안 된다(정본은 data).
+    # data:${...media_type};base64,${...data} 패턴이 존재하고, .base64 프로퍼티 참조는 없어야.
+    assert "read_image" in chat
+    # read_image 응답을 받는 변수에서 .base64 를 읽는 회귀가 없어야 한다.
+    # (base64 는 data URI 스킴 토큰으로만 등장해야 하며, .base64 프로퍼티 접근은 금지)
+    assert ".base64" not in chat, (
+        "chat.html 이 read_image 응답에서 .base64 프로퍼티를 읽음 — 정본 키는 .data "
+        "(이미지가 빈 채로 렌더되는 INT-1505 회귀)"
+    )

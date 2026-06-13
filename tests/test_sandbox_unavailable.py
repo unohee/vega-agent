@@ -122,3 +122,34 @@ class TestEnsureSandboxReady:
         fake.write_text("#!/bin/sh\nexit 1\n")
         fake.chmod(0o755)
         assert sb.ensure_sandbox_ready() == {"ready": False, "reason": "docker_down"}
+
+
+class TestResolveComposeDir:
+    """frozen 앱에서 docker compose 의 cwd(COMPOSE_DIR) 해석 회귀 (INT-1505 __file__ 함정과 동형).
+
+    noarchive=False 빌드에선 sandbox.py 가 PYZ 안이라 __file__ 추정이 빗나가
+    `docker compose up` 의 cwd 가 실존하지 않는 경로가 된다 → 샌드박스 기동 실패.
+    launcher 가 설정하는 VEGA_BUNDLE_ROOT(=_MEIPASS)/sandbox 를 우선 봐야 한다.
+    """
+
+    def test_dev_env_uses_repo_sandbox(self, monkeypatch):
+        """VEGA_BUNDLE_ROOT 미설정(개발) → repo 의 sandbox/ (실존)."""
+        monkeypatch.delenv("VEGA_BUNDLE_ROOT", raising=False)
+        d = sb._resolve_compose_dir()
+        assert d.name == "sandbox"
+        assert (d / "docker-compose.yml").exists()
+
+    def test_bundle_root_with_compose_selected(self, monkeypatch, tmp_path):
+        """VEGA_BUNDLE_ROOT/sandbox 에 compose 가 있으면 그 경로를 쓴다."""
+        bundle = tmp_path / "meipass"
+        (bundle / "sandbox").mkdir(parents=True)
+        (bundle / "sandbox" / "docker-compose.yml").write_text("services: {}\n")
+        monkeypatch.setenv("VEGA_BUNDLE_ROOT", str(bundle))
+        assert sb._resolve_compose_dir() == bundle / "sandbox"
+
+    def test_bundle_root_without_compose_falls_back(self, monkeypatch, tmp_path):
+        """VEGA_BUNDLE_ROOT 가 가리키는 곳에 compose 가 없으면 repo 폴백 (잘못된 경로 반환 금지)."""
+        monkeypatch.setenv("VEGA_BUNDLE_ROOT", str(tmp_path / "nope"))
+        d = sb._resolve_compose_dir()
+        assert "nope" not in str(d)
+        assert (d / "docker-compose.yml").exists()

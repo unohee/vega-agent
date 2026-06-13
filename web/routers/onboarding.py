@@ -267,17 +267,41 @@ async def system_check():
         docker_ok = await asyncio.to_thread(docker_available)
     except Exception:
         docker_ok = False
+
+    docker_block: dict = {
+        "available": docker_ok,
+        "required_for": "code_exec",
+        "hint": None if docker_ok else (
+            "Docker Desktop 미설치/미기동 — 코드 실행(bash/python) 도구만 비활성화됩니다. "
+            "채팅·메모리·워크스페이스 연동은 정상 작동합니다."
+        ),
+        "install_url": None if docker_ok else "https://www.docker.com/products/docker-desktop/",
+    }
+
+    # Windows 에서 Docker 가 없으면 WSL2/Hyper-V 백엔드 점검을 더해 무엇을 먼저
+    # 켜야 하는지 안내한다 (INT-1505). 점검 자체는 진단 힌트일 뿐 하드 게이트가 아니다.
+    if platform.system() == "Windows" and not docker_ok:
+        try:
+            from pipeline.sandbox import windows_docker_backend
+            backend = await asyncio.to_thread(windows_docker_backend)
+        except Exception:
+            backend = {}
+        docker_block["windows_backend"] = backend
+        if backend.get("wsl") is False and backend.get("hyperv") is False:
+            docker_block["hint"] = (
+                "Docker Desktop 을 쓰려면 WSL2 또는 Hyper-V 가 필요합니다. "
+                "관리자 PowerShell 에서 `wsl --install` 실행 후 재부팅하면 가장 간단합니다. "
+                "코드 실행 도구 외 채팅·메모리·워크스페이스는 지금도 정상 작동합니다."
+            )
+        elif backend.get("virtualization") is False:
+            docker_block["hint"] = (
+                "CPU 가상화(VT-x/AMD-V)가 BIOS/UEFI 에서 꺼져 있어 Docker/WSL2 가 동작하지 않습니다. "
+                "펌웨어 설정에서 가상화를 활성화한 뒤 `wsl --install` 을 실행하세요."
+            )
+
     return JSONResponse({
         "platform": platform.system(),
-        "docker": {
-            "available": docker_ok,
-            "required_for": "code_exec",
-            "hint": None if docker_ok else (
-                "Docker Desktop 미설치/미기동 — 코드 실행(bash/python) 도구만 비활성화됩니다. "
-                "채팅·메모리·워크스페이스 연동은 정상 작동합니다."
-            ),
-            "install_url": None if docker_ok else "https://www.docker.com/products/docker-desktop/",
-        },
+        "docker": docker_block,
     })
 
 
