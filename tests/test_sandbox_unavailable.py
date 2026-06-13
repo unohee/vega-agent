@@ -7,11 +7,15 @@
 from __future__ import annotations
 
 import subprocess
-from unittest.mock import patch
+import sys
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 import pipeline.sandbox as sb
+
+_IS_WIN = sys.platform == "win32"
 
 
 @pytest.fixture(autouse=True)
@@ -29,6 +33,22 @@ def _strip_docker_from_path(monkeypatch, tmp_path):
     monkeypatch.setenv("PATH", str(empty))
 
 
+def _make_fake_docker(directory: Path, exit_code: int = 1) -> Path:
+    """shutil.which가 찾을 수 있는 fake docker 바이너리를 생성한다.
+
+    Windows: docker.exe (내용 무관 — subprocess.run은 mock으로 대체).
+    Unix: 실행 가능한 쉘 스크립트.
+    """
+    if _IS_WIN:
+        fake = directory / "docker.exe"
+        fake.write_bytes(b"")  # 내용 무관 — which가 찾기만 하면 됨
+    else:
+        fake = directory / "docker"
+        fake.write_text(f"#!/bin/sh\nexit {exit_code}\n")
+        fake.chmod(0o755)
+    return fake
+
+
 class TestDockerState:
     def test_missing_when_not_on_path(self, monkeypatch, tmp_path):
         """PATH에 docker 없음 → 'missing' (shutil.which 기반, 매 호출 재평가)."""
@@ -38,12 +58,18 @@ class TestDockerState:
 
     def test_down_when_daemon_not_responding(self, monkeypatch, tmp_path):
         """바이너리는 있는데 데몬 미기동(docker info 실패) → 'down'."""
-        fake = tmp_path / "docker"
-        fake.write_text("#!/bin/sh\nexit 1\n")
-        fake.chmod(0o755)
+        _make_fake_docker(tmp_path, exit_code=1)
         monkeypatch.setenv("PATH", str(tmp_path))
-        assert sb.docker_state() == "down"
-        assert sb.docker_available() is False
+        if _IS_WIN:
+            # Windows: 쉘 스크립트 실행 불가 — subprocess.run을 returncode=1로 mock
+            mock_r = MagicMock()
+            mock_r.returncode = 1
+            with patch.object(sb.subprocess, "run", return_value=mock_r):
+                assert sb.docker_state() == "down"
+                assert sb.docker_available() is False
+        else:
+            assert sb.docker_state() == "down"
+            assert sb.docker_available() is False
 
     def test_ok_cached_but_negative_not_cached(self, monkeypatch, tmp_path):
         """'ok'만 TTL 캐시 — 부정 판정은 캐시하지 않아 설치 후 재시도가 즉시 감지된다."""
@@ -51,10 +77,14 @@ class TestDockerState:
         _strip_docker_from_path(monkeypatch, tmp_path)
         assert sb.docker_state() == "missing"
         # 2) 사용자가 docker를 '설치'함 → 다음 호출에서 바로 ok
-        fake = tmp_path / "emptybin" / "docker"
-        fake.write_text("#!/bin/sh\necho 28.0.0\nexit 0\n")
-        fake.chmod(0o755)
-        assert sb.docker_state() == "ok"
+        _make_fake_docker(tmp_path / "emptybin", exit_code=0)
+        if _IS_WIN:
+            mock_r = MagicMock()
+            mock_r.returncode = 0
+            with patch.object(sb.subprocess, "run", return_value=mock_r):
+                assert sb.docker_state() == "ok"
+        else:
+            assert sb.docker_state() == "ok"
         # 3) ok는 캐시됨 — docker info를 다시 부르지 않아도 ok 유지
         with patch.object(sb.subprocess, "run", side_effect=AssertionError("cached여야 함")):
             assert sb.docker_state() == "ok"
@@ -80,11 +110,15 @@ class TestGracefulToolResults:
 
     def test_sandbox_bash_daemon_down_distinct_message(self, monkeypatch, tmp_path):
         """docker는 있는데 데몬이 죽어 있으면 '설치' 안내가 아니라 '실행' 안내."""
-        fake = tmp_path / "docker"
-        fake.write_text("#!/bin/sh\nexit 1\n")
-        fake.chmod(0o755)
+        _make_fake_docker(tmp_path, exit_code=1)
         monkeypatch.setenv("PATH", str(tmp_path))
-        result = sb.sandbox_bash("echo hi")
+        if _IS_WIN:
+            mock_r = MagicMock()
+            mock_r.returncode = 1
+            with patch.object(sb.subprocess, "run", return_value=mock_r):
+                result = sb.sandbox_bash("echo hi")
+        else:
+            result = sb.sandbox_bash("echo hi")
         assert result.get("docker") == "down"
         assert "데몬" in result["error"] and "실행" in result["error"]
         assert "orbstack.dev" not in result["error"]
@@ -118,10 +152,14 @@ class TestEnsureSandboxReady:
     def test_reason_distinguishes_missing_vs_down(self, monkeypatch, tmp_path):
         _strip_docker_from_path(monkeypatch, tmp_path)
         assert sb.ensure_sandbox_ready() == {"ready": False, "reason": "docker_missing"}
-        fake = tmp_path / "emptybin" / "docker"
-        fake.write_text("#!/bin/sh\nexit 1\n")
-        fake.chmod(0o755)
-        assert sb.ensure_sandbox_ready() == {"ready": False, "reason": "docker_down"}
+        _make_fake_docker(tmp_path / "emptybin", exit_code=1)
+        if _IS_WIN:
+            mock_r = MagicMock()
+            mock_r.returncode = 1
+            with patch.object(sb.subprocess, "run", return_value=mock_r):
+                assert sb.ensure_sandbox_ready() == {"ready": False, "reason": "docker_down"}
+        else:
+            assert sb.ensure_sandbox_ready() == {"ready": False, "reason": "docker_down"}
 
 
 class TestResolveComposeDir:
