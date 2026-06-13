@@ -172,6 +172,58 @@ def low_memory_host() -> bool:
         return False
 
 
+def windows_docker_backend() -> dict:
+    """Windows 에서 Docker Desktop 백엔드(WSL2 / Hyper-V) 가용성 점검 (INT-1505).
+
+    Docker Desktop 은 WSL2 또는 Hyper-V 가 있어야 동작한다. docker 가 없을 때
+    "무엇을 먼저 켜야 하는지"를 온보딩 UI 에 정확히 안내하려는 진단용. Windows 가
+    아니면 빈 dict 를 반환한다(해당 없음).
+
+    반환(Windows): {"wsl": bool|None, "hyperv": bool|None, "virtualization": bool|None}
+      각 값 None = 점검 실패/불명. 진단 힌트일 뿐 하드 게이트가 아니다.
+    """
+    import platform
+    if platform.system() != "Windows":
+        return {}
+
+    def _ok(args: list[str]) -> bool | None:
+        try:
+            r = subprocess.run(args, capture_output=True, text=True,
+                               encoding="utf-8", errors="replace", timeout=8)
+            return r.returncode == 0
+        except Exception:
+            return None
+
+    # WSL: `wsl --status` 가 성공하면 WSL 설치됨
+    wsl = _ok(["wsl", "--status"])
+    # Hyper-V / 가상화: PowerShell 로 기능 활성 여부 조회 (관리자 아니어도 조회는 가능)
+    hyperv = None
+    try:
+        r = subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             "(Get-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V-All).State"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=12,
+        )
+        if r.returncode == 0:
+            hyperv = "Enabled" in (r.stdout or "")
+    except Exception:
+        hyperv = None
+    # CPU 가상화 활성(펌웨어) — systeminfo 의 가상화 항목
+    virt = None
+    try:
+        r = subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             "(Get-CimInstance Win32_Processor).VirtualizationFirmwareEnabled"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=12,
+        )
+        if r.returncode == 0:
+            virt = "True" in (r.stdout or "")
+    except Exception:
+        virt = None
+
+    return {"wsl": wsl, "hyperv": hyperv, "virtualization": virt}
+
+
 def ensure_sandbox_ready(timeout: float = 0) -> dict:
     """기동/설치 시 호출하는 자동 확보 진입점. Docker 가 있으면 컨테이너를 확보하고,
     없으면 조용히 skip한다(에러로 죽지 않음). 코드 실행 도구가 항상 준비되도록 한다.

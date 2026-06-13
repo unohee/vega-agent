@@ -118,6 +118,13 @@ def _env_file_paths() -> list[Path]:
     except Exception:
         pass
     paths.append(Path(__file__).parent.parent / ".env")  # 개발용 레포 루트
+    # 배포 번들 기본 키 — vega-backend.spec 이 bin/bundle_env/.env 를 _MEIPASS/.env 로
+    # 번들한다(VEGA_BUNDLE_ROOT). 가장 낮은 우선순위 폴백 — 사용자 data_dir/.env 가 덮어쓴다.
+    # 이게 누락돼 배포본의 VEGA_SEARXNG_KEY 가 로드되지 않아 search.intrect.io 가 401 이었다. (INT-1505)
+    import os as _os
+    bundle_root = _os.environ.get("VEGA_BUNDLE_ROOT", "").strip()
+    if bundle_root:
+        paths.append(Path(bundle_root) / ".env")
     return paths
 
 

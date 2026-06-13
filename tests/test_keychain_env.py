@@ -61,6 +61,46 @@ def test_no_bundle_env_falls_to_default(tmp_path, monkeypatch):
     assert kc.get("VEGA_API_KEY", default="") == ""
 
 
+# ── VEGA_BUNDLE_ROOT 기반 번들 .env 픽업 (INT-1505) ───────────────────────────
+# noarchive=False 인 PyInstaller 빌드에선 pipeline/keychain.py 가 PYZ 안에 압축돼
+# __file__ 이 디스크의 _MEIPASS/pipeline/keychain.py 를 가리키지 않는다. 따라서
+# __file__.parent.parent/.env 추정만으로는 배포 번들 .env(_MEIPASS/.env)를 놓쳐
+# VEGA_SEARXNG_KEY 가 안 잡히고 search.intrect.io 가 401 이었다. launcher 가 명시
+# 설정하는 VEGA_BUNDLE_ROOT env 로 번들 .env 를 확실히 픽업해야 한다.
+
+def test_bundle_root_env_picks_up_bundle_dotenv(tmp_path, monkeypatch):
+    """VEGA_BUNDLE_ROOT/.env 가 keychain 폴백 경로에 포함된다 (__file__ 추정과 독립)."""
+    bundle = tmp_path / "meipass"
+    bundle.mkdir()
+    (bundle / ".env").write_text("VEGA_SEARXNG_KEY=bundle-searx-key\n", encoding="utf-8")
+    data = tmp_path / "userdata"
+    data.mkdir()
+    monkeypatch.setattr(dp, "data_dir", lambda: data)
+    monkeypatch.setattr(kc, "get_secret", lambda *a, **k: None)  # Keychain 비어있음
+    # __file__ 은 디스크 어디에도 .env 가 없는 zip 내부 경로처럼 둔다(번들 .env 못 찾는 현실)
+    monkeypatch.setattr(kc, "__file__", str(tmp_path / "nonexistent_zip" / "pipeline" / "keychain.py"))
+    monkeypatch.setenv("VEGA_BUNDLE_ROOT", str(bundle))
+    monkeypatch.delenv("VEGA_SEARXNG_KEY", raising=False)
+    assert str(bundle / ".env") in [str(p) for p in kc._env_file_paths()]
+    assert kc.get("VEGA_SEARXNG_KEY") == "bundle-searx-key"
+
+
+def test_user_env_overrides_bundle_root(tmp_path, monkeypatch):
+    """사용자 data_dir/.env 가 VEGA_BUNDLE_ROOT/.env 기본값을 덮는다 (우선순위 유지)."""
+    bundle = tmp_path / "meipass"
+    bundle.mkdir()
+    (bundle / ".env").write_text("VEGA_SEARXNG_KEY=bundle-key\n", encoding="utf-8")
+    data = tmp_path / "userdata"
+    data.mkdir()
+    (data / ".env").write_text("VEGA_SEARXNG_KEY=user-key\n", encoding="utf-8")
+    monkeypatch.setattr(dp, "data_dir", lambda: data)
+    monkeypatch.setattr(kc, "get_secret", lambda *a, **k: None)
+    monkeypatch.setattr(kc, "__file__", str(tmp_path / "nonexistent_zip" / "pipeline" / "keychain.py"))
+    monkeypatch.setenv("VEGA_BUNDLE_ROOT", str(bundle))
+    monkeypatch.delenv("VEGA_SEARXNG_KEY", raising=False)
+    assert kc.get("VEGA_SEARXNG_KEY") == "user-key"
+
+
 # ── OAuth client 번들 회귀 (Google "OAuth client 없음" 버그) ──────────────────
 # spec 에 slack 만 있고 google 이 빠져 frozen 앱에서 is_configured()=False 로
 # "구성 안 됨"이 떴던 회귀를 막는다 (2026-06-10).

@@ -173,6 +173,8 @@ def bash_exec(command: str, timeout: int = 60, workdir: str | None = None) -> di
             shell=True,
             capture_output=True,
             text=True,
+            encoding="utf-8",   # CP949 디코딩 모지바케/예외 방지 (INT-1505)
+            errors="replace",
             timeout=timeout,
             cwd=cwd,
             env=env,
@@ -427,6 +429,10 @@ def host_exec(command: str, ask: str = "on-miss", timeout: int = 300) -> dict:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            # Windows 기본 locale 인코딩(CP949 등)으로 디코딩하면 UTF-8 출력이 모지바케/
+            # UnicodeDecodeError 가 되어 LLM 이 재시도를 반복한다. UTF-8 고정 + replace. (INT-1505)
+            encoding="utf-8",
+            errors="replace",
             cwd=_base_cwd(),
             env=env,
         )
