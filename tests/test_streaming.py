@@ -213,9 +213,13 @@ class TestBuildDashboardContextCalendar:
 
     def test_calendar_events_rendered(self):
         from pipeline.streaming import _build_dashboard_context
-        from datetime import date
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
 
-        today_str = date.today().isoformat()
+        # _build_dashboard_context 는 KST 기준 today_str 을 쓰므로 동일 기준으로 맞춰야 한다.
+        # UTC 환경 CI 에서 date.today() 쓰면 자정 부근에 날짜가 어긋나 '← 오늘' 태그가 붙지 않음.
+        kst = ZoneInfo("Asia/Seoul")
+        today_str = datetime.now(kst).strftime("%Y-%m-%d")
         fake_events = {today_str: ["10:00 회의", "14:00 점심"]}
 
         with patch("pipeline.context_collect.collect_calendar", return_value=fake_events):
