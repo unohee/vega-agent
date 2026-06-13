@@ -191,18 +191,7 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(_warmup_sandbox())
 
-    # Pre-create heartbeat / ops layer tables (prevents DDL write lock during runtime)
-    try:
-        from pipeline.heartbeat import (
-            _ensure_briefs_table,
-            _ensure_suggest_cache_table,
-            _ensure_table,
-        )
-        _ensure_table()
-        _ensure_suggest_cache_table()
-        _ensure_briefs_table()
-    except Exception as e:
-        print(f"[Heartbeat] table init warning: {e}")
+    # heartbeat은 이 repo(agent.db 분기)에서 테이블 사전생성 함수 없음 — 생략
 
     try:
         from pipeline.project_state import _ensure_project_state_table, seed_project_states
