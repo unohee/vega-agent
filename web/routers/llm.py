@@ -88,6 +88,25 @@ async def llm_update_model(request: Request):
         return JSONResponse({"error": f"unknown provider: {name}"}, status_code=404)
 
 
+@router.post("/api/llm/reasoning")
+async def llm_update_reasoning(request: Request):
+    """responses kind 프로바이더의 reasoning_effort 업데이트.
+    body: {name, effort}  — effort 빈 문자열이면 필드 제거."""
+    from pipeline.llm_gateway import update_reasoning_effort
+    body = await request.json()
+    name = (body.get("name") or "").strip()
+    effort = (body.get("effort") or "").strip()
+    if not name:
+        return JSONResponse({"error": "name 필수"}, status_code=400)
+    try:
+        update_reasoning_effort(name, effort or None)
+        return JSONResponse({"ok": True, "effort": effort or None})
+    except KeyError:
+        return JSONResponse({"error": f"unknown provider: {name}"}, status_code=404)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+
+
 @router.post("/api/llm/test")
 async def llm_test_provider(request: Request):
     from pipeline.llm_gateway import test_provider
