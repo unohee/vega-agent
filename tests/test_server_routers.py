@@ -282,7 +282,9 @@ class TestSessionsRouter:
 
     def test_system_check_docker_missing(self, client):
         """INT-1453: Docker 미설치 시 비차단 안내(hint+install_url)를 내려준다."""
-        with patch("pipeline.sandbox.docker_available", return_value=False):
+        # windows_docker_backend 도 patch — CI Windows 에서 VT-x 진단이 hint 를 덮어쓰는 걸 방지
+        with patch("pipeline.sandbox.docker_available", return_value=False), \
+             patch("pipeline.sandbox.windows_docker_backend", return_value={}):
             resp = client.get("/api/onboarding/system-check")
         assert resp.status_code == 200
         d = resp.json()["docker"]
