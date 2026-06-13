@@ -19,7 +19,27 @@ KST = ZoneInfo("Asia/Seoul")
 
 CONTAINER = "vega-sandbox"
 IMAGE = "vega-sandbox:latest"
-COMPOSE_DIR = Path(__file__).parent.parent / "sandbox"
+
+
+def _resolve_compose_dir() -> Path:
+    """sandbox/ (Dockerfile·docker-compose.yml) 디렉터리 해석.
+
+    frozen 앱(noarchive=False)에선 이 모듈이 PYZ 안에 압축돼 __file__ 이 디스크의
+    _MEIPASS/pipeline/sandbox.py 를 가리키지 않는다 → __file__.parent.parent/sandbox
+    추정은 실존하지 않는 경로가 되어 `docker compose up` 의 cwd 가 깨진다. launcher 가
+    명시 설정하는 VEGA_BUNDLE_ROOT(=sys._MEIPASS)를 우선 본다. spec 은 sandbox/ 를
+    _MEIPASS/sandbox 로 번들한다. (INT-1505 keychain __file__ 함정과 동형)
+    """
+    import os as _os
+    bundle_root = _os.environ.get("VEGA_BUNDLE_ROOT", "").strip()
+    if bundle_root:
+        cand = Path(bundle_root) / "sandbox"
+        if (cand / "docker-compose.yml").exists():
+            return cand
+    return Path(__file__).parent.parent / "sandbox"
+
+
+COMPOSE_DIR = _resolve_compose_dir()
 
 # VEGA user data dir (컨테이너에 /vega_data 로 rw 마운트). data_paths 단일 출처 사용.
 try:
