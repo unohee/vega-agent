@@ -1,4 +1,4 @@
-# Created: 2026-06-13
+﻿# Created: 2026-06-13
 # Purpose: VEGA Agent Windows 온보딩 — 코드 실행 샌드박스(Docker Desktop)에 필요한
 #          WSL2 / 가상화 의존성을 점검하고, 누락 시 설치를 안내·자동화 (INT-1505).
 # Usage:   관리자 PowerShell 에서:  powershell -ExecutionPolicy Bypass -File scripts\windows_setup.ps1
