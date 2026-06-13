@@ -5577,6 +5577,12 @@ async function loadLlmProviders() {
         await gptRelogin(btn.dataset.gptRelogin, btn);
       });
     });
+    llmList.querySelectorAll('[data-edit-reasoning]').forEach(btn => {
+      btn.addEventListener('click', async (ev) => {
+        ev.stopPropagation();
+        await editLlmReasoning(btn.dataset.editReasoning, btn);
+      });
+    });
   } catch (e) {
     llmList.innerHTML = `<div class="dir-empty" style="padding:12px;color:var(--error)">${esc(e.message)}</div>`;
   }
@@ -5607,6 +5613,7 @@ function renderLlmRow(p, active) {
       <div class="llm-row-actions">
         ${p.auth_type === 'chatgpt_oauth' ? `<button data-gpt-relogin="${esc(p.name)}" title="OpenAI 계정으로 다시 로그인">재로그인</button>` : ''}
         <button data-edit-model="${esc(p.name)}">모델</button>
+        ${p.kind === 'responses' ? `<button data-edit-reasoning="${esc(p.name)}" title="reasoning effort 설정 (low/medium/high)">${p.reasoning_effort ? `effort:${esc(p.reasoning_effort)}` : 'effort'}</button>` : ''}
         <button data-edit-agent="${esc(p.name)}">에이전트</button>
         <button data-test="${esc(p.name)}">테스트</button>
       </div>
@@ -5691,6 +5698,51 @@ function _toggleFavorite(modelId) {
   if (_favorites.has(modelId)) _favorites.delete(modelId);
   else _favorites.add(modelId);
   _saveFavorites();
+}
+
+async function editLlmReasoning(name, btn) {
+  const efforts = ['', 'low', 'medium', 'high'];
+  const labels  = ['기본값 (서버 결정)', 'low', 'medium', 'high'];
+  // 현재 값 파악
+  let current = '';
+  try {
+    const r = await fetch('/api/llm/providers');
+    const { providers } = await r.json();
+    current = providers.find(p => p.name === name)?.reasoning_effort || '';
+  } catch {}
+
+  const chosen = await new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center';
+    const box = document.createElement('div');
+    box.style.cssText = 'background:var(--bg-card,#1e1e2e);border-radius:10px;padding:20px;min-width:240px;box-shadow:0 4px 20px rgba(0,0,0,.4)';
+    box.innerHTML = `
+      <div style="font-size:13px;font-weight:600;margin-bottom:14px;color:var(--text-primary,#cdd6f4)">${esc(name)} · reasoning effort</div>
+      ${efforts.map((v, i) => `
+        <button data-val="${v}" style="display:block;width:100%;text-align:left;padding:8px 12px;margin-bottom:6px;border-radius:6px;border:1px solid ${v===current?'var(--accent,#89b4fa)':'transparent'};background:${v===current?'rgba(137,180,250,.12)':'var(--bg-hover,rgba(255,255,255,.06))'};color:var(--text-primary,#cdd6f4);cursor:pointer;font-size:12px">
+          ${v===current?'✓ ':''}${esc(labels[i])}
+        </button>`).join('')}
+      <button data-val="__cancel__" style="display:block;width:100%;text-align:center;padding:6px;margin-top:4px;border:none;background:none;color:var(--text-secondary,#6c7086);cursor:pointer;font-size:11px">취소</button>
+    `;
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', e => {
+      const v = e.target.closest('[data-val]')?.dataset.val;
+      if (v !== undefined) { document.body.removeChild(overlay); resolve(v === '__cancel__' ? null : v); }
+    });
+  });
+
+  if (chosen === null) return;
+  try {
+    const r = await fetch('/api/llm/reasoning', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({name, effort: chosen}),
+    });
+    const data = await r.json();
+    if (!r.ok) { showToast(data.error || '실패'); return; }
+    showToast(chosen ? `effort: ${chosen}` : 'effort 기본값으로 초기화');
+    await loadLlmProviders();
+  } catch (e) { showToast('실패: ' + e.message); }
 }
 
 async function editLlmModel(name) {

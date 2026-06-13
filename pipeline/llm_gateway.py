@@ -253,6 +253,7 @@ def list_providers() -> list[dict]:
             "api_key_env": key_env,
             "has_key": has_key,
             "active": name == active,
+            "reasoning_effort": prov.get("reasoning_effort") or None,
         })
     return out
 
@@ -289,6 +290,25 @@ def update_model(name: str, model: str) -> None:
     if name not in providers:
         raise KeyError(name)
     providers[name]["default_model"] = model
+    _write_config(cfg)
+
+
+_VALID_REASONING_EFFORTS = ("low", "medium", "high")
+
+def update_reasoning_effort(name: str, effort: str | None) -> None:
+    """chatgpt 등 responses kind 프로바이더의 reasoning_effort 업데이트.
+    effort=None 또는 빈 문자열이면 필드 제거 (기본값 위임).
+    유효값: 'low' | 'medium' | 'high'."""
+    cfg = _read_config()
+    providers = cfg.get("providers") or {}
+    if name not in providers:
+        raise KeyError(name)
+    if effort:
+        if effort not in _VALID_REASONING_EFFORTS:
+            raise ValueError(f"reasoning_effort는 {_VALID_REASONING_EFFORTS} 중 하나여야 합니다: {effort!r}")
+        providers[name]["reasoning_effort"] = effort
+    else:
+        providers[name].pop("reasoning_effort", None)
     _write_config(cfg)
 
 
@@ -416,6 +436,10 @@ def build_request(input_items: list, system: str, tool_schemas: list[dict], rese
         # Only set token limit when not ChatGPT Codex and in research mode
         if research_mode and not _is_chatgpt:
             payload["max_output_tokens"] = _res_max
+        # reasoning_effort: 프로바이더 설정값 우선, research_mode면 "high" 폴백
+        _effort = prov.get("reasoning_effort") or ("high" if research_mode else None)
+        if _effort:
+            payload["reasoning"] = {"effort": _effort}
     elif kind == "anthropic":
         # Anthropic Messages API (/v1/messages)
         url = base_url.rstrip("/") + "/messages"
