@@ -2654,7 +2654,8 @@ async function addBase64Image(dataUrl, base64, mediaType, name, existingPath = '
 
 async function handleTauriPaths(paths) {
   for (const path of paths) {
-    const name = path.split('/').pop();
+    // Windows 경로는 백슬래시 구분자 — / 와 \ 양쪽으로 basename 추출
+    const name = path.split(/[/\\]/).pop();
     const isImg = /\.(png|jpe?g|gif|webp|bmp|heic|heif|tiff?|avif)$/i.test(name);
     if (isImg) {
       // 서버에서 base64로 읽어 GPT 비전 첨부로 (WebView는 임의 경로 못 읽음)
@@ -6051,8 +6052,8 @@ async function openFilePreview(path, name) {
       const r = await fetch(`/api/fs/read_image?path=${encodeURIComponent(path)}`);
       const data = await r.json();
       if (!r.ok) { previewBody.innerHTML = `<div class="preview-error">${esc(data.error || '실패')}</div>`; return; }
-      previewMeta.textContent = _formatBytes(data.size || 0);
-      previewBody.innerHTML = `<div class="preview-image-wrap"><img src="data:${esc(data.media_type)};base64,${esc(data.base64)}"></div>`;
+      // read_image 응답 키는 data(base64)·media_type — size 는 미반환이므로 표시 생략
+      previewBody.innerHTML = `<div class="preview-image-wrap"><img src="data:${esc(data.media_type)};base64,${esc(data.data)}"></div>`;
     } catch (e) {
       previewBody.innerHTML = `<div class="preview-error">${esc(e.message)}</div>`;
     }

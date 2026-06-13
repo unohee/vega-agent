@@ -57,12 +57,25 @@ def _generate_state() -> str:
     return secrets.token_hex(32)
 
 def _open_browser(url: str) -> None:
-    cmds = {"darwin": "open", "win32": "start", "linux": "xdg-open"}
-    cmd = cmds.get(sys.platform, "xdg-open")
+    # Windows: "start" 는 cmd.exe 내장 명령이라 Popen(["start", url]) 은 FileNotFoundError.
+    # os.startfile 이 정석. macOS=open, Linux=xdg-open. (INT-1505)
     try:
+        if sys.platform == "win32":
+            os.startfile(url)  # type: ignore[attr-defined]
+            return
+        cmd = "open" if sys.platform == "darwin" else "xdg-open"
         subprocess.Popen([cmd, url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return
     except Exception:
-        print(f"[Auth] Could not open browser automatically. Please open manually:\n{url}")
+        pass
+    # 최후 폴백: 표준 webbrowser 모듈
+    try:
+        import webbrowser
+        if webbrowser.open(url):
+            return
+    except Exception:
+        pass
+    print(f"[Auth] Could not open browser automatically. Please open manually:\n{url}")
 
 
 def run_oauth_pkce_flow(

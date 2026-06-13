@@ -99,3 +99,13 @@ def _lms_title_session(messages: list[dict]) -> dict | None:
 def _save_session_digest(sid: str, title: str, summary: str, narrative: str) -> None:
     """세션 digest 저장. 현재는 title이 이미 rename_session으로 저장되므로 no-op."""
     pass
+
+
+def get_recent_briefs(limit: int = 4) -> list[dict]:
+    """일일 브리핑 목록. agent.db 분기에서는 미구현 — 빈 리스트 반환."""
+    return []
+
+
+def get_recent_narratives(limit: int = 7) -> list[dict]:
+    """최근 narrative 목록. agent.db 분기에서는 미구현 — 빈 리스트 반환."""
+    return []

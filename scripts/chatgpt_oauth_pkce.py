@@ -56,12 +56,24 @@ def _generate_state() -> str:
 # ── 브라우저 열기 ──────────────────────────────────────────────────────────────
 
 def _open_browser(url: str) -> None:
-    cmds = {"darwin": "open", "win32": "start", "linux": "xdg-open"}
-    cmd = cmds.get(sys.platform, "xdg-open")
+    # Windows: "start" 는 cmd.exe 내장 명령 — Popen(["start", url]) 은 FileNotFoundError.
+    # os.startfile 이 정석. (INT-1505)
     try:
+        if sys.platform == "win32":
+            os.startfile(url)  # type: ignore[attr-defined]
+            return
+        cmd = "open" if sys.platform == "darwin" else "xdg-open"
         subprocess.Popen([cmd, url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return
     except Exception:
-        print(f"[Auth] 브라우저를 자동으로 열 수 없습니다. 직접 열어주세요:\n{url}")
+        pass
+    try:
+        import webbrowser
+        if webbrowser.open(url):
+            return
+    except Exception:
+        pass
+    print(f"[Auth] 브라우저를 자동으로 열 수 없습니다. 직접 열어주세요:\n{url}")
 
 # ── OAuth PKCE 흐름 ───────────────────────────────────────────────────────────
 

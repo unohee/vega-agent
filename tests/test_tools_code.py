@@ -55,6 +55,35 @@ class TestBashExec:
             result = bash_exec("some_command")
         assert "error" in result
 
+    def test_utf8_encoding_explicit(self):
+        """Windows 기본 locale(CP949) 디코딩으로 모지바케/예외가 나지 않도록
+        subprocess.run 에 encoding='utf-8', errors='replace' 가 명시돼야 한다 (INT-1505)."""
+        mock_result = MagicMock()
+        mock_result.stdout = ""
+        mock_result.stderr = ""
+        mock_result.returncode = 0
+        with patch("subprocess.run", return_value=mock_result) as run:
+            bash_exec("echo 한글")
+        kwargs = run.call_args.kwargs
+        assert kwargs.get("encoding") == "utf-8", "bash_exec subprocess.run 에 encoding='utf-8' 누락"
+        assert kwargs.get("errors") == "replace", "bash_exec subprocess.run 에 errors='replace' 누락"
+
+
+class TestHostExecEncoding:
+    def test_host_exec_popen_utf8(self):
+        """host_exec 의 Popen 도 UTF-8 고정 디코딩 (CP949 회귀 방지, INT-1505)."""
+        # allowlist 통과시키려 ask='off' 로 강제 실행 경로 진입
+        with patch("subprocess.Popen") as popen:
+            proc = popen.return_value
+            proc.stdout = []
+            proc.stderr = []
+            proc.wait.return_value = 0
+            proc.returncode = 0
+            host_exec("echo 한글", ask="off")
+        kwargs = popen.call_args.kwargs
+        assert kwargs.get("encoding") == "utf-8", "host_exec Popen 에 encoding='utf-8' 누락"
+        assert kwargs.get("errors") == "replace", "host_exec Popen 에 errors='replace' 누락"
+
 
 class TestRewriteRm:
     def test_simple_rm(self):
