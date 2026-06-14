@@ -22,6 +22,11 @@ MLX_PYTHON = Path.home() / "dev/mlx_env/bin/python"
 CHART_DIR = VEGA_ROOT / "data" / "charts"
 CHART_DIR.mkdir(parents=True, exist_ok=True)
 
+# host_exec 셸 분기 — Windows 는 cmd.exe(shell=True 기본)가 아니라 PowerShell 로 실행한다.
+# cmd.exe 는 bash/PowerShell 어느 쪽 관용구도 못 받아 LLM 재시도를 양산했다(INT-1506).
+# PowerShell 은 macOS bash 의 역량(Get-ChildItem/Copy-Item/Remove-Item 등)에 가장 근접.
+_IS_WINDOWS = sys.platform == "win32"
+
 # Current session working directory — set per-request by _run_gpt_task.
 # Referenced as the default cwd by bash/python/host_exec. Falls back to home if unset.
 import contextvars
@@ -351,7 +356,8 @@ def system_info() -> dict:
 
 # allowlist: commands starting with these patterns execute immediately without confirmation
 # trash is included because rm → trash rewrites must always run directly
-_HOST_ALLOWLIST: list[str] = [
+# 승인 없이 바로 실행되는 안전한 파일 조작 명령. 플랫폼별로 다르다.
+_HOST_ALLOWLIST_POSIX: list[str] = [
     "mv ",
     "mkdir ",
     "mkdir\n",
@@ -363,6 +369,21 @@ _HOST_ALLOWLIST: list[str] = [
     "ditto ",
     "trash ",   # result of rm → trash rewrite — always moves to trash
 ]
+# Windows PowerShell 등가물 (cmdlet 은 대소문자 무관이나 LLM 은 PascalCase 로 생성).
+# 매칭은 소문자로 정규화해서 비교하므로 여기엔 소문자로 둔다.
+_HOST_ALLOWLIST_WINDOWS: list[str] = [
+    "move-item ",
+    "copy-item ",
+    "new-item ",
+    "rename-item ",
+    "set-location ",
+    "get-childitem ",
+    "get-content ",
+    "get-item ",
+    "test-path ",
+    "start-process ",   # macOS open 등가 — 파일/폴더를 기본 앱으로 열기
+]
+_HOST_ALLOWLIST: list[str] = _HOST_ALLOWLIST_WINDOWS if _IS_WINDOWS else _HOST_ALLOWLIST_POSIX
 
 # Patterns that are never allowed, even in host execution
 _HOST_HARD_BLOCKED: list[tuple[str, str]] = [
@@ -371,6 +392,11 @@ _HOST_HARD_BLOCKED: list[tuple[str, str]] = [
     (":(){:|:&};:", "fork bomb"),
     ("mkfs",       "filesystem format"),
     ("> /dev/",    "device overwrite"),
+    # Windows: 휴지통 우회 영구 삭제·디스크 포맷·재귀 루트 삭제
+    ("remove-item -recurse -force c:\\", "recursive root deletion"),
+    ("format-volume", "filesystem format"),
+    ("clear-disk", "disk wipe"),
+    ("remove-item -recurse -force $home", "recursive home deletion"),
 ]
 
 
@@ -389,19 +415,24 @@ def host_exec(command: str, ask: str = "on-miss", timeout: int = 300) -> dict:
       needs approval → {"__needs_approval__": true, "command": ..., "reason": ...}
       blocked    → {"error": ...}
     """
-    # Hard block (regardless of ask mode)
+    # Hard block (regardless of ask mode). Windows PowerShell cmdlet 은 대소문자
+    # 무관하므로 소문자 정규화해 비교한다(_HOST_HARD_BLOCKED 의 Windows 패턴도 소문자).
+    _cmd_lc = command.lower()
     for pattern, label in _HOST_HARD_BLOCKED:
-        if pattern in command:
+        if (pattern in _cmd_lc) if _IS_WINDOWS else (pattern in command):
             return {"error": f"[SAFEGUARD] 차단: {label}"}
 
     if _SECRET_PATTERN.search(command) or _SECRET_PATH_PATTERN.search(command):
         return {"error": "[SAFEGUARD] 시크릿 파일 접근 차단"}
 
-    # rm → trash rewrite (applied consistently on host too)
-    command, rm_warnings = _rewrite_rm(command)
+    # rm → trash rewrite. POSIX 에서만 — Windows PowerShell 엔 trash 명령이 없고
+    # Remove-Item 은 휴지통이 아니라 영구 삭제라 단순 치환 불가(영구삭제는 hard-block).
+    rm_warnings: list[str] = []
+    if not _IS_WINDOWS:
+        command, rm_warnings = _rewrite_rm(command)
 
-    # Allowlist check
-    cmd_stripped = command.lstrip()
+    # Allowlist check — Windows 는 cmdlet 대소문자 무관이므로 소문자로 비교.
+    cmd_stripped = (command.lower() if _IS_WINDOWS else command).lstrip()
     on_allowlist = any(cmd_stripped.startswith(p) for p in _HOST_ALLOWLIST)
 
     needs_approval = (ask == "always") or (ask == "on-miss" and not on_allowlist)
@@ -422,10 +453,27 @@ def host_exec(command: str, ask: str = "on-miss", timeout: int = 300) -> dict:
     stdout_lines: list[str] = []
     stderr_lines: list[str] = []
 
+    # 셸 선택. Windows: PowerShell 로 실행(cmd.exe 가 아니라). UTF-8 출력을 위해
+    # $OutputEncoding/콘솔 코드페이지를 명령 앞에 세팅하고 사용자 명령을 이어붙인다.
+    # 그 외(macOS/Linux): bash shell=True.  (INT-1506)
+    if _IS_WINDOWS:
+        _ps_prefix = (
+            "$OutputEncoding = [Console]::OutputEncoding = "
+            "[Text.UTF8Encoding]::new(); "
+        )
+        popen_args = [
+            "powershell", "-NoProfile", "-NonInteractive",
+            "-Command", _ps_prefix + command,
+        ]
+        popen_shell = False
+    else:
+        popen_args = command
+        popen_shell = True
+
     try:
         proc = subprocess.Popen(
-            command,
-            shell=True,
+            popen_args,
+            shell=popen_shell,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -456,7 +504,10 @@ def host_exec(command: str, ask: str = "on-miss", timeout: int = 300) -> dict:
         except subprocess.TimeoutExpired:
             proc.kill()
             t_out.join(2); t_err.join(2)
-            bg_cmd = f"nohup {command.strip()} > /tmp/vega_bg.log 2>&1 &"
+            if _IS_WINDOWS:
+                bg_cmd = f"Start-Job -ScriptBlock {{ {command.strip()} }}"
+            else:
+                bg_cmd = f"nohup {command.strip()} > /tmp/vega_bg.log 2>&1 &"
             return {
                 "error": f"타임아웃 ({timeout}초)",
                 "hint": "장시간 작업은 백그라운드 실행을 권장합니다.",
@@ -508,25 +559,45 @@ def _sandboxed_plotly(code: str) -> dict:
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
 
+# host_exec 안내는 플랫폼에 맞춰야 한다 — Windows 에 "bash 명령"이라 안내하면
+# LLM 이 ls/cat/nohup 을 시도하다 PowerShell 에서 실패한다(INT-1506).
+if _IS_WINDOWS:
+    _HOST_EXEC_DESC = (
+        "호스트에서 직접 PowerShell 명령을 실행한다(cmd.exe 아님). "
+        "파일 이동·복사·폴더 생성 등 권한이 필요한 작업에 사용. "
+        "Move-Item, Copy-Item, New-Item, Rename-Item, Get-ChildItem, Get-Content, "
+        "Start-Process 등은 allowlist에 있어 바로 실행된다. "
+        "그 외 명령은 ask='on-miss'(기본) 모드에서 사용자 승인 요청을 반환한다. "
+        "승인 요청이 반환되면 사용자에게 명령을 보여주고 확인을 받은 뒤 ask='off'로 재호출한다. "
+        "bash 관용구(ls/cat/rm/nohup/~)가 아니라 PowerShell cmdlet을 쓸 것. "
+        "삭제는 Remove-Item이 영구삭제이므로 신중히 — 재귀 루트/홈 삭제·Format-Volume은 항상 차단."
+    )
+    _HOST_EXEC_CMD_DESC = "실행할 PowerShell 명령. 경로는 절대경로 또는 $HOME 사용."
+    _HOST_EXEC_TIMEOUT_DESC = "타임아웃(초). 기본 300초(5분). 장시간 작업은 Start-Job 백그라운드 권장."
+else:
+    _HOST_EXEC_DESC = (
+        "호스트에서 직접 bash 명령을 실행한다. "
+        "iCloud Drive 파일 이동·복사·폴더 생성처럼 TCC 권한이 필요한 작업에 사용. "
+        "mv, mkdir, cp, osascript, open 명령은 allowlist에 있어 바로 실행된다. "
+        "그 외 명령은 ask='on-miss'(기본) 모드에서 사용자 승인 요청을 반환한다. "
+        "승인 요청이 반환되면 사용자에게 명령을 보여주고 확인을 받은 뒤 "
+        "ask='off'로 재호출한다. "
+        "rm은 자동으로 trash로 치환된다. 위험한 명령(rm -rf /, mkfs 등)은 항상 차단."
+    )
+    _HOST_EXEC_CMD_DESC = "실행할 bash 명령. 경로는 절대경로 또는 ~ 사용."
+    _HOST_EXEC_TIMEOUT_DESC = "타임아웃(초). 기본 300초(5분). 5분 초과 작업은 nohup ... & 백그라운드 실행 권장."
+
 CODE_TOOL_SCHEMAS: list[dict] = [
     {
         "type": "function",
         "name": "host_exec",
-        "description": (
-            "호스트에서 직접 bash 명령을 실행한다. "
-            "iCloud Drive 파일 이동·복사·폴더 생성처럼 TCC 권한이 필요한 작업에 사용. "
-            "mv, mkdir, cp, osascript, open 명령은 allowlist에 있어 바로 실행된다. "
-            "그 외 명령은 ask='on-miss'(기본) 모드에서 사용자 승인 요청을 반환한다. "
-            "승인 요청이 반환되면 사용자에게 명령을 보여주고 확인을 받은 뒤 "
-            "ask='off'로 재호출한다. "
-            "rm은 자동으로 trash로 치환된다. 위험한 명령(rm -rf /, mkfs 등)은 항상 차단."
-        ),
+        "description": _HOST_EXEC_DESC,
         "parameters": {
             "type": "object",
             "properties": {
                 "command": {
                     "type": "string",
-                    "description": "실행할 bash 명령. 경로는 절대경로 또는 ~ 사용.",
+                    "description": _HOST_EXEC_CMD_DESC,
                 },
                 "ask": {
                     "type": "string",
@@ -541,7 +612,7 @@ CODE_TOOL_SCHEMAS: list[dict] = [
                 "timeout": {
                     "type": "integer",
                     "default": 300,
-                    "description": "타임아웃(초). 기본 300초(5분). 5분 초과 작업은 nohup ... & 백그라운드 실행 권장.",
+                    "description": _HOST_EXEC_TIMEOUT_DESC,
                 },
             },
             "required": ["command"],
