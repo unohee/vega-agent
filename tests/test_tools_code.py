@@ -14,6 +14,7 @@ from unittest.mock import MagicMock, patch
 
 from pipeline.tools_code import (
     _HOST_ALLOWLIST,
+    _IS_WINDOWS,
     _check_python_safeguards,
     _check_safeguards,
     _rewrite_rm,
@@ -149,6 +150,7 @@ class TestCheckSafeguards:
         assert _check_safeguards("grep -r 'pattern' ./src") is None
 
 
+@pytest.mark.skipif(_IS_WINDOWS, reason="POSIX(bash) 명령 전제 — Windows 동등 검증은 TestHostExecWindows")
 class TestHostExec:
     def test_hard_blocked_rm_rf_root(self):
         result = host_exec("rm -rf /", ask="off")
@@ -183,6 +185,76 @@ class TestHostExec:
     def test_secret_blocked(self):
         result = host_exec("cat .env", ask="off")
         assert "error" in result
+
+
+class TestHostExecWindows:
+    """host_exec Windows PowerShell 분기 (INT-1506).
+
+    모듈 reload 는 전역 상태(contextvar·다른 모듈의 import 참조)를 오염시켜
+    pytest-randomly 순서에서 무관한 테스트를 깨뜨린다. 그래서 reload 대신
+    런타임에 읽히는 모듈 상수(_IS_WINDOWS·_HOST_ALLOWLIST)만 patch.object 로
+    일시 치환한다 — host_exec 와 셸 분기는 모두 모듈 전역을 그때그때 참조한다.
+    """
+
+    def test_windows_uses_powershell_argv(self):
+        import pipeline.tools_code as tc
+        captured = {}
+
+        class _FakeProc:
+            returncode = 0
+            def __init__(self):
+                self.stdout = iter(["ok\n"]); self.stderr = iter([])
+            def wait(self, timeout=None): return 0
+            def kill(self): pass
+
+        def _fake_popen(args, **kw):
+            captured["args"] = args; captured["shell"] = kw.get("shell")
+            return _FakeProc()
+
+        with patch.object(tc, "_IS_WINDOWS", True), \
+             patch.object(tc, "_HOST_ALLOWLIST", tc._HOST_ALLOWLIST_WINDOWS), \
+             patch.object(tc.subprocess, "Popen", _fake_popen):
+            tc.host_exec("Move-Item a.txt b.txt", ask="off")
+
+        argv = captured["args"]
+        assert captured["shell"] is False  # cmd.exe(shell=True) 아님
+        assert argv[0] == "powershell"
+        assert "-NoProfile" in argv and "-Command" in argv
+        # UTF-8 출력 프리픽스 + 사용자 명령이 마지막 인자에 결합
+        assert "UTF8Encoding" in argv[-1]
+        assert "Move-Item a.txt b.txt" in argv[-1]
+
+    def test_windows_allowlist_is_powershell(self):
+        import pipeline.tools_code as tc
+        assert "move-item " in tc._HOST_ALLOWLIST_WINDOWS
+        assert "copy-item " in tc._HOST_ALLOWLIST_WINDOWS
+        # POSIX 전용 명령은 Windows allowlist 에 없다
+        assert "mv " not in tc._HOST_ALLOWLIST_WINDOWS
+
+    def test_windows_hard_block_format_volume(self):
+        import pipeline.tools_code as tc
+        with patch.object(tc, "_IS_WINDOWS", True), \
+             patch.object(tc, "_HOST_ALLOWLIST", tc._HOST_ALLOWLIST_WINDOWS):
+            # cmdlet 대소문자 무관 — 소문자/혼용 모두 차단
+            r = tc.host_exec("Format-Volume -DriveLetter C", ask="off")
+        assert "error" in r and "SAFEGUARD" in r["error"]
+
+    def test_windows_no_rm_to_trash_rewrite(self):
+        import pipeline.tools_code as tc
+        with patch.object(tc, "_IS_WINDOWS", True), \
+             patch.object(tc, "_HOST_ALLOWLIST", tc._HOST_ALLOWLIST_WINDOWS):
+            # Windows 엔 trash 명령이 없으므로 rm→trash 치환 비활성.
+            # Remove-Item 은 allowlist 미포함 → 승인요청, command 원형 유지(trash 흔적 없음)
+            r = tc.host_exec("Remove-Item x.txt", ask="on-miss")
+        assert r.get("__needs_approval__") is True
+        assert r["command"] == "Remove-Item x.txt"
+        assert "trash" not in r["command"]
+
+    def test_posix_rm_to_trash_still_active(self):
+        # 회귀 가드: POSIX(현재 플랫폼)에선 rm→trash 가 여전히 동작
+        import pipeline.tools_code as tc
+        rewritten, warns = tc._rewrite_rm("rm -rf /tmp/x")
+        assert rewritten.startswith("trash") and warns
 
 
 class TestPythonExec:

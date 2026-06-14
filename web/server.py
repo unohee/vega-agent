@@ -14,6 +14,16 @@ import sys
 import time
 from pathlib import Path
 
+# Windows 콘솔 기본 인코딩(cp949/cp1252)에선 한국어·em-dash(—)·✓ 등을 print 하면
+# UnicodeEncodeError 가 난다. PyInstaller exe 는 launcher 가 stdout/stderr 를 UTF-8 로
+# reconfigure 하지만, uvicorn 직접 기동·pytest·기타 진입점은 그 보호를 안 받는다.
+# 모든 기동 경로의 공통 관문인 server import 시점에 한 번 더 고정한다(idempotent). (INT-1506 후속)
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass  # 파이프/리다이렉트 등 reconfigure 미지원 스트림은 무시
+
 # PTY 터미널(/ws/terminal)용 unix 전용 모듈 — Windows 에는 없다.
 # import 실패 시 내장 터미널 기능만 비활성하고 서버는 정상 기동한다 (INT-1438).
 try:
