@@ -120,15 +120,14 @@ jobs:
           done
           [ "$FAIL" = "0" ] || exit 1
 
-      - name: latest.json 생성 (Tauri updater)
-        run: |
-          /usr/bin/python3 scripts/make_latest_json.py "$VERSION" || {
-            echo "::warning::latest.json 생성 스크립트 없음 — updater 메니페스트는 수동"; }
-
-      - name: R2 업로드 (updater 자산 + latest.json) — download.intrect.io
+      - name: R2 업로드 (updater 자산 + latest.json 병합) — download.intrect.io
         # 리포가 private 이라 updater 익명 GET 은 GitHub Release URL 에 접근 불가 →
         # 공개 R2(intrect-downloads / download.intrect.io)로 서빙 (INT-1432).
         # 버전 자산은 v<ver>/ 아래, latest.json 은 고정 경로(endpoints 가 가리키는 곳)에 올린다.
+        #
+        # latest.json 병합: macOS(이 워크플로)와 Windows(build-windows.yml)가 분리돼
+        # 각자 같은 latest.json 을 쓴다. R2 의 현재 latest.json 을 먼저 받아 --merge-from 으로
+        # darwin 항목만 갱신하고 windows 항목은 보존한다. 단 버전이 다르면(새 릴리즈) 폐기.
         env:
           # self-hosted runner 의 wrangler OAuth 를 기본 사용. CI 토큰을 쓰려면
           # 두 시크릿을 등록하면 wrangler 가 자동으로 토큰 모드로 동작한다.
@@ -138,9 +137,24 @@ jobs:
           set -euo pipefail
           BUCKET="intrect-downloads"
           PREFIX="vega/updates"
+
+          # 1) R2 의 현재 latest.json 을 받아 병합 소스로 쓴다(없거나 실패해도 신규 생성으로 진행).
+          PREV="build_output/_prev_latest.json"
+          mkdir -p build_output
+          if wrangler r2 object get "${BUCKET}/${PREFIX}/latest.json" --file "$PREV" --remote 2>/dev/null; then
+            echo "기존 latest.json 받음 → 병합 소스로 사용"
+          else
+            echo "기존 latest.json 없음/조회 실패 → 신규 생성"
+            rm -f "$PREV"
+          fi
+
+          # 2) darwin 항목만 갱신, windows 항목은 보존(같은 버전일 때). 버전 다르면 구버전 폐기.
+          /usr/bin/python3 scripts/make_latest_json.py "$VERSION" --macos --merge-from "$PREV"
           if [ ! -f build_output/latest.json ]; then
             echo "::error::build_output/latest.json 없음 — R2 업로드 중단"; exit 1
           fi
+
+          # 3) updater 자산(.app.tar.gz + .sig) 업로드
           for ARCH in aarch64 x86_64; do
             for EXT in app.tar.gz app.tar.gz.sig; do
               F="build_output/updater/VEGA-${VERSION}-${ARCH}.${EXT}"
@@ -150,12 +164,13 @@ jobs:
                 --file "$F" --remote
             done
           done
-          # latest.json 은 endpoints 가 가리키는 고정 경로 — 항상 마지막에 덮어써
-          # 자산보다 먼저 갱신돼 깨진 매니페스트를 가리키는 창을 없앤다.
+          # 4) latest.json 은 endpoints 가 가리키는 고정 경로 — 자산 업로드 후 마지막에 덮어써
+          # 자산보다 먼저 갱신돼 깨진 매니페스트를 가리키는 창을 없앤다. no-cache 로 R2 캐시 HIT 방지.
           echo "→ R2: ${PREFIX}/latest.json"
           wrangler r2 object put "${BUCKET}/${PREFIX}/latest.json" \
             --file build_output/latest.json \
-            --content-type "application/json" --remote
+            --content-type "application/json" \
+            --cache-control "no-cache, max-age=0" --remote
           echo "✓ R2 업로드 완료 — https://download.intrect.io/${PREFIX}/latest.json"
 
       - name: GitHub Release 생성/갱신

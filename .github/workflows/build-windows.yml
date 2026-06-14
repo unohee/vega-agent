@@ -186,16 +186,69 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: VEGA-${{ steps.version.outputs.version }}-windows-x64
-          path: build_output/*
+          path: |
+            build_output/*-setup.exe
+            build_output/*-setup.exe.sig
           if-no-files-found: error
 
+      - name: R2 업로드 (updater 자산 + latest.json 병합) — download.intrect.io
+        # macOS(release-dmg.yml)와 대칭 — Windows 자동 업데이트 배선 (INT-1372 후속).
+        # Tauri v2 NSIS 는 setup.exe 자체를 updater 로 재사용하고 setup.exe.sig 를 생성한다
+        # (별도 .nsis.zip 아님). 그 둘을 R2 v<ver>/ 에 올리고 latest.json 의 windows-x86_64
+        # 항목을 병합한다. GitHub-hosted 러너라 wrangler OAuth 가 없으므로 CF 토큰 시크릿 필수.
+        # 시크릿 미설정 시 자동 업데이트만 건너뛰고 빌드는 성공 처리(설치본은 Release 로 배포됨).
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if (-not $env:CLOUDFLARE_API_TOKEN -or -not $env:CLOUDFLARE_ACCOUNT_ID) {
+            Write-Warning "CLOUDFLARE_API_TOKEN/ACCOUNT_ID 미설정 — R2 업로드 건너뜀(자동 업데이트 미배선)"
+            exit 0
+          }
+          $sig = Get-ChildItem build_output -Filter "*-setup.exe.sig" -ErrorAction SilentlyContinue
+          if (-not $sig) { Write-Warning "updater .sig 없음 — R2 업로드 건너뜀"; exit 0 }
+
+          $bucket = "intrect-downloads"
+          $prefix = "vega/updates"
+          # PowerShell 문자열 보간에서 $env:VERSION 의 ':' 모호성을 피하려 평범한 변수로 받는다.
+          $ver = $env:VERSION
+
+          # 1) R2 의 현재 latest.json 을 받아 병합 소스로
+          $prev = "build_output/_prev_latest.json"
+          npx --yes wrangler r2 object get "$bucket/$prefix/latest.json" --file $prev --remote 2>$null
+          if (Test-Path $prev) { Write-Host "기존 latest.json 받음 → 병합 소스" }
+          else { Write-Host "기존 latest.json 없음 → 신규 생성" }
+
+          # 2) windows-x86_64 항목만 갱신, darwin 항목 보존(같은 버전일 때)
+          $mergeArg = if (Test-Path $prev) { @("--merge-from", $prev) } else { @() }
+          python scripts/make_latest_json.py $ver --windows @mergeArg
+          if (-not (Test-Path build_output/latest.json)) { Write-Error "latest.json 생성 실패"; exit 1 }
+
+          # 3) updater 자산(setup.exe + .sig) 업로드 — v<ver>/
+          $setup = Get-ChildItem build_output -Filter "*-setup.exe" | Select-Object -First 1
+          foreach ($f in @($setup.FullName, "$($setup.FullName).sig")) {
+            $name = Split-Path $f -Leaf
+            Write-Host "→ R2: $prefix/v$ver/$name"
+            npx --yes wrangler r2 object put "$bucket/$prefix/v$ver/$name" --file $f --remote
+          }
+          # 4) latest.json 마지막에 덮어쓰기 — no-cache 로 R2 캐시 HIT 방지
+          Write-Host "→ R2: $prefix/latest.json"
+          npx --yes wrangler r2 object put "$bucket/$prefix/latest.json" `
+            --file build_output/latest.json `
+            --content-type "application/json" `
+            --cache-control "no-cache, max-age=0" --remote
+          Write-Host "✓ R2 업로드 완료 — https://download.intrect.io/$prefix/latest.json"
+
       - name: GitHub Release 에 첨부
+        # latest.json/_prev_latest.json 은 R2 전용이라 Release 에는 setup.exe(+sig)만 올린다.
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.version.outputs.version }}
           name: VEGA v${{ steps.version.outputs.version }}
           draft: false
           prerelease: false
-          files: build_output/*
+          files: |
+            build_output/*-setup.exe
+            build_output/*-setup.exe.sig
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
