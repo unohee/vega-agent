@@ -98,10 +98,12 @@ jobs:
           if (-not $env:SLACK_OAUTH_CLIENT_JSON) { Write-Error "SLACK_OAUTH_CLIENT_JSON secret 미설정"; exit 1 }
           New-Item -ItemType Directory -Force -Path data | Out-Null
           [IO.File]::WriteAllText("$PWD/data/slack_oauth_client.json", $env:SLACK_OAUTH_CLIENT_JSON)
-          python -c "import json;json.load(open('data/slack_oauth_client.json'));print('slack_oauth_client.json OK')"
+          # Windows Python open() 기본 인코딩은 cp1252 — JSON 내 비-ASCII(한글 _note 등)면
+          # UnicodeDecodeError(byte 0x8d). 항상 utf-8로 읽어야 한다.
+          python -c "import json;json.load(open('data/slack_oauth_client.json',encoding='utf-8'));print('slack_oauth_client.json OK')"
           if ($env:GOOGLE_OAUTH_CLIENT_JSON) {
             [IO.File]::WriteAllText("$PWD/data/google_oauth_client.json", $env:GOOGLE_OAUTH_CLIENT_JSON)
-            python -c "import json;json.load(open('data/google_oauth_client.json'));print('google_oauth_client.json OK')"
+            python -c "import json;json.load(open('data/google_oauth_client.json',encoding='utf-8'));print('google_oauth_client.json OK')"
           } else {
             Write-Warning "GOOGLE_OAUTH_CLIENT_JSON 미설정 — Google OAuth 미번들"
           }
