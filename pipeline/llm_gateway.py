@@ -306,6 +306,11 @@ def update_reasoning_effort(name: str, effort: str | None) -> None:
     if effort:
         if effort not in _VALID_REASONING_EFFORTS:
             raise ValueError(f"reasoning_effort는 {_VALID_REASONING_EFFORTS} 중 하나여야 합니다: {effort!r}")
+        # reasoning_effort는 responses kind(build_request)에서만 payload에 반영된다.
+        # 다른 kind에 저장하면 조용히 무시되므로 저장 자체를 거부한다. (제거는 항상 허용)
+        kind = providers[name].get("kind", "chat_completions")
+        if kind != "responses":
+            raise ValueError(f"reasoning_effort는 responses kind 프로바이더만 지원합니다 (kind={kind!r})")
         providers[name]["reasoning_effort"] = effort
     else:
         providers[name].pop("reasoning_effort", None)
