@@ -91,6 +91,11 @@ def memory_settings_path() -> Path:
     return data_dir() / "memory_settings.json"
 
 
+def settings_path() -> Path:
+    """런타임 설정(settings.json) — SearXNG URL 등 온보딩·설정창에서 변경하는 값."""
+    return data_dir() / "settings.json"
+
+
 def llm_providers_path() -> Path:
     return data_dir() / "llm_providers.json"
 
