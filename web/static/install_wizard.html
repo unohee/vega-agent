@@ -105,6 +105,12 @@
         <button class="btn" id="pNext">연결</button>
       </div>
     </div>
+
+    <!-- 전체 온보딩 스킵 — 나중에 설정 창에서 연결 -->
+    <div class="row" style="margin-top:18px; border-top:1px solid rgba(255,255,255,.08); padding-top:14px;">
+      <div class="grow"></div>
+      <button class="btn ghost" id="skipOnboarding" title="설정은 나중에 설정 창에서 할 수 있습니다">나중에 설정 — 건너뛰기 →</button>
+    </div>
   </div>
 
   <!-- STEP 1: LLM 대화형 설정 -->
@@ -385,6 +391,14 @@ function runPluginQueue(queue, idx){
 }
 
 async function finishOnboarding(){ stopActivePoll(); await api('/api/onboarding/finish',{}); gotoChat(); }
+
+// 전체 온보딩 스킵 — 프로바이더/프로필 없이 바로 채팅으로. 설정은 나중에 설정 창에서.
+$('skipOnboarding').onclick = async ()=>{
+  const btn = $('skipOnboarding'); btn.disabled = true; btn.textContent = '건너뛰는 중…';
+  try { await api('/api/onboarding/finish', {}); }
+  catch(e){ /* finish 실패해도 채팅으로는 보낸다 — 온보딩에 갇히지 않게 */ }
+  gotoChat();
+};
 
 // ── 초기화 ───────────────────────────────────────────────────────────
 (async ()=>{

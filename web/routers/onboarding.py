@@ -366,7 +366,7 @@ async def configure_provider(payload: ProviderPayload):
         prov_entry = _provider_json_for(entry, payload.model)
         upsert_provider(entry["id"], prov_entry)
         if payload.make_active:
-            set_active(entry["id"])
+            set_active(entry["id"], sync_cloud_tier=True)
         return JSONResponse({"ok": True, "active": entry["id"]})
 
     if entry["auth"] == "local":
@@ -384,7 +384,8 @@ async def configure_provider(payload: ProviderPayload):
         }
         upsert_provider("local", prov_entry)
         if payload.make_active:
-            set_active("local")
+            # local 은 _is_local_provider 로 cloud tier 매핑에서 자동 제외됨(안전).
+            set_active("local", sync_cloud_tier=True)
         return JSONResponse({"ok": True, "active": "local", "reachable": reachable})
 
     return JSONResponse({"ok": False, "error": "이 프로바이더는 PKCE 로그인을 사용하세요."}, status_code=400)
@@ -444,7 +445,9 @@ async def pkce_login(payload: ProviderPayload):
 
     from pipeline.llm_gateway import set_active
     if payload.make_active:
-        set_active("chatgpt")
+        # 온보딩 첫 연결 = 메인 프로바이더 → cloud tier 도 맞춘다.
+        # (안 하면 tiers.cloud=openrouter 그대로라 wizard 채팅이 키 없는 OpenRouter 로 가서 실패)
+        set_active("chatgpt", sync_cloud_tier=True)
     return JSONResponse({"ok": True, "active": "chatgpt"})
 
 
