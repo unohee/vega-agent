@@ -96,6 +96,12 @@ logging.getLogger("vega.boot").info(
 )
 
 PORT = int(os.environ.get("VEGA_PORT", "8100"))
+# 바인드 호스트. 기본은 안전한 loopback(127.0.0.1) — 프로덕션은 원격 노출 안 함.
+# 개인 머신에서 Tailscale 원격 접속을 쓰려면 VEGA_BIND_HOST=0.0.0.0 으로 모든
+# 인터페이스에서 듣게 한다. 원격 접근 자체는 web/state.py 의 is_remote_allowed
+# 게이트(Tailscale CGNAT 대역 100.64.0.0/10 + VEGA_REMOTE_ALLOW_CIDRS)가 막는다.
+# 0.0.0.0 바인드 시 split-brain(데브/배포 백엔드 공존) 주의 — _wait_port_free 가 방어.
+HOST = os.environ.get("VEGA_BIND_HOST", "127.0.0.1").strip() or "127.0.0.1"
 
 
 def _wait_port_free(port: int) -> None:
@@ -149,4 +155,4 @@ from web.server import app  # noqa: E402
 if __name__ == "__main__":
     _wait_port_free(PORT)
     # log_config=None : uvicorn 의 기본 dictConfig 가 우리 루트 핸들러를 덮어쓰지 않게 한다.
-    uvicorn.run(app, host="127.0.0.1", port=PORT, log_level="info", log_config=None)
+    uvicorn.run(app, host=HOST, port=PORT, log_level="info", log_config=None)
