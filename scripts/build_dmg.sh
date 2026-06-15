@@ -112,7 +112,11 @@ build_arch() {
     # 1. Tauri 빌드
     echo "[1] cargo tauri build ($ARCH)..."
     cd "$REPO_ROOT/desktop"
-    cargo tauri build --target "$RUST_TARGET" --bundles app 2>&1 | grep -E "Compiling|Finished|error\[|Bundling"
+    # grep 파이프 금지: pipefail 하에서 grep 이 cargo 의 실제 에러 라인(codesign/
+    # bundling 실패 등 'Compiling|Finished|error[|Bundling' 에 안 맞는 메시지)을
+    # 삼켜 "Bundling 직후 exit 1, 사유 불명"으로 디버깅 불가였다(2026-06-15 0.1.31).
+    # 전체 출력을 그대로 흘려 실패 사유가 로그에 남게 한다.
+    cargo tauri build --target "$RUST_TARGET" --bundles app
     cd "$REPO_ROOT"
     if [ ! -d "$TAURI_APP" ]; then
         echo "  ERROR: VEGA.app ($ARCH) 없음" >&2; exit 1
