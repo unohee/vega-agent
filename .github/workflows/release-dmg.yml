@@ -22,6 +22,7 @@ on:
 # Release 생성/에셋 업로드에 contents:write 필요.
 permissions:
   contents: write
+  packages: write
 
 # 동시에 여러 빌드가 같은 Release 를 건드리지 않도록 직렬화.
 concurrency:
@@ -52,6 +53,17 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: vega-sandbox 이미지 빌드 & GHCR 푸시
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          # arm64 네이티브 빌드 (self-hosted ARM64 러너) — linux/amd64 크로스 빌드는 제외
+          # (샌드박스는 macOS Docker Desktop VM이 직접 실행하므로 linux/amd64 단일 플랫폼이면 충분)
+          docker build \
+            --platform linux/amd64 \
+            -t ghcr.io/unohee/vega-sandbox:latest \
+            sandbox/
+          docker push ghcr.io/unohee/vega-sandbox:latest
 
       - name: 버전 읽기 (tauri.conf.json)
         id: version

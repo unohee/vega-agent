@@ -159,12 +159,29 @@ def _compose_env() -> dict:
     return env
 
 
+_SANDBOX_IMAGE = "ghcr.io/unohee/vega-sandbox:latest"
+
+
+def _ensure_image() -> None:
+    """이미지가 로컬에 없으면 GHCR에서 pull. 이미 있으면 즉시 반환."""
+    r = subprocess.run(
+        ["docker", "image", "inspect", _SANDBOX_IMAGE],
+        capture_output=True,
+    )
+    if r.returncode == 0:
+        return
+    subprocess.run(
+        ["docker", "pull", _SANDBOX_IMAGE],
+        check=True,
+    )
+
+
 def ensure_running() -> None:
-    """컨테이너가 없거나 멈췄으면 기동. 이미지는 없을 때만 빌드(볼륨/영속 보존).
-    이미 돌고 있으면 즉시 반환 — 매번 재구축하지 않는다."""
+    """컨테이너가 없거나 멈췄으면 기동. 이미지가 없으면 GHCR에서 pull.
+    이미 돌고 있으면 즉시 반환 — 매번 재기동하지 않는다."""
     if _container_running():
         return
-    # docker compose up -d: 이미지 없으면 빌드, 있으면 재사용. 기존 named volume 보존.
+    _ensure_image()
     subprocess.run(
         ["docker", "compose", "up", "-d"],
         cwd=str(COMPOSE_DIR), check=True,
