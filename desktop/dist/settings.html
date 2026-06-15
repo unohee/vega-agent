@@ -1070,12 +1070,12 @@ async function loadSystemCheck() {
     const r = await fetch(provBase() + '/api/onboarding/system-check', { signal: AbortSignal.timeout(8000) }).then(r => r.json());
     const d = r.docker || {};
     if (d.available) {
-      hint.textContent = '✓ 사용 가능 — 코드 실행(bash/python) 도구 활성';
+      hint.textContent = '✓ 설치됨 — 코드 실행(bash/python) 도구 활성';
       action.innerHTML = '';
     } else {
-      hint.textContent = d.hint || 'Docker 미설치 — 코드 실행 도구만 비활성화됩니다.';
+      hint.textContent = '미설치 (선택 사항) — 코드 실행 도구가 비활성화됩니다. 채팅·메모리·워크스페이스는 정상 작동합니다.';
       action.innerHTML = '';
-      const btn = document.createElement('button'); btn.className = 'btn'; btn.textContent = 'Docker Desktop 설치';
+      const btn = document.createElement('button'); btn.className = 'btn ghost'; btn.textContent = 'Docker Desktop 설치';
       btn.onclick = () => openExternalUrl(d.install_url || 'https://www.docker.com/products/docker-desktop/');
       action.appendChild(btn);
     }
