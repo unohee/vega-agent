@@ -82,7 +82,7 @@ jobs:
       - name: Rust 타겟 확인
         run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
 
-      - name: PyInstaller venv 확인 (arm64 + x86_64)
+      - name: PyInstaller venv 확인 + 의존성 동기화 (arm64 + x86_64)
         run: |
           if [ ! -x "$HOME/dev/arm64_vega_env/bin/pyinstaller" ]; then
             echo "::error::arm64 PyInstaller 없음 — runner에 ~/dev/arm64_vega_env 구성 필요"; exit 1
@@ -90,6 +90,13 @@ jobs:
           if [ ! -x "$HOME/dev/intel64_env/bin/pyinstaller" ]; then
             echo "::error::x86_64 PyInstaller 없음 — runner에 ~/dev/intel64_env 구성 필요"; exit 1
           fi
+          # 빌드 venv 에 requirements 를 동기화한다. 이게 없으면 사무 패키지(numpy/
+          # pandas/openpyxl/pypdf/docx/pptx 등)가 venv 에 없어 collect_submodules 가
+          # 빈손이 되고, DMG 가 사무 기능 없는 40MB 로 나온다(2026-06-15 0.1.30 사고).
+          # intel64_env 는 universal python 이라 기본 pip 가 arm64 wheel 을 받는다 —
+          # x86_64 DMG 에 arm64 .so 가 섞이지 않게 arch -x86_64 로 강제해야 한다.
+          "$HOME/dev/arm64_vega_env/bin/pip" install -q -r requirements.txt
+          arch -x86_64 "$HOME/dev/intel64_env/bin/pip" install -q -r requirements.txt
 
       - name: OAuth client 시크릿 주입 (gitignore된 파일 복원)
         env:
