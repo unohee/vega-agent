@@ -62,24 +62,62 @@ class GoogleOAuthNotConfigured(RuntimeError):
     """data/google_oauth_client.json 이 없거나 client_id/secret 이 비었을 때."""
 
 
-def _load_client() -> dict:
+# BYO(Bring-Your-Own) OAuth client — 사용자가 자기 GCP 프로젝트에서 만든 Desktop
+# 클라이언트의 client_id/secret 을 Keychain 에 저장해 둔 슬롯. 이게 있으면 우선 사용한다.
+# 내장 VEGA 클라이언트는 미검증 앱이라 타 사용자에게 "확인되지 않은 앱" 경고가 뜨고
+# gmail.modify/drive.readonly(restricted)는 CASA 유료 감사 없이는 일반 배포 불가다.
+# BYO 는 사용자 본인 앱(self-use)이라 검증·CASA 가 면제된다 → 기본 경로로 권장.
+BYO_CLIENT_ID_SLOT = "byo_client_id"
+BYO_CLIENT_SECRET_SLOT = "byo_client_secret"
+
+
+def _byo_client() -> dict | None:
+    """Keychain 에 저장된 사용자 BYO 클라이언트. 없으면 None."""
+    cid = (_kc.get_secret(BYO_CLIENT_ID_SLOT, service=KEYCHAIN_SERVICE) or "").strip()
+    csec = (_kc.get_secret(BYO_CLIENT_SECRET_SLOT, service=KEYCHAIN_SERVICE) or "").strip()
+    if not cid or not csec:
+        return None
+    return {
+        "client_id": cid,
+        "client_secret": csec,
+        "redirect_uri": _DEFAULT_REDIRECT,
+        "scopes": _FALLBACK_SCOPES,
+        "_source": "byo",
+    }
+
+
+def _builtin_client() -> dict | None:
+    """번들된 내장 VEGA 클라이언트(data/google_oauth_client.json). 없거나 비면 None."""
     path = google_oauth_client_path()
     if not path or not path.exists():
-        raise GoogleOAuthNotConfigured(
-            "Google OAuth 내장 클라이언트(data/google_oauth_client.json)가 없습니다. "
-            "이 빌드는 Google 연결을 지원하지 않습니다."
-        )
-    data = json.loads(path.read_text(encoding="utf-8"))
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
     cid = (data.get("client_id") or "").strip()
     csec = (data.get("client_secret") or "").strip()
     if not cid or not csec:
-        raise GoogleOAuthNotConfigured("google_oauth_client.json 에 client_id/secret 이 비어 있습니다.")
+        return None
     return {
         "client_id": cid,
         "client_secret": csec,
         "redirect_uri": data.get("redirect_uri") or _DEFAULT_REDIRECT,
         "scopes": data.get("scopes") or _FALLBACK_SCOPES,
+        "_source": "builtin",
     }
+
+
+def _load_client() -> dict:
+    """OAuth 클라이언트 해석. BYO(사용자 자기 GCP 앱) 우선 → 내장 VEGA 앱 폴백.
+    둘 다 없으면 GoogleOAuthNotConfigured."""
+    client = _byo_client() or _builtin_client()
+    if client is None:
+        raise GoogleOAuthNotConfigured(
+            "Google OAuth 클라이언트가 없습니다. 설정에서 본인 GCP 프로젝트의 "
+            "client_id/secret 을 입력하거나, 내장 클라이언트가 포함된 빌드를 사용하세요."
+        )
+    return client
 
 
 def is_configured() -> bool:
@@ -88,6 +126,60 @@ def is_configured() -> bool:
         return True
     except Exception:
         return False
+
+
+def client_source() -> str:
+    """현재 어떤 클라이언트로 동작하는지: 'byo' | 'builtin' | 'none'. UI 표시용."""
+    c = _byo_client() or _builtin_client()
+    return c["_source"] if c else "none"
+
+
+def _current_client_id() -> str:
+    """현재 effective client_id (BYO 우선). 없으면 빈 문자열."""
+    c = _byo_client() or _builtin_client()
+    return c["client_id"] if c else ""
+
+
+def _invalidate_tokens_if_client_changed(prev_client_id: str) -> bool:
+    """effective client_id 가 바뀌었으면 저장된 토큰을 전부 무효화한다.
+    Google refresh_token 은 발급 client_id 에 종속 — 클라이언트가 바뀌면 그 토큰으로는
+    refresh 가 invalid_grant 로 깨진다. 그런데 is_authenticated() 는 토큰 존재만 보므로
+    UI 는 "연결됨"인데 모든 호출이 실패하는 좀비 상태가 된다. 바뀌면 disconnect 로
+    토큰을 비워 정직하게 "연결 안 됨"으로 만들고 재인증을 유도한다.
+    반환: 토큰을 무효화했으면 True."""
+    new_id = _current_client_id()
+    if prev_client_id and new_id != prev_client_id and is_authenticated():
+        disconnect(None)   # 모든 계정 토큰 슬롯 wipe (refresh_token/email/accounts)
+        return True
+    return False
+
+
+def save_byo_client(client_id: str, client_secret: str) -> bool:
+    """사용자 BYO 클라이언트 저장(Keychain). 빈 값이면 ValueError.
+    client_secret.json 형식 검증은 호출부(라우터)에서 — 여기선 값만 받는다.
+    client_id 가 기존과 달라지면 종속된 토큰을 무효화한다(재인증 필요).
+    반환: 토큰이 무효화됐으면 True(UI 가 "재연결 필요"로 안내)."""
+    cid = (client_id or "").strip()
+    csec = (client_secret or "").strip()
+    if not cid or not csec:
+        raise ValueError("client_id / client_secret 이 비어 있습니다.")
+    prev_id = _current_client_id()
+    if not _kc.set_secret(BYO_CLIENT_ID_SLOT, cid, service=KEYCHAIN_SERVICE):
+        raise RuntimeError("client_id 저장 실패(secure store 미가용)")
+    if not _kc.set_secret(BYO_CLIENT_SECRET_SLOT, csec, service=KEYCHAIN_SERVICE):
+        # partial-write 롤백 — id 만 남아 stale 한 짝 안 맞는 상태 방지
+        _kc.delete_secret(BYO_CLIENT_ID_SLOT, service=KEYCHAIN_SERVICE)
+        raise RuntimeError("client_secret 저장 실패(secure store 미가용)")
+    return _invalidate_tokens_if_client_changed(prev_id)
+
+
+def clear_byo_client() -> bool:
+    """BYO 클라이언트 제거 → 내장 클라이언트로 폴백(있으면).
+    effective client_id 가 바뀌면(BYO→builtin) 종속 토큰 무효화. 반환: 무효화 여부."""
+    prev_id = _current_client_id()
+    _kc.delete_secret(BYO_CLIENT_ID_SLOT, service=KEYCHAIN_SERVICE)
+    _kc.delete_secret(BYO_CLIENT_SECRET_SLOT, service=KEYCHAIN_SERVICE)
+    return _invalidate_tokens_if_client_changed(prev_id)
 
 
 def _ssl_context() -> ssl.SSLContext:

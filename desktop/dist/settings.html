@@ -615,9 +615,11 @@ async function loadWorkspacePane() {
 // ── Google 멀티계정 (INT-1471) — 계정 목록 + 계정별 해제 + 계정 추가 ──
 function renderGoogleRows(list, s, st) {
   const accounts = st.accounts || [];
+  const src = st.client_source || 'none';
+  const srcLabel = src === 'byo' ? '내 GCP 앱' : src === 'builtin' ? '내장 VEGA 앱(미검증)' : 'OAuth 앱 없음';
   const head = document.createElement('div'); head.className = 'row';
-  const stateTxt = !st.configured ? '구성 안 됨 (빌드에 OAuth client 없음)'
-    : accounts.length ? `${accounts.length}개 계정 연결됨` : '연결 안 됨';
+  const stateTxt = !st.configured ? '연결할 OAuth 앱이 없음 — 아래에서 내 GCP 앱을 등록하세요'
+    : accounts.length ? `${accounts.length}개 계정 연결됨 · ${srcLabel}` : `연결 안 됨 · ${srcLabel}`;
   head.innerHTML = `<div class="field"><label>${s.label}</label>
     <div class="hint" id="ws-hint-google">${s.desc} · ${stateTxt}</div></div>`;
   const btns = document.createElement('div');
@@ -629,6 +631,9 @@ function renderGoogleRows(list, s, st) {
   }
   head.appendChild(btns);
   list.appendChild(head);
+
+  // ── BYO OAuth: 내 GCP 앱 등록 (권장 — 검증·CASA 불필요, 미인증 경고 없음) ──
+  renderGoogleByo(list, src);
   for (const a of accounts) {
     const row = document.createElement('div'); row.className = 'row';
     const field = document.createElement('div'); field.className = 'field'; field.style.paddingLeft = '14px';
@@ -641,6 +646,91 @@ function renderGoogleRows(list, s, st) {
     row.appendChild(dis);
     list.appendChild(row);
   }
+}
+
+const GOOGLE_REDIRECT_URI = 'http://localhost:8100/google/callback';
+
+// BYO OAuth 등록 UI — 접이식 가이드 + client_secret.json 붙여넣기.
+// 내 GCP 앱은 self-use 라 Google 검증·CASA 가 면제되고 "미검증 앱" 경고가 없다.
+function renderGoogleByo(list, src) {
+  const wrap = document.createElement('div'); wrap.className = 'row';
+  wrap.style.cssText = 'flex-direction:column;align-items:stretch;gap:8px;padding-left:14px;border-left:2px solid var(--accent,#89b4fa);margin:6px 0';
+  const open = src === 'none';  // OAuth 앱이 아예 없으면 펼친 채로 안내
+  wrap.innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;cursor:pointer" id="byo-toggle">
+      <span id="byo-caret">${open ? '▾' : '▸'}</span>
+      <strong style="font-size:13px">내 Google 앱으로 연결 ${src === 'byo' ? '(사용 중 ✓)' : '(권장)'}</strong>
+    </div>
+    <div id="byo-body" style="${open ? '' : 'display:none'};font-size:12px;line-height:1.7;color:var(--text-secondary,#a6adc8)">
+      <div style="margin-bottom:8px">내장 VEGA 앱은 Google 미검증이라 "확인되지 않은 앱" 경고가 뜹니다. 본인 GCP 앱을 쓰면 경고가 없고 무료입니다(2~3분).</div>
+      <ol style="margin:0 0 8px 18px;padding:0">
+        <li><a href="#" data-ext="https://console.cloud.google.com/projectcreate">GCP 프로젝트 생성</a></li>
+        <li><a href="#" data-ext="https://console.cloud.google.com/apis/library/gmail.googleapis.com">Gmail API</a> · <a href="#" data-ext="https://console.cloud.google.com/apis/library/calendar-json.googleapis.com">Calendar API</a> · <a href="#" data-ext="https://console.cloud.google.com/apis/library/drive.googleapis.com">Drive API</a> 사용 설정</li>
+        <li><a href="#" data-ext="https://console.cloud.google.com/apis/credentials/consent">OAuth 동의 화면</a> → External → 본인 이메일을 테스트 사용자로 추가(또는 앱 게시)</li>
+        <li><a href="#" data-ext="https://console.cloud.google.com/apis/credentials/oauthclient">사용자 인증 정보 → OAuth 클라이언트 ID</a> → 유형 <b>데스크톱 앱</b> → 만들기 → JSON 다운로드</li>
+        <li>아래에 다운받은 <code>client_secret.json</code> 내용을 그대로 붙여넣기</li>
+      </ol>
+      <div style="margin-bottom:6px">승인된 redirect URI(필요 시): <code id="byo-redir">${GOOGLE_REDIRECT_URI}</code>
+        <button class="btn" id="byo-copy" style="padding:2px 8px;font-size:11px">복사</button></div>
+      <textarea id="byo-json" placeholder='{"installed":{"client_id":"...apps.googleusercontent.com","client_secret":"..."}}' style="width:100%;min-height:80px;font-family:monospace;font-size:11px;box-sizing:border-box"></textarea>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:6px">
+        <button class="btn primary" id="byo-save">내 앱 등록</button>
+        ${src === 'byo' ? '<button class="btn" id="byo-clear">내장 앱으로 되돌리기</button>' : ''}
+        <span class="status" id="byo-status"></span>
+      </div>
+    </div>`;
+  list.appendChild(wrap);
+
+  const body = wrap.querySelector('#byo-body');
+  wrap.querySelector('#byo-toggle').onclick = () => {
+    const hidden = body.style.display === 'none';
+    body.style.display = hidden ? '' : 'none';
+    wrap.querySelector('#byo-caret').textContent = hidden ? '▾' : '▸';
+  };
+  wrap.querySelectorAll('[data-ext]').forEach(a => {
+    a.onclick = (e) => { e.preventDefault(); openExternalUrl(a.dataset.ext); };
+  });
+  wrap.querySelector('#byo-copy').onclick = () => {
+    navigator.clipboard.writeText(GOOGLE_REDIRECT_URI).then(() => {
+      const c = wrap.querySelector('#byo-copy'); c.textContent = '복사됨'; setTimeout(() => c.textContent = '복사', 1500);
+    });
+  };
+  wrap.querySelector('#byo-save').onclick = () => wsGoogleByoSave(wrap);
+  const clr = wrap.querySelector('#byo-clear'); if (clr) clr.onclick = () => wsGoogleByoClear(wrap);
+}
+
+async function wsGoogleByoSave(wrap) {
+  const json = wrap.querySelector('#byo-json').value.trim();
+  const status = wrap.querySelector('#byo-status');
+  if (!json) { status.textContent = 'JSON을 붙여넣으세요'; return; }
+  status.textContent = '등록 중…';
+  try {
+    const res = await fetch(provBase() + '/api/onboarding/google/byo', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ client_json: json }), signal: AbortSignal.timeout(10000),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok || !d.ok) throw new Error(d.error || `HTTP ${res.status}`);
+    // 클라이언트가 바뀌면 기존 토큰이 무효화됨(재인증 필요) — 명확히 안내.
+    status.textContent = d.reauth_required
+      ? '✓ 등록됨 — 클라이언트가 바뀌어 기존 연결이 해제됐습니다. "연결"을 눌러 다시 로그인하세요'
+      : '✓ 등록됨 — 이제 "연결"을 눌러 로그인하세요';
+    loadWorkspacePane();
+  } catch (e) { status.textContent = '실패: ' + (e.message || e); }
+}
+
+async function wsGoogleByoClear(wrap) {
+  if (!confirm('내 GCP 앱 등록을 지우고 내장 VEGA 앱으로 되돌릴까요?\n(기존 Google 연결은 해제되어 다시 로그인이 필요합니다)')) return;
+  const status = wrap.querySelector('#byo-status'); status.textContent = '처리 중…';
+  try {
+    const res = await fetch(provBase() + '/api/onboarding/google/byo/clear', {
+      method: 'POST', signal: AbortSignal.timeout(10000),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok || !d.ok) throw new Error(d.error || `HTTP ${res.status}`);
+    if (d.reauth_required) status.textContent = '내장 앱으로 되돌림 — 기존 연결 해제됨, "연결"로 다시 로그인하세요';
+    loadWorkspacePane();
+  } catch (e) { status.textContent = '실패: ' + (e.message || e); }
 }
 
 async function wsGoogleDisconnect(email, btn) {
