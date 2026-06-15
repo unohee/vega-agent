@@ -12,7 +12,7 @@ from pathlib import Path
 def _build_allowed_roots() -> list[Path]:
     roots = [Path.home()]
     if sys.platform == "win32":
-        # Windows: 홈 상위의 Users 디렉터리 (다중 사용자 공유 폴더 접근 허용)
+        # Windows: 홈 상위 Users 디렉터리 (다중 사용자 프로필 하위 경로 접근)
         users_dir = Path.home().parent  # C:\Users
         if users_dir.name.lower() == "users":
             roots.append(users_dir)
@@ -21,13 +21,12 @@ def _build_allowed_roots() -> list[Path]:
             tmp = os.environ.get(env_var)
             if tmp:
                 roots.append(Path(tmp))
-        # 각 드라이브의 루트 — 파일 선택 다이얼로그가 드라이브 루트를 반환할 수 있음.
-        # System32 등 민감 경로는 _BLOCKED_DIRS로 추가 차단한다.
-        import string
-        for drive in string.ascii_uppercase:
-            p = Path(f"{drive}:\\")
-            if p.exists():
-                roots.append(p)
+        # 사용자가 명시적으로 추가한 extra 경로 (VEGA_EXTRA_PATHS 환경변수, ';' 구분)
+        extra = os.environ.get("VEGA_EXTRA_PATHS", "")
+        for p in extra.split(";"):
+            p = p.strip()
+            if p:
+                roots.append(Path(p))
     else:
         roots += [
             Path("/tmp"),
@@ -35,6 +34,12 @@ def _build_allowed_roots() -> list[Path]:
             Path("/private/tmp"),         # macOS symlink target for /tmp
             Path("/private/var/folders"),
         ]
+        # macOS/Linux extra 경로 (VEGA_EXTRA_PATHS, ':' 구분)
+        extra = os.environ.get("VEGA_EXTRA_PATHS", "")
+        for p in extra.split(":"):
+            p = p.strip()
+            if p:
+                roots.append(Path(p))
     return roots
 
 
@@ -44,9 +49,6 @@ _ALLOWED_ROOTS: list[Path] = _build_allowed_roots()
 _BLOCKED_DIRS: frozenset[str] = frozenset({
     ".ssh", ".gnupg", ".aws", ".azure", ".gcloud",
     "keychain", "Keychains",
-    # Windows 시스템 민감 경로 (드라이브 루트 허용 후 추가 차단)
-    "Windows", "System32", "SysWOW64", "WinSxS",
-    "Program Files", "Program Files (x86)",
 })
 
 # Blocked filenames (exact match)
