@@ -4,20 +4,49 @@
 
 from __future__ import annotations
 
+import os
+import sys
 from pathlib import Path
 
-_ALLOWED_ROOTS: list[Path] = [
-    Path.home(),
-    Path("/tmp"),
-    Path("/var/folders"),
-    Path("/private/tmp"),         # macOS symlink target for /tmp
-    Path("/private/var/folders"),
-]
+
+def _build_allowed_roots() -> list[Path]:
+    roots = [Path.home()]
+    if sys.platform == "win32":
+        # Windows: 홈 상위의 Users 디렉터리 (다중 사용자 공유 폴더 접근 허용)
+        users_dir = Path.home().parent  # C:\Users
+        if users_dir.name.lower() == "users":
+            roots.append(users_dir)
+        # Windows 임시 경로
+        for env_var in ("TEMP", "TMP"):
+            tmp = os.environ.get(env_var)
+            if tmp:
+                roots.append(Path(tmp))
+        # 각 드라이브의 루트 — 파일 선택 다이얼로그가 드라이브 루트를 반환할 수 있음.
+        # System32 등 민감 경로는 _BLOCKED_DIRS로 추가 차단한다.
+        import string
+        for drive in string.ascii_uppercase:
+            p = Path(f"{drive}:\\")
+            if p.exists():
+                roots.append(p)
+    else:
+        roots += [
+            Path("/tmp"),
+            Path("/var/folders"),
+            Path("/private/tmp"),         # macOS symlink target for /tmp
+            Path("/private/var/folders"),
+        ]
+    return roots
+
+
+_ALLOWED_ROOTS: list[Path] = _build_allowed_roots()
 
 # Blocked directory names (matched as path components)
 _BLOCKED_DIRS: frozenset[str] = frozenset({
     ".ssh", ".gnupg", ".aws", ".azure", ".gcloud",
     "keychain", "Keychains",
+    # Windows 시스템 민감 경로 (드라이브 루트 허용 후 추가 차단)
+    "Windows", "System32", "SysWOW64", "WinSxS",
+    "Program Files", "Program Files (x86)",
 })
 
 # Blocked filenames (exact match)
