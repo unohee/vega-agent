@@ -56,9 +56,8 @@ def guard_path(path: str) -> Path:
     """
     p = Path(path).expanduser().resolve()
 
-    # Check against allowed roots
-    p_str = str(p)
-    if not any(p_str.startswith(str(root)) for root in _ALLOWED_ROOTS):
+    # Check against allowed roots — use Path.is_relative_to to prevent /tmpfoo bypassing /tmp
+    if not any(p == root or p.is_relative_to(root) for root in _ALLOWED_ROOTS):
         raise PermissionError(f"접근 금지 경로: {p}")
 
     # Check path components for blocked directory names
