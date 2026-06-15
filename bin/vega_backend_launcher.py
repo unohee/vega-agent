@@ -6,6 +6,20 @@ import os
 import sys
 from pathlib import Path
 
+# ── frozen 인터프리터 재진입 (Docker 없이 로컬 코드 실행) ────────────────────────
+# `vega-backend run-code <code>` / `run-python <file> [args...]` 로 동봉된 Python 을
+# 격리 서브프로세스로 재사용한다. 서버 초기화(로깅/certifi/포트대기) 이전에 처리해
+# 단발 실행을 가볍게 끝낸다. 검증: reference_frozen_interpreter_local_exec.md (2026-06-15).
+if len(sys.argv) >= 3 and sys.argv[1] in ("run-code", "run-python"):
+    if sys.argv[1] == "run-code":
+        exec(compile(sys.argv[2], "<vega>", "exec"), {"__name__": "__main__"})
+    else:
+        _script = sys.argv[2]
+        sys.argv = [_script] + sys.argv[3:]
+        import runpy
+        runpy.run_path(_script, run_name="__main__")
+    sys.exit(0)
+
 # PyInstaller 번들 루트 (onefile=_MEIPASS, onedir=실행파일 디렉터리)
 BUNDLE_ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
 os.environ.setdefault("VEGA_BUNDLE_ROOT", str(BUNDLE_ROOT))

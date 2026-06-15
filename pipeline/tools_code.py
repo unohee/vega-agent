@@ -22,6 +22,20 @@ MLX_PYTHON = Path.home() / "dev/mlx_env/bin/python"
 CHART_DIR = VEGA_ROOT / "data" / "charts"
 CHART_DIR.mkdir(parents=True, exist_ok=True)
 
+
+def _python_interp(script_path: str) -> list[str]:
+    """Python 코드 실행에 쓸 인터프리터 커맨드 결정.
+
+    배포본(PyInstaller frozen)은 동봉된 인터프리터를 `run-code`/`run-python`
+    서브커맨드로 재사용한다 → Docker·시스템 Python 없이 동작 (vega_backend_launcher.py).
+    개발 환경은 mlx_env, 둘 다 없으면 시스템 python3.
+    검증: reference_frozen_interpreter_local_exec.md (2026-06-15)."""
+    if getattr(sys, "frozen", False):
+        return [sys.executable, "run-python", script_path]
+    if MLX_PYTHON.exists():
+        return [str(MLX_PYTHON), script_path]
+    return [sys.executable, script_path]
+
 # host_exec 셸 분기 — Windows 는 cmd.exe(shell=True 기본)가 아니라 PowerShell 로 실행한다.
 # cmd.exe 는 bash/PowerShell 어느 쪽 관용구도 못 받아 LLM 재시도를 양산했다(INT-1506).
 # PowerShell 은 macOS bash 의 역량(Get-ChildItem/Copy-Item/Remove-Item 등)에 가장 근접.
@@ -133,8 +147,42 @@ def _check_safeguards(command: str) -> str | None:
     return None
 
 
+# 시스템 파괴 — 호스트 직접 실행(Docker 격리 없음)에선 즉시 차단해야 한다.
+# Docker 샌드박스 안에선 컨테이너 격리가 막아주지만, frozen 배포본은 호스트에서
+# 직접 돌므로(reference_frozen_interpreter_local_exec.md) 이 가드가 마지막 방어선.
+_PY_SYSTEM_DESTROY = _re.compile(
+    r"os\.system\s*\(\s*['\"].*\brm\s+-\S*r"      # os.system("rm -rf ...")
+    r"|subprocess\.(run|call|Popen|check_\w+)\s*\(.*\brm\b.*-\S*r"  # subprocess + rm -r
+    r"|\bmkfs\b|\bdd\s+if=|>\s*/dev/sd",          # 디스크 포맷/덮어쓰기
+    _re.IGNORECASE | _re.DOTALL,
+)
+# 홈/루트 통째 재귀 삭제 — rmtree(Path.home()), rmtree('/'), rmtree('~') 등.
+# 하위 경로를 명시한 정상 삭제(rmtree('/tmp/foo'))는 막지 않는다.
+_PY_DESTRUCTIVE_TREE = _re.compile(
+    r"(shutil\.rmtree|os\.removedirs)\s*\(\s*"
+    r"(['\"][~/]['\"]"                            # '/' 또는 '~' 리터럴
+    r"|Path\.home\(\)\s*\)"                       # Path.home())
+    r"|os\.path\.expanduser\(\s*['\"]~['\"]\s*\)\s*\))",  # expanduser('~'))
+    _re.IGNORECASE,
+)
+# 시크릿 파일 쓰기/삭제 — 읽기뿐 아니라 변조도 차단.
+_PY_SECRET_WRITE = _re.compile(
+    r"(open\s*\(['\"][^'\"]*"
+    r"(\.env\b|openai_oauth\.json|chatgpt_token\.json|client_secret[^'\"]*\.json"
+    r"|id_rsa|id_ed25519|\.pem\b|\.key\b|credentials\.json|token\.json)"
+    r"['\"]\s*,\s*['\"][wa]"                       # open(secret, 'w'/'a')
+    r"|(os\.remove|os\.unlink|Path[^\n]*\.unlink)\s*\([^\n]*"
+    r"(\.env\b|id_rsa|\.pem\b|\.key\b|credentials\.json|token\.json))",
+    _re.IGNORECASE,
+)
+
+
 def _check_python_safeguards(code: str) -> str | None:
-    """Blocks direct secret file reads from Python code."""
+    """Python 코드의 파괴적/시크릿 작업 차단.
+
+    호스트 직접 실행(frozen 배포본)은 Docker 시스템 격리가 없으므로 이 가드가
+    마지막 방어선이다. 정상 파일 작업(openpyxl.save, shutil.copy2 백업 등)은
+    막지 않고, 시스템 파괴·홈/루트 재귀삭제·시크릿 읽기/쓰기/삭제만 차단한다."""
     secret_reads = _re.compile(
         r"(open|read_text|read_bytes)\s*\(['\"].*"
         r"(\.env|openai_oauth\.json|chatgpt_token\.json"
@@ -146,6 +194,12 @@ def _check_python_safeguards(code: str) -> str | None:
             "[SAFEGUARD] Python에서 시크릿 파일 직접 읽기 차단.\n"
             "인증 토큰이 필요하면 pipeline/tools.py의 _google_token() 등을 사용."
         )
+    if _PY_SYSTEM_DESTROY.search(code):
+        return "[SAFEGUARD] 차단: 시스템 파괴 작업(rm -rf / mkfs / dd / 디스크 덮어쓰기)."
+    if _PY_DESTRUCTIVE_TREE.search(code):
+        return "[SAFEGUARD] 차단: 홈/루트 디렉터리 통째 재귀 삭제. 하위 경로를 명시하세요."
+    if _PY_SECRET_WRITE.search(code):
+        return "[SAFEGUARD] 차단: 시크릿/키 파일 쓰기·삭제."
     return None
 
 
@@ -168,9 +222,11 @@ def bash_exec(command: str, timeout: int = 60, workdir: str | None = None) -> di
 
     cwd = workdir or _base_cwd()
     env = os.environ.copy()
-    mlx_bin = str(MLX_PYTHON.parent)
-    env["PATH"] = f"{mlx_bin}:{env.get('PATH', '')}"
-    env["VIRTUAL_ENV"] = str(MLX_PYTHON.parent.parent)
+    # 개발 환경(mlx_env)에서만 venv 를 PATH 에 얹는다. 배포본엔 그 경로가 없다.
+    if not getattr(sys, "frozen", False) and MLX_PYTHON.exists():
+        mlx_bin = str(MLX_PYTHON.parent)
+        env["PATH"] = f"{mlx_bin}:{env.get('PATH', '')}"
+        env["VIRTUAL_ENV"] = str(MLX_PYTHON.parent.parent)
 
     try:
         result = subprocess.run(
@@ -201,6 +257,56 @@ def bash_exec(command: str, timeout: int = 60, workdir: str | None = None) -> di
 
 # ── Python execution ──────────────────────────────────────────────────────────
 
+# 런타임 파일접근 가드 — 호스트 직접 실행(Docker 격리 없음)의 진짜 안전 경계.
+# 정규식 정적 검사는 문자열분할/eval/__import__ 로 trivial 하게 우회된다(8중 7 우회,
+# 2026-06-15 적대적 검증). 대신 builtins.open + os 파일함수를 실행 시점에 후킹하면
+# 코드가 어떻게 난독화돼도 실제 파일 접근에서 잡힌다. 정책(allow/deny)은 path_guard
+# 와 동일한 값을 JSON 으로 주입받아 재현. 읽기는 시크릿만, 쓰기/삭제는 정책 전체 적용.
+_GUARD_PRELUDE = r"""
+import builtins as _vb, os as _vos
+_VG = __import__('json').loads({policy_json!r})
+_ALLOW = _VG['allow']; _DENY_DIRS = set(_VG['deny_dirs'])
+_DENY_NAMES = set(_VG['deny_names']); _DENY_SUFFIX = set(_VG['deny_suffix'])
+_DENY_SUBSTR = _VG['deny_substr']; _DENY_PATHS = _VG['deny_paths']
+def _vega_check(path, mode='r'):
+    try:
+        rp = _vos.path.realpath(_vos.path.expanduser(str(path)))
+    except Exception:
+        return
+    name = _vos.path.basename(rp); nl = name.lower()
+    parts = rp.split(_vos.sep)
+    writing = any(m in str(mode) for m in ('w','a','x','+'))
+    # 시크릿/키는 읽기·쓰기 모두 차단 (사용자가 못 푸는 하드 경계)
+    if (name in _DENY_NAMES or nl in _DENY_NAMES or nl.startswith('.env')
+            or any(d in parts for d in _DENY_DIRS)
+            or any(nl.endswith(s) for s in _DENY_SUFFIX)
+            or any(s in nl for s in _DENY_SUBSTR)):
+        raise PermissionError('[SAFEGUARD] 시크릿/민감 파일 접근 차단: ' + rp)
+    # 사용자 denylist (읽기·쓰기 모두)
+    for d in _DENY_PATHS:
+        if rp == d or rp.startswith(d + _vos.sep):
+            raise PermissionError('[SAFEGUARD] 사용자 정책 차단 경로: ' + rp)
+    # 허용 루트 밖 쓰기/삭제 차단 (읽기는 허용 — 자기 파일 읽기는 막지 않음)
+    if writing and not any(rp == a or rp.startswith(a + _vos.sep) for a in _ALLOW):
+        raise PermissionError('[SAFEGUARD] 허용 밖 경로 쓰기/삭제 차단: ' + rp)
+_v_open = _vb.open
+def _vg_open(file, mode='r', *a, **k):
+    _vega_check(file, mode); return _v_open(file, mode, *a, **k)
+_vb.open = _vg_open
+for _fn in ('remove', 'unlink'):
+    _orig = getattr(_vos, _fn)
+    def _mk(o):
+        def _w(path, *a, **k):
+            _vega_check(path, 'w'); return o(path, *a, **k)
+        return _w
+    setattr(_vos, _fn, _mk(_orig))
+_v_rmtree_mod = __import__('shutil')
+_v_orig_rmtree = _v_rmtree_mod.rmtree
+def _vg_rmtree(path, *a, **k):
+    _vega_check(path, 'w'); return _v_orig_rmtree(path, *a, **k)
+_v_rmtree_mod.rmtree = _vg_rmtree
+""".strip()
+
 _PYTHON_PRELUDE = """
 import sys, os
 from pathlib import Path
@@ -214,16 +320,48 @@ os.chdir('{cwd}')
 """.strip()
 
 
+def _guard_prelude() -> str:
+    """path_guard 정책을 직렬화해 런타임 가드 prelude 생성. 호스트 직접 실행 전용."""
+    import json as _json
+    try:
+        from pipeline.path_guard import (
+            _ALLOWED_ROOTS, _BLOCKED_DIRS, _BLOCKED_NAMES,
+            _BLOCKED_SUFFIXES, _BLOCKED_SUBSTRINGS,
+            _user_allow_roots, _user_deny_paths,
+        )
+        allow = [str(r) for r in _ALLOWED_ROOTS] + [str(r) for r in _user_allow_roots()]
+        policy = {
+            "allow": allow,
+            "deny_dirs": list(_BLOCKED_DIRS),
+            "deny_names": list(_BLOCKED_NAMES),
+            "deny_suffix": list(_BLOCKED_SUFFIXES),
+            "deny_substr": list(_BLOCKED_SUBSTRINGS),
+            "deny_paths": [str(p) for p in _user_deny_paths()],
+        }
+    except Exception:
+        # path_guard 로드 실패 시 최소 시크릿 차단만
+        policy = {"allow": [str(Path.home()), "/tmp", "/private/tmp",
+                            "/var/folders", "/private/var/folders"],
+                  "deny_dirs": [".ssh", ".gnupg", ".aws"],
+                  "deny_names": [".env", "id_rsa", "id_ed25519"],
+                  "deny_suffix": [".pem", ".key"], "deny_substr": ["client_secret"],
+                  "deny_paths": []}
+    return _GUARD_PRELUDE.format(policy_json=_json.dumps(policy))
+
+
 def python_exec(code: str, timeout: int = 60) -> dict:
     """
     Executes Python code (mlx_env) — home directory based, includes major project paths.
     Returns: {"stdout", "stderr", "returncode", "error"(if any)}
     """
+    # 1차: 정규식 정적 검사 — 빠른 실수 방지(guardrail). 우회 가능하므로 경계 아님.
     err = _check_python_safeguards(code)
     if err:
         return {"stdout": "", "stderr": "", "returncode": -1, "error": err}
 
-    prelude = _PYTHON_PRELUDE.format(
+    # 2차(진짜 경계): 런타임 파일접근 가드 prelude. open/os.remove/shutil.rmtree 후킹으로
+    # 난독화 우회 코드도 실제 파일 접근 시점에 차단. Docker 격리 없는 호스트 실행의 방어선.
+    prelude = _guard_prelude() + "\n" + _PYTHON_PRELUDE.format(
         vega_root=str(VEGA_ROOT), home=str(Path.home()), cwd=_base_cwd()
     )
     full_code = prelude + "\n" + textwrap.dedent(code)
@@ -234,13 +372,16 @@ def python_exec(code: str, timeout: int = 60) -> dict:
         tmppath = f.name
 
     env = os.environ.copy()
-    mlx_bin = str(MLX_PYTHON.parent)
-    env["PATH"] = f"{mlx_bin}:{env.get('PATH', '')}"
-    env["VIRTUAL_ENV"] = str(MLX_PYTHON.parent.parent)
+    # 개발 환경(mlx_env)에서만 venv 환경변수를 세팅한다. frozen 배포본은 동봉
+    # 인터프리터가 자체 경로를 들고 있어 mlx_bin 주입이 불필요/유해.
+    if not getattr(sys, "frozen", False) and MLX_PYTHON.exists():
+        mlx_bin = str(MLX_PYTHON.parent)
+        env["PATH"] = f"{mlx_bin}:{env.get('PATH', '')}"
+        env["VIRTUAL_ENV"] = str(MLX_PYTHON.parent.parent)
 
     try:
         result = subprocess.run(
-            [str(MLX_PYTHON), tmppath],
+            _python_interp(tmppath),
             capture_output=True, text=True, timeout=timeout, env=env,
         )
         return {

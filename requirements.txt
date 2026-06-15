@@ -31,11 +31,19 @@ aiofiles==24.1.0
 # 데이터 검증
 pydantic==2.12.5
 
-# 파일 변환
+# 파일 변환 / 사무 문서 (VEGA.app 단독 동봉 — Docker 없이 PDF/XLS/DOCX/PPTX 처리)
 mammoth==1.12.0
 openpyxl==3.1.5
 pandas==2.3.3
 pillow==12.2.0
+pypdf==6.13.2
+python-docx==1.2.0
+python-pptx==1.0.2
+msoffcrypto-tool==6.0.0
+xlrd==2.0.2
+numpy==2.4.5
+matplotlib==3.10.8
+plotly==6.6.0
 
 # 보안
 keyring==25.7.0
