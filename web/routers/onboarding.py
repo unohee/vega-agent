@@ -618,11 +618,17 @@ async def google_save_byo(payload: GoogleByoPayload):
             data = json.loads(payload.client_json)
         except Exception:
             return JSONResponse({"ok": False, "error": "JSON 파싱 실패 — 다운받은 client_secret.json 내용을 그대로 붙여넣으세요."}, status_code=400)
-        node = data.get("installed") or data.get("web") or data
+        # 객체가 아니면(배열/스칼라) .get 이 AttributeError → 500. dict 만 허용.
+        if not isinstance(data, dict):
+            return JSONResponse({"ok": False, "error": "JSON 형식 오류 — client_secret.json 은 중괄호 객체여야 합니다."}, status_code=400)
+        # 'web' 타입 거부는 node 선택 전에 — installed(데스크톱)만 허용.
+        if data.get("web") and not data.get("installed"):
+            return JSONResponse({"ok": False, "error": "'웹 애플리케이션' 클라이언트입니다. GCP에서 '데스크톱 앱(Desktop app)' 타입으로 다시 만들어 주세요."}, status_code=400)
+        node = data.get("installed") or data
+        if not isinstance(node, dict):
+            return JSONResponse({"ok": False, "error": "client_secret.json 의 'installed' 값이 객체가 아닙니다."}, status_code=400)
         cid = (node.get("client_id") or "").strip()
         csec = (node.get("client_secret") or "").strip()
-        if not data.get("installed") and data.get("web"):
-            return JSONResponse({"ok": False, "error": "'웹 애플리케이션' 클라이언트입니다. GCP에서 '데스크톱 앱(Desktop app)' 타입으로 다시 만들어 주세요."}, status_code=400)
 
     if not cid or not csec:
         return JSONResponse({"ok": False, "error": "client_id / client_secret 을 찾을 수 없습니다."}, status_code=400)
@@ -630,19 +636,21 @@ async def google_save_byo(payload: GoogleByoPayload):
         return JSONResponse({"ok": False, "error": f"client_id 형식이 올바르지 않습니다 (…apps.googleusercontent.com 이어야 함): {cid[:30]}…"}, status_code=400)
 
     try:
-        google.save_byo_client(cid, csec)
+        reauth = google.save_byo_client(cid, csec)
     except Exception as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
     # 사용자가 GCP 콘솔에서 이 redirect_uri 를 등록해야 OAuth 가 성공한다 — UI 가 안내.
-    return JSONResponse({"ok": True, "client_source": "byo", "redirect_uri": google._DEFAULT_REDIRECT})
+    # reauth_required: 클라이언트가 바뀌어 기존 토큰이 무효화됨 → 재연결 필요.
+    return JSONResponse({"ok": True, "client_source": "byo",
+                         "redirect_uri": google._DEFAULT_REDIRECT, "reauth_required": reauth})
 
 
 @router.post("/api/onboarding/google/byo/clear")
 async def google_clear_byo():
     """BYO 클라이언트 제거 → 내장 클라이언트로 폴백(있으면)."""
     from pipeline.auth import google
-    google.clear_byo_client()
-    return JSONResponse({"ok": True, "client_source": google.client_source()})
+    reauth = google.clear_byo_client()
+    return JSONResponse({"ok": True, "client_source": google.client_source(), "reauth_required": reauth})
 
 
 class GoogleDisconnectPayload(BaseModel):

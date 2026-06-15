@@ -134,23 +134,52 @@ def client_source() -> str:
     return c["_source"] if c else "none"
 
 
-def save_byo_client(client_id: str, client_secret: str) -> None:
+def _current_client_id() -> str:
+    """현재 effective client_id (BYO 우선). 없으면 빈 문자열."""
+    c = _byo_client() or _builtin_client()
+    return c["client_id"] if c else ""
+
+
+def _invalidate_tokens_if_client_changed(prev_client_id: str) -> bool:
+    """effective client_id 가 바뀌었으면 저장된 토큰을 전부 무효화한다.
+    Google refresh_token 은 발급 client_id 에 종속 — 클라이언트가 바뀌면 그 토큰으로는
+    refresh 가 invalid_grant 로 깨진다. 그런데 is_authenticated() 는 토큰 존재만 보므로
+    UI 는 "연결됨"인데 모든 호출이 실패하는 좀비 상태가 된다. 바뀌면 disconnect 로
+    토큰을 비워 정직하게 "연결 안 됨"으로 만들고 재인증을 유도한다.
+    반환: 토큰을 무효화했으면 True."""
+    new_id = _current_client_id()
+    if prev_client_id and new_id != prev_client_id and is_authenticated():
+        disconnect(None)   # 모든 계정 토큰 슬롯 wipe (refresh_token/email/accounts)
+        return True
+    return False
+
+
+def save_byo_client(client_id: str, client_secret: str) -> bool:
     """사용자 BYO 클라이언트 저장(Keychain). 빈 값이면 ValueError.
-    client_secret.json 형식 검증은 호출부(라우터)에서 — 여기선 값만 받는다."""
+    client_secret.json 형식 검증은 호출부(라우터)에서 — 여기선 값만 받는다.
+    client_id 가 기존과 달라지면 종속된 토큰을 무효화한다(재인증 필요).
+    반환: 토큰이 무효화됐으면 True(UI 가 "재연결 필요"로 안내)."""
     cid = (client_id or "").strip()
     csec = (client_secret or "").strip()
     if not cid or not csec:
         raise ValueError("client_id / client_secret 이 비어 있습니다.")
+    prev_id = _current_client_id()
     if not _kc.set_secret(BYO_CLIENT_ID_SLOT, cid, service=KEYCHAIN_SERVICE):
         raise RuntimeError("client_id 저장 실패(secure store 미가용)")
     if not _kc.set_secret(BYO_CLIENT_SECRET_SLOT, csec, service=KEYCHAIN_SERVICE):
+        # partial-write 롤백 — id 만 남아 stale 한 짝 안 맞는 상태 방지
+        _kc.delete_secret(BYO_CLIENT_ID_SLOT, service=KEYCHAIN_SERVICE)
         raise RuntimeError("client_secret 저장 실패(secure store 미가용)")
+    return _invalidate_tokens_if_client_changed(prev_id)
 
 
-def clear_byo_client() -> None:
-    """BYO 클라이언트 제거 → 내장 클라이언트로 폴백(있으면)."""
+def clear_byo_client() -> bool:
+    """BYO 클라이언트 제거 → 내장 클라이언트로 폴백(있으면).
+    effective client_id 가 바뀌면(BYO→builtin) 종속 토큰 무효화. 반환: 무효화 여부."""
+    prev_id = _current_client_id()
     _kc.delete_secret(BYO_CLIENT_ID_SLOT, service=KEYCHAIN_SERVICE)
     _kc.delete_secret(BYO_CLIENT_SECRET_SLOT, service=KEYCHAIN_SERVICE)
+    return _invalidate_tokens_if_client_changed(prev_id)
 
 
 def _ssl_context() -> ssl.SSLContext:

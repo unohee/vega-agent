@@ -170,3 +170,37 @@ class TestGoogleByo:
         assert r.status_code == 200 and r.json()["ok"] is True
         assert r.json()["client_source"] == "builtin"
         assert g._load_client()["client_id"] == "BUILTIN.apps.googleusercontent.com"
+
+    @pytest.mark.parametrize("bad", ['[]', '"x"', '42', 'null', 'true'])
+    def test_byo_non_dict_json_returns_400_not_500(self, client, kc, bad):
+        """비-객체 JSON(배열/스칼라)은 400 — .get AttributeError로 500 나면 안 됨."""
+        r = client.post("/api/onboarding/google/byo", json={"client_json": bad})
+        assert r.status_code == 400, f"{bad!r} → {r.status_code}"
+        assert r.json()["ok"] is False
+
+    def test_byo_change_invalidates_stale_token(self, client, kc):
+        """client_id가 바뀌면 종속된 refresh_token을 무효화(재인증 유도).
+        안 그러면 is_authenticated()=True인데 refresh가 invalid_grant로 깨지는 좀비."""
+        # builtin으로 인증된 상태를 흉내 — 토큰 저장
+        g.keychain_save(g.KEYCHAIN_ACCOUNT, "TOKEN_FROM_BUILTIN")
+        g._save_account_index(["a@x.com"])
+        g.keychain_save(g._token_slot("a@x.com"), "TOKEN_FROM_BUILTIN")
+        assert g.is_authenticated() is True
+        # BYO 저장 → client_id가 BUILTIN→77로 바뀜 → 토큰 무효화
+        r = client.post("/api/onboarding/google/byo", json={
+            "client_id": "77.apps.googleusercontent.com", "client_secret": "GOCSPX-z"})
+        assert r.status_code == 200
+        assert r.json()["reauth_required"] is True
+        assert g.is_authenticated() is False  # 좀비 상태 방지 — 정직하게 미인증
+
+    def test_byo_resave_same_client_keeps_token(self, client, kc):
+        """동일 client_id 재저장은 토큰 보존(불필요한 disconnect 방지)."""
+        client.post("/api/onboarding/google/byo", json={
+            "client_id": "55.apps.googleusercontent.com", "client_secret": "GOCSPX-a"})
+        g.keychain_save(g.KEYCHAIN_ACCOUNT, "TOKEN")
+        g._save_account_index(["a@x.com"])
+        g.keychain_save(g._token_slot("a@x.com"), "TOKEN")
+        r = client.post("/api/onboarding/google/byo", json={
+            "client_id": "55.apps.googleusercontent.com", "client_secret": "GOCSPX-a"})
+        assert r.json()["reauth_required"] is False
+        assert g.is_authenticated() is True

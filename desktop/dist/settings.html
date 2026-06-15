@@ -665,7 +665,7 @@ function renderGoogleByo(list, src) {
       <div style="margin-bottom:8px">내장 VEGA 앱은 Google 미검증이라 "확인되지 않은 앱" 경고가 뜹니다. 본인 GCP 앱을 쓰면 경고가 없고 무료입니다(2~3분).</div>
       <ol style="margin:0 0 8px 18px;padding:0">
         <li><a href="#" data-ext="https://console.cloud.google.com/projectcreate">GCP 프로젝트 생성</a></li>
-        <li><a href="#" data-ext="https://console.cloud.google.com/apis/library/gmail.googleapis.com">Gmail API</a> · <a href="#" data-ext="https://console.cloud.google.com/apis/library/calendar-json.googleapis.com">Calendar API</a> 사용 설정</li>
+        <li><a href="#" data-ext="https://console.cloud.google.com/apis/library/gmail.googleapis.com">Gmail API</a> · <a href="#" data-ext="https://console.cloud.google.com/apis/library/calendar-json.googleapis.com">Calendar API</a> · <a href="#" data-ext="https://console.cloud.google.com/apis/library/drive.googleapis.com">Drive API</a> 사용 설정</li>
         <li><a href="#" data-ext="https://console.cloud.google.com/apis/credentials/consent">OAuth 동의 화면</a> → External → 본인 이메일을 테스트 사용자로 추가(또는 앱 게시)</li>
         <li><a href="#" data-ext="https://console.cloud.google.com/apis/credentials/oauthclient">사용자 인증 정보 → OAuth 클라이언트 ID</a> → 유형 <b>데스크톱 앱</b> → 만들기 → JSON 다운로드</li>
         <li>아래에 다운받은 <code>client_secret.json</code> 내용을 그대로 붙여넣기</li>
@@ -711,13 +711,16 @@ async function wsGoogleByoSave(wrap) {
     });
     const d = await res.json().catch(() => ({}));
     if (!res.ok || !d.ok) throw new Error(d.error || `HTTP ${res.status}`);
-    status.textContent = '✓ 등록됨 — 이제 "연결"을 눌러 로그인하세요';
+    // 클라이언트가 바뀌면 기존 토큰이 무효화됨(재인증 필요) — 명확히 안내.
+    status.textContent = d.reauth_required
+      ? '✓ 등록됨 — 클라이언트가 바뀌어 기존 연결이 해제됐습니다. "연결"을 눌러 다시 로그인하세요'
+      : '✓ 등록됨 — 이제 "연결"을 눌러 로그인하세요';
     loadWorkspacePane();
   } catch (e) { status.textContent = '실패: ' + (e.message || e); }
 }
 
 async function wsGoogleByoClear(wrap) {
-  if (!confirm('내 GCP 앱 등록을 지우고 내장 VEGA 앱으로 되돌릴까요?')) return;
+  if (!confirm('내 GCP 앱 등록을 지우고 내장 VEGA 앱으로 되돌릴까요?\n(기존 Google 연결은 해제되어 다시 로그인이 필요합니다)')) return;
   const status = wrap.querySelector('#byo-status'); status.textContent = '처리 중…';
   try {
     const res = await fetch(provBase() + '/api/onboarding/google/byo/clear', {
@@ -725,6 +728,7 @@ async function wsGoogleByoClear(wrap) {
     });
     const d = await res.json().catch(() => ({}));
     if (!res.ok || !d.ok) throw new Error(d.error || `HTTP ${res.status}`);
+    if (d.reauth_required) status.textContent = '내장 앱으로 되돌림 — 기존 연결 해제됨, "연결"로 다시 로그인하세요';
     loadWorkspacePane();
   } catch (e) { status.textContent = '실패: ' + (e.message || e); }
 }
