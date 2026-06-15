@@ -159,6 +159,113 @@ def _compose_env() -> dict:
     return env
 
 
+# ── Docker 자동 설치 헬퍼 ────────────────────────────────────────────────────
+
+def _brew_path() -> str | None:
+    """Homebrew 실행 파일 경로. 없으면 None."""
+    for p in ("/opt/homebrew/bin/brew", "/usr/local/bin/brew"):
+        if Path(p).exists():
+            return p
+    return shutil.which("brew")
+
+
+def brew_available() -> bool:
+    return _brew_path() is not None
+
+
+def _osascript_sudo(cmd: str) -> subprocess.CompletedProcess:
+    """GUI 패스워드 팝업으로 sudo 명령 실행 (macOS only)."""
+    script = f'do shell script "{cmd}" with administrator privileges'
+    return subprocess.run(
+        ["osascript", "-e", script],
+        capture_output=True, text=True,
+    )
+
+
+def install_homebrew_iter():
+    """Homebrew 설치 진행 — 각 단계를 (ok, message) 제너레이터로 스트리밍."""
+    if brew_available():
+        yield True, "Homebrew 이미 설치됨"
+        return
+    yield True, "Homebrew 설치 시작 (관리자 권한 요청)…"
+    install_cmd = (
+        '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
+    )
+    r = _osascript_sudo(install_cmd)
+    if r.returncode != 0:
+        yield False, f"Homebrew 설치 실패: {r.stderr.strip() or r.stdout.strip()}"
+        return
+    yield True, "Homebrew 설치 완료"
+
+
+def install_docker_iter():
+    """Docker Desktop 설치 진행 — (ok, message) 제너레이터."""
+    import platform
+    system = platform.system()
+
+    if docker_state() != "missing":
+        yield True, "Docker 이미 설치됨"
+        return
+
+    if system == "Darwin":
+        brew = _brew_path()
+        if not brew:
+            yield False, "Homebrew가 없어 Docker를 설치할 수 없습니다"
+            return
+        yield True, "Docker Desktop 설치 중… (수 분 소요될 수 있습니다)"
+        r = subprocess.run(
+            [brew, "install", "--cask", "docker"],
+            capture_output=True, text=True,
+        )
+        if r.returncode != 0:
+            err = r.stderr.strip() or r.stdout.strip()
+            yield False, f"Docker Desktop 설치 실패: {err}"
+            return
+        yield True, "Docker Desktop 설치 완료"
+
+    elif system == "Windows":
+        yield True, "winget으로 Docker Desktop 설치 중…"
+        r = subprocess.run(
+            ["winget", "install", "--id", "Docker.DockerDesktop",
+             "-e", "--accept-source-agreements", "--accept-package-agreements"],
+            capture_output=True, text=True,
+        )
+        if r.returncode != 0:
+            yield False, f"Docker Desktop 설치 실패: {r.stderr.strip()}"
+            return
+        yield True, "Docker Desktop 설치 완료"
+
+    else:
+        yield False, f"지원하지 않는 플랫폼: {system}"
+
+
+def launch_docker_desktop_iter():
+    """Docker Desktop 실행 + 데몬 응답 대기 — (ok, message) 제너레이터."""
+    import platform
+    if docker_state() == "ok":
+        yield True, "Docker 데몬 이미 실행 중"
+        return
+
+    system = platform.system()
+    if system == "Darwin":
+        subprocess.Popen(["open", "-a", "Docker"])
+    elif system == "Windows":
+        import os
+        docker_exe = Path(os.environ.get("ProgramFiles", "C:\\Program Files")) / "Docker" / "Docker" / "Docker Desktop.exe"
+        if docker_exe.exists():
+            subprocess.Popen([str(docker_exe)])
+
+    yield True, "Docker Desktop 실행 중… 데몬 시작 대기 (최대 60초)"
+    for i in range(60):
+        time.sleep(2)
+        if docker_state() == "ok":
+            yield True, "Docker 데몬 준비 완료"
+            return
+        if i % 5 == 4:
+            yield True, f"대기 중… ({(i+1)*2}초)"
+    yield False, "Docker 데몬이 60초 내에 시작되지 않았습니다. Docker Desktop을 직접 실행해 주세요."
+
+
 _SANDBOX_IMAGE = "ghcr.io/unohee/vega-sandbox:latest"
 
 
