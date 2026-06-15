@@ -193,7 +193,14 @@ def _fetch_models(provider_name: str) -> list[dict]:
     url = base_url.rstrip("/") + "/models"
     headers = {"Accept": "application/json"}
     if auth_type == "bearer":
-        key = os.getenv(prov.get("api_key_env", ""), "")
+        key_env = prov.get("api_key_env", "")
+        key = os.getenv(key_env, "")
+        if not key:
+            try:
+                from pipeline import keychain
+                key = keychain.get_secret(key_env) or ""
+            except Exception:
+                pass
         if not key:
             return []
         headers["Authorization"] = f"Bearer {key}"
