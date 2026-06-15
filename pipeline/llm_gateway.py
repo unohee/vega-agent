@@ -206,10 +206,30 @@ def _is_provider_alive(prov: dict, timeout: float = 2.0) -> bool:
         return False
 
 
+def _has_usable_key(prov: dict) -> bool:
+    """bearer 프로바이더에 실제 키(env 또는 Keychain)가 있는지. OAuth/none(로컬)은
+    키 개념이 다르므로 항상 True(가용으로 간주). build_request 의 키 해석과 동일 경로."""
+    if prov.get("auth_type") != "bearer":
+        return True
+    key_env = prov.get("api_key_env", "")
+    if not key_env:
+        return False
+    if os.getenv(key_env):
+        return True
+    try:
+        from pipeline import keychain
+        return bool(keychain.get_secret(key_env))
+    except Exception:
+        return False
+
+
 def get_provider_for_tier(tier: str = "cloud") -> dict:
     """tier("local"|"cloud")에 매핑된 provider 를 반환. local 다운 시 cloud 폴백.
 
     tiers 매핑은 llm_providers.json 의 "tiers" 에서 읽는다. 없으면 active 단일 폴백.
+    cloud tier 가 키 없는 bearer 프로바이더를 가리키면 active 로 폴백한다 — 설정/온보딩
+    경로에서 active 와 tiers.cloud 가 어긋나도(키 없는 openrouter 등) 런타임 실패 대신
+    동작하는 active 로 라우팅되는 read-time 안전망. (키가 있으면 의도적 분리로 보고 보존.)
     """
     cfg = _read_config()
     tiers = cfg.get("tiers") or {}
@@ -229,6 +249,16 @@ def get_provider_for_tier(tier: str = "cloud") -> dict:
             cloud = dict(cloud)
             cloud["_fell_back_from"] = "local"
             return cloud
+
+    # cloud tier 가 키 없는 bearer 를 가리키면(divergence) active 로 폴백 — 단 active 가
+    # 그 자신이면 무한 회피(이미 키 없음이 확정이므로 그대로 반환해 명시적 에러 유도).
+    if tier == "cloud" and not _has_usable_key(prov):
+        active = get_active_provider()
+        if active.get("name") != prov.get("name") and _has_usable_key(active):
+            active = dict(active)
+            active["_fell_back_from"] = "cloud-keyless"
+            return active
+
     return prov
 
 
@@ -277,7 +307,12 @@ def set_active(name: str, sync_cloud_tier: bool = False) -> None:
         raise ValueError(f"unknown provider: {name}")
     cfg["active"] = name
     if sync_cloud_tier and not _is_local_provider(providers[name]):
-        cfg.setdefault("tiers", {})["cloud"] = name
+        # setdefault 는 "tiers": null(present-but-None) 을 못 막는다 — reader(get_provider_for_tier)와
+        # 같은 `or {}` 방어로 None 일 때 새 dict 로 교체한 뒤 대입한다.
+        tiers = cfg.get("tiers")
+        if not isinstance(tiers, dict):
+            tiers = cfg["tiers"] = {}
+        tiers["cloud"] = name
     _write_config(cfg)
 
 

@@ -66,7 +66,9 @@ async def llm_set_active(request: Request):
     if not name:
         return JSONResponse({"error": "name 필수"}, status_code=400)
     try:
-        set_active(name)
+        # 온보딩과 동일하게 cloud tier 도 맞춘다 — 설정에서 active 를 바꿨는데 tiers.cloud 가
+        # 옛 프로바이더에 남으면 tier='cloud' 채팅이 엉뚱한(키 없는) 곳으로 라우팅된다.
+        set_active(name, sync_cloud_tier=True)
         return JSONResponse({"ok": True, "active": name})
     except ValueError as e:
         return JSONResponse({"error": str(e)}, status_code=400)
