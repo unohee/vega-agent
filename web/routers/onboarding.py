@@ -318,6 +318,92 @@ async def system_check():
     })
 
 
+# ── 샌드박스 전체 설치 (brew→docker→image, SSE 스트리밍) ────────────────────
+
+@router.get("/api/sandbox/setup")
+async def sandbox_setup():
+    """brew 체크 → brew 설치 → Docker 설치 → Docker 실행 → image pull 전 과정 SSE 스트림.
+
+    각 단계를 순서대로 실행하고 진행 메시지를 스트리밍한다.
+    단계 실패 시 event: error를 보내고 종료, 전 과정 성공 시 event: done."""
+    import asyncio
+    from fastapi.responses import StreamingResponse
+
+    async def _stream():
+        loop = asyncio.get_event_loop()
+
+        def _sse(msg: str, event: str = "message") -> str:
+            if event == "message":
+                return f"data: {msg}\n\n"
+            return f"event: {event}\ndata: {msg}\n\n"
+
+        # 각 단계 제너레이터를 순서대로 실행
+        from pipeline.sandbox import (
+            brew_available, install_homebrew_iter,
+            install_docker_iter, launch_docker_desktop_iter,
+            docker_state, image_ready, _SANDBOX_IMAGE,
+        )
+        import platform
+        import subprocess as _sp
+
+        steps = []
+        if platform.system() == "Darwin":
+            if not brew_available():
+                steps.append(("Homebrew 설치", install_homebrew_iter))
+        steps.append(("Docker 설치", install_docker_iter))
+        steps.append(("Docker 실행", launch_docker_desktop_iter))
+
+        for step_name, step_fn in steps:
+            yield _sse(f"[{step_name}]")
+            failed = False
+            for ok, msg in await loop.run_in_executor(None, lambda fn=step_fn: list(fn())):
+                yield _sse(msg)
+                if not ok:
+                    yield _sse(f"{step_name} 실패: {msg}", "error")
+                    failed = True
+                    break
+            if failed:
+                return
+
+        # image pull
+        yield _sse("[샌드박스 이미지 다운로드]")
+        if image_ready():
+            yield _sse("이미지 이미 존재함")
+            yield _sse("모든 설치 완료!", "done")
+            return
+
+        proc = await loop.run_in_executor(
+            None,
+            lambda: _sp.Popen(
+                ["docker", "pull", _SANDBOX_IMAGE],
+                stdout=_sp.PIPE, stderr=_sp.STDOUT, text=True,
+            ),
+        )
+
+        def _read():
+            return proc.stdout.readline()  # type: ignore[union-attr]
+
+        while True:
+            line = await loop.run_in_executor(None, _read)
+            if not line:
+                break
+            msg = line.rstrip()
+            if msg:
+                yield _sse(msg)
+
+        proc.wait()
+        if proc.returncode == 0:
+            yield _sse("모든 설치 완료!", "done")
+        else:
+            yield _sse(f"이미지 다운로드 실패 (exit {proc.returncode})", "error")
+
+    return StreamingResponse(
+        _stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 # ── 샌드박스 이미지 pull (SSE 스트리밍) ──────────────────────────────────────
 
 @router.get("/api/sandbox/pull")
