@@ -162,6 +162,18 @@ def _compose_env() -> dict:
 _SANDBOX_IMAGE = "ghcr.io/unohee/vega-sandbox:latest"
 
 
+def image_ready() -> bool:
+    """로컬에 vega-sandbox 이미지가 존재하면 True. docker 없으면 False."""
+    try:
+        r = subprocess.run(
+            ["docker", "image", "inspect", _SANDBOX_IMAGE],
+            capture_output=True,
+        )
+        return r.returncode == 0
+    except Exception:
+        return False
+
+
 def _ensure_image() -> None:
     """이미지가 로컬에 없으면 GHCR에서 pull. 이미 있으면 즉시 반환."""
     r = subprocess.run(

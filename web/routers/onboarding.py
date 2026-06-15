@@ -299,10 +299,81 @@ async def system_check():
                 "펌웨어 설정에서 가상화를 활성화한 뒤 `wsl --install` 을 실행하세요."
             )
 
+    # 이미지 준비 여부 — Docker가 있을 때만 의미 있다
+    img_ready = False
+    if docker_ok:
+        try:
+            from pipeline.sandbox import image_ready
+            img_ready = await asyncio.to_thread(image_ready)
+        except Exception:
+            img_ready = False
+
     return JSONResponse({
         "platform": platform.system(),
         "docker": docker_block,
+        "sandbox_image": {
+            "ready": img_ready,
+            "image": "ghcr.io/unohee/vega-sandbox:latest",
+        },
     })
+
+
+# ── 샌드박스 이미지 pull (SSE 스트리밍) ──────────────────────────────────────
+
+@router.get("/api/sandbox/pull")
+async def sandbox_pull():
+    """vega-sandbox 이미지를 GHCR에서 pull하는 SSE 스트림.
+
+    클라이언트는 EventSource로 구독하고 data 이벤트마다 진행 메시지를 표시한다.
+    완료 시 event: done, 실패 시 event: error를 보내고 스트림을 닫는다."""
+    import asyncio
+    import subprocess as _sp
+    from fastapi.responses import StreamingResponse
+
+    _IMAGE = "ghcr.io/unohee/vega-sandbox:latest"
+
+    async def _stream():
+        loop = asyncio.get_event_loop()
+        proc = await loop.run_in_executor(
+            None,
+            lambda: _sp.Popen(
+                ["docker", "pull", _IMAGE],
+                stdout=_sp.PIPE,
+                stderr=_sp.STDOUT,
+                text=True,
+            ),
+        )
+
+        def _read_line():
+            return proc.stdout.readline()  # type: ignore[union-attr]
+
+        try:
+            while True:
+                line = await loop.run_in_executor(None, _read_line)
+                if not line:
+                    break
+                msg = line.rstrip()
+                if msg:
+                    yield f"data: {msg}\n\n"
+
+            proc.wait()
+            if proc.returncode == 0:
+                yield "event: done\ndata: 이미지 준비 완료\n\n"
+            else:
+                yield f"event: error\ndata: pull 실패 (exit {proc.returncode})\n\n"
+        except Exception as exc:
+            yield f"event: error\ndata: {exc}\n\n"
+        finally:
+            proc.stdout.close()  # type: ignore[union-attr]
+
+    return StreamingResponse(
+        _stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 # ── 프로바이더 설정 (키/URL/PKCE) ─────────────────────────────────────────────
