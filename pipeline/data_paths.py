@@ -64,8 +64,16 @@ def log_dir() -> Path:
 
 
 def db_path() -> Path:
-    # NOTE: vega-agent 는 자체 agent.db 를 쓴다. 메인(개인) VEGA 의 vega.db 와
-    # 데이터 디렉터리를 공유하더라도 파일을 분리해 스키마 충돌을 피한다.
+    # NOTE: vega-agent 는 기본적으로 자체 agent.db 를 쓴다. 메인(개인) VEGA 의 vega.db
+    # 와 데이터 디렉터리를 공유하더라도 파일을 분리해 스키마 충돌을 피한다
+    # (reference_two_db_fork). 단 개인용으로 실행할 때는 VEGA_DB_FILE 환경변수로
+    # vega.db 등 다른 DB 파일을 가리킬 수 있다 — 공개 배포본 분기는 그대로 유지하면서
+    # 개인 머신에서만 78,800 messages 가 든 개인 DB 를 인식하게 하는 환경 분리 방식.
+    # 절대경로면 그대로, 파일명만 주면 data_dir() 하위로 해석.
+    override = os.environ.get("VEGA_DB_FILE", "").strip()
+    if override:
+        p = Path(override).expanduser()
+        return p if p.is_absolute() else data_dir() / p
     return data_dir() / "agent.db"
 
 
@@ -94,6 +102,12 @@ def memory_settings_path() -> Path:
 def settings_path() -> Path:
     """런타임 설정(settings.json) — SearXNG URL 등 온보딩·설정창에서 변경하는 값."""
     return data_dir() / "settings.json"
+
+
+def access_policy_path() -> Path:
+    """파일 접근 정책(access_policy.json) — 사용자가 설정창에서 조정하는
+    allowlist/denylist. 하드코딩 기본값(path_guard) 위에 얹는 사용자 레이어."""
+    return data_dir() / "access_policy.json"
 
 
 def llm_providers_path() -> Path:

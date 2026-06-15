@@ -332,3 +332,31 @@ async def fs_available_editors():
     import shutil
     found = [cmd for cmd in _EDITOR_CANDIDATES if shutil.which(cmd)]
     return JSONResponse({"editors": found})
+
+
+# ── 파일 접근 정책 (allowlist / denylist) ──────────────────────────────────────
+
+@router.get("/api/fs/access_policy")
+async def get_access_policy():
+    """현재 접근 정책 조회 — 기본 허용 루트 + 사용자 allow/deny + 하드 차단 목록.
+    설정창이 "무엇이 허용/차단되는지" 가시화하는 데 쓴다."""
+    from pipeline.path_guard import get_policy
+    return JSONResponse(get_policy())
+
+
+@router.post("/api/fs/access_policy")
+async def set_access_policy(request: Request):
+    """사용자 allowlist/denylist 저장. body: {allow_roots?: [...], deny_paths?: [...]}.
+    하드코딩 시크릿/키 차단은 변경 불가(안전 보장). 저장 즉시 다음 접근부터 반영."""
+    from pipeline.path_guard import set_policy
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    allow = body.get("allow_roots")
+    deny = body.get("deny_paths")
+    if allow is not None and not isinstance(allow, list):
+        return JSONResponse({"error": "allow_roots must be a list"}, status_code=400)
+    if deny is not None and not isinstance(deny, list):
+        return JSONResponse({"error": "deny_paths must be a list"}, status_code=400)
+    return JSONResponse(set_policy(allow_roots=allow, deny_paths=deny))

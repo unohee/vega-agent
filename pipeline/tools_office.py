@@ -14,13 +14,57 @@ from typing import Any
 
 # ─── Sandbox execution helper ─────────────────────────────────────────────────
 
+def _office_exec(code: str) -> dict:
+    """Office 코드 실행 디스패처 — Docker 있으면 격리 샌드박스, 없으면 호스트 직접.
+
+    Docker 데몬이 살아 있으면 기존 sandbox_python(격리 유지). 없으면(비개발자
+    배포본 등) 동봉 인터프리터로 호스트에서 직접 실행 → Docker 없이도 xlsx/docx/
+    pptx 생성·편집 가능. 두 경로 모두 {stdout,stderr,returncode,error} 계약 동일.
+    검증: reference_frozen_interpreter_local_exec.md (2026-06-15).
+    """
+    try:
+        from pipeline.sandbox import docker_available
+        use_docker = docker_available()
+    except Exception:
+        use_docker = False
+
+    if use_docker:
+        from pipeline.sandbox import sandbox_python
+        return sandbox_python(code, timeout=60)
+    # 호스트 직접 실행 — office 작업은 정해진 라이브러리 호출이라 무한루프 위험 없음.
+    from pipeline.tools_code import python_exec
+    return python_exec(code, timeout=60)
+
+
+def _guard_office_paths(args_json: str) -> str | None:
+    """ARGS 의 path/src/dst 값을 접근 정책으로 검증. 위반 시 에러 메시지 반환.
+
+    office 출력이 사용자 denylist 폴더나 시크릿 경로에 쓰이는 것을 막는다.
+    호스트 직접 실행은 시스템 격리가 없으므로 이 가드가 마지막 방어선."""
+    try:
+        from pipeline.path_guard import guard_path
+        args = json.loads(args_json)
+    except Exception:
+        return None  # 파싱 불가면 가드 생략(실행부에서 에러 처리)
+    for key in ("path", "src", "dst", "dest", "output", "out_path"):
+        val = args.get(key)
+        if isinstance(val, str) and val:
+            try:
+                guard_path(val)
+            except PermissionError as e:
+                return f"[SAFEGUARD] {e}"
+    return None
+
+
 def _sandbox_call(fn_body: str, args_json: str) -> dict:
     """
     fn_body: Python code to run inside the sandbox (receives args via the ARGS variable).
     The function parses whatever JSON is printed to stdout as the return value.
     Execution errors are wrapped as {"error": ...}.
     """
-    from pipeline.sandbox import sandbox_python
+    guard_err = _guard_office_paths(args_json)
+    if guard_err:
+        return {"error": guard_err}
     code = f"""
 import json, shutil, sys
 from pathlib import Path
@@ -38,7 +82,7 @@ def _bak(p):
 
 print(json.dumps(_result, ensure_ascii=False, default=str))
 """
-    result = sandbox_python(code, timeout=60)
+    result = _office_exec(code)
     if result.get("error"):
         return {"error": result["error"]}
     if result.get("returncode", 0) != 0:

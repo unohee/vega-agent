@@ -54,6 +54,26 @@ for pkg in ("uvicorn", "fastapi", "starlette", "anyio", "sse_starlette",
     except Exception:
         pass
 hiddenimports += ["mcp", "mcp.types"]
+
+# 사무 문서 / 데이터 처리 라이브러리 — VEGA.app 단독(Docker 없이) PDF/XLS/DOCX/PPTX·차트 처리.
+# tools_office.py 는 함수 안 + sandbox 문자열 코드에서 import 하므로 정적 분석이 못 잡는다.
+#
+# 주의: collect_submodules 는 쓰지 않는다. 빌드 환경(mlx_env)에 torch/transformers/
+# tensorflow/pyarrow 등 거대 ML 패키지가 깔려 있어, pandas 등의 optional 백엔드를
+# 타고 줄줄이 끌려와 번들이 789MB 로 폭발한다(2026-06-15 실측). 대신 최상위 패키지만
+# hiddenimports 로 명시해 PyInstaller 가 실제 import 그래프만 따라가게 한다.
+hiddenimports += [
+    "openpyxl", "pypdf", "docx", "pptx", "msoffcrypto",
+    "xlrd", "PIL", "numpy", "pandas", "matplotlib", "plotly", "mammoth",
+]
+# 데이터 파일 의존(matplotlib mpl-data, pptx 기본 템플릿)은 명시 수집.
+# pandas 는 pyarrow 등 optional 백엔드를 데이터로 끌어올 수 있어 제외.
+for pkg in ("matplotlib", "pptx", "openpyxl"):
+    try:
+        datas += collect_data_files(pkg)
+    except Exception:
+        pass
+
 # fastmcp 데이터 파일(스키마 등) 동봉
 datas += collect_data_files("fastmcp", include_py_files=True)
 try:
@@ -132,7 +152,16 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    # 거대 ML 라이브러리 차단 — 빌드 환경(mlx_env)에 깔려 있고 pipeline 함수 안 lazy import
+    # (memory_store.embed 의 mlx_lm 등)를 PyInstaller 가 정적으로 따라가 번들을 742MB+ 로
+    # 부풀린다. 배포본은 EXAONE 모델이 없어 어차피 hash fallback 으로 동작하므로 빼도 안전
+    # (memory_store.py:72). 사무/데이터 처리(numpy/pandas/openpyxl 등)엔 불필요 (2026-06-15).
+    excludes=[
+        "torch", "torchvision", "torchaudio", "transformers", "tensorflow",
+        "tensorboard", "keras", "sklearn", "scikit_learn", "cv2", "opencv",
+        "mlx", "mlx_lm", "sentence_transformers", "safetensors", "tokenizers",
+        "scipy", "sympy", "numba", "llvmlite", "onnx", "onnxruntime",
+    ],
     noarchive=False,
     optimize=0,
 )
