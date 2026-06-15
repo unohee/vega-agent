@@ -58,13 +58,14 @@ class TestDockerState:
 
     def test_down_when_daemon_not_responding(self, monkeypatch, tmp_path):
         """바이너리는 있는데 데몬 미기동(docker info 실패) → 'down'."""
-        _make_fake_docker(tmp_path, exit_code=1)
+        fake = _make_fake_docker(tmp_path, exit_code=1)
         monkeypatch.setenv("PATH", str(tmp_path))
         if _IS_WIN:
-            # Windows: 쉘 스크립트 실행 불가 — subprocess.run을 returncode=1로 mock
+            # Windows: shutil.which가 tmp_path의 .exe를 못 찾을 수 있어 직접 patch
             mock_r = MagicMock()
             mock_r.returncode = 1
-            with patch.object(sb.subprocess, "run", return_value=mock_r):
+            with patch.object(sb.shutil, "which", return_value=str(fake)), \
+                 patch.object(sb.subprocess, "run", return_value=mock_r):
                 assert sb.docker_state() == "down"
                 assert sb.docker_available() is False
         else:
@@ -77,11 +78,12 @@ class TestDockerState:
         _strip_docker_from_path(monkeypatch, tmp_path)
         assert sb.docker_state() == "missing"
         # 2) 사용자가 docker를 '설치'함 → 다음 호출에서 바로 ok
-        _make_fake_docker(tmp_path / "emptybin", exit_code=0)
+        fake = _make_fake_docker(tmp_path / "emptybin", exit_code=0)
         if _IS_WIN:
             mock_r = MagicMock()
             mock_r.returncode = 0
-            with patch.object(sb.subprocess, "run", return_value=mock_r):
+            with patch.object(sb.shutil, "which", return_value=str(fake)), \
+                 patch.object(sb.subprocess, "run", return_value=mock_r):
                 assert sb.docker_state() == "ok"
         else:
             assert sb.docker_state() == "ok"
@@ -110,12 +112,13 @@ class TestGracefulToolResults:
 
     def test_sandbox_bash_daemon_down_distinct_message(self, monkeypatch, tmp_path):
         """docker는 있는데 데몬이 죽어 있으면 '설치' 안내가 아니라 '실행' 안내."""
-        _make_fake_docker(tmp_path, exit_code=1)
+        fake = _make_fake_docker(tmp_path, exit_code=1)
         monkeypatch.setenv("PATH", str(tmp_path))
         if _IS_WIN:
             mock_r = MagicMock()
             mock_r.returncode = 1
-            with patch.object(sb.subprocess, "run", return_value=mock_r):
+            with patch.object(sb.shutil, "which", return_value=str(fake)), \
+                 patch.object(sb.subprocess, "run", return_value=mock_r):
                 result = sb.sandbox_bash("echo hi")
         else:
             result = sb.sandbox_bash("echo hi")
@@ -152,11 +155,12 @@ class TestEnsureSandboxReady:
     def test_reason_distinguishes_missing_vs_down(self, monkeypatch, tmp_path):
         _strip_docker_from_path(monkeypatch, tmp_path)
         assert sb.ensure_sandbox_ready() == {"ready": False, "reason": "docker_missing"}
-        _make_fake_docker(tmp_path / "emptybin", exit_code=1)
+        fake = _make_fake_docker(tmp_path / "emptybin", exit_code=1)
         if _IS_WIN:
             mock_r = MagicMock()
             mock_r.returncode = 1
-            with patch.object(sb.subprocess, "run", return_value=mock_r):
+            with patch.object(sb.shutil, "which", return_value=str(fake)), \
+                 patch.object(sb.subprocess, "run", return_value=mock_r):
                 assert sb.ensure_sandbox_ready() == {"ready": False, "reason": "docker_down"}
         else:
             assert sb.ensure_sandbox_ready() == {"ready": False, "reason": "docker_down"}
