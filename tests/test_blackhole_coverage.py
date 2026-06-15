@@ -90,7 +90,7 @@ class TestWidgets:
         wm = isolated_widgets
         wm.save_widget("atom-test", "원자쓰기", "stat", source="clock")
         assert wm.WIDGETS_PATH.exists()
-        data = json.loads(wm.WIDGETS_PATH.read_text())
+        data = json.loads(wm.WIDGETS_PATH.read_text(encoding="utf-8"))
         assert any(w["id"] == "atom-test" for w in data["widgets"])
 
     def test_text_widget_needs_source_or_text(self, isolated_widgets):
@@ -127,7 +127,7 @@ class TestSettingsStore:
         ss, sp = isolated_settings
         ss.set_setting("key", "value")
         assert sp.exists()
-        data = json.loads(sp.read_text())
+        data = json.loads(sp.read_text(encoding="utf-8"))
         assert data["key"] == "value"
 
     def test_load_returns_empty_on_corrupt_json(self, isolated_settings):
@@ -249,7 +249,7 @@ class TestUserProfile:
         up, pp = isolated_profile
         up.save_profile({"display_name": "원자쓰기 테스트"})
         assert pp.exists()
-        data = json.loads(pp.read_text())
+        data = json.loads(pp.read_text(encoding="utf-8"))
         assert data["onboarded"] is True
 
 
