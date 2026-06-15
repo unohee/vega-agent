@@ -258,11 +258,26 @@ def list_providers() -> list[dict]:
     return out
 
 
-def set_active(name: str) -> None:
+def _is_local_provider(prov: dict) -> bool:
+    """로컬(온디바이스) 프로바이더인지 — cloud tier 매핑 대상에서 제외하기 위함."""
+    if (prov.get("auth_type") or "") == "none":
+        return True
+    base = (prov.get("base_url") or "").lower()
+    return "localhost" in base or "127.0.0.1" in base
+
+
+def set_active(name: str, sync_cloud_tier: bool = False) -> None:
+    """활성 프로바이더 설정. sync_cloud_tier=True 면 클라우드 계열일 때
+    tiers.cloud 도 같은 프로바이더로 맞춘다(온보딩에서 사용 — 첫 연결=메인).
+    그렇지 않으면 active 와 tiers.cloud 가 어긋나 tier='cloud' 채팅이 엉뚱한
+    프로바이더(예: 키 없는 openrouter)로 라우팅돼 실패한다."""
     cfg = _read_config()
-    if name not in (cfg.get("providers") or {}):
+    providers = cfg.get("providers") or {}
+    if name not in providers:
         raise ValueError(f"unknown provider: {name}")
     cfg["active"] = name
+    if sync_cloud_tier and not _is_local_provider(providers[name]):
+        cfg.setdefault("tiers", {})["cloud"] = name
     _write_config(cfg)
 
 
