@@ -5,10 +5,7 @@
 # 한 번 빌드한 이미지/볼륨은 재사용한다 (restart: unless-stopped + named volumes).
 services:
   vega-sandbox:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: vega-sandbox:latest
+    image: ghcr.io/unohee/vega-sandbox:latest
     container_name: vega-sandbox
     restart: unless-stopped
     command: ["sleep", "infinity"]
