@@ -1,6 +1,6 @@
 [package]
 name = "vega-desktop"
-version = "0.1.27"
+version = "0.1.28"
 description = "VEGA 데스크탑 셸 — 클라이언트 또는 데몬 포함 올인원 빌드"
 authors = ["unohee"]
 edition = "2021"
