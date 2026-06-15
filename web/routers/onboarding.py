@@ -589,10 +589,60 @@ async def google_status():
             "authenticated": google.is_authenticated(),
             "email": google.stored_email(),
             "accounts": google.stored_accounts(),
+            # 'byo'(사용자 자기 GCP 앱) | 'builtin'(내장 VEGA 앱) | 'none'
+            "client_source": google.client_source(),
         })
     except Exception as e:
         return JSONResponse({"configured": False, "authenticated": False, "email": None,
-                             "accounts": [], "error": str(e)})
+                             "accounts": [], "client_source": "none", "error": str(e)})
+
+
+class GoogleByoPayload(BaseModel):
+    # 둘 중 하나: (a) client_id + client_secret 직접, 또는 (b) client_json(다운받은 JSON 통째)
+    client_id: str = ""
+    client_secret: str = ""
+    client_json: str = ""
+
+
+@router.post("/api/onboarding/google/byo")
+async def google_save_byo(payload: GoogleByoPayload):
+    """사용자 BYO OAuth 클라이언트 저장. client_secret.json 을 통째로 붙여넣거나
+    (client_json), client_id/secret 을 따로 입력. redirect_uri 검증 안내 포함."""
+    from pipeline.auth import google
+    cid = (payload.client_id or "").strip()
+    csec = (payload.client_secret or "").strip()
+
+    # JSON 통째 붙여넣기 경로 — Google 콘솔 다운로드 형식({"installed":{...}} 또는 {"web":{...}})
+    if payload.client_json.strip():
+        try:
+            data = json.loads(payload.client_json)
+        except Exception:
+            return JSONResponse({"ok": False, "error": "JSON 파싱 실패 — 다운받은 client_secret.json 내용을 그대로 붙여넣으세요."}, status_code=400)
+        node = data.get("installed") or data.get("web") or data
+        cid = (node.get("client_id") or "").strip()
+        csec = (node.get("client_secret") or "").strip()
+        if not data.get("installed") and data.get("web"):
+            return JSONResponse({"ok": False, "error": "'웹 애플리케이션' 클라이언트입니다. GCP에서 '데스크톱 앱(Desktop app)' 타입으로 다시 만들어 주세요."}, status_code=400)
+
+    if not cid or not csec:
+        return JSONResponse({"ok": False, "error": "client_id / client_secret 을 찾을 수 없습니다."}, status_code=400)
+    if not cid.endswith(".apps.googleusercontent.com"):
+        return JSONResponse({"ok": False, "error": f"client_id 형식이 올바르지 않습니다 (…apps.googleusercontent.com 이어야 함): {cid[:30]}…"}, status_code=400)
+
+    try:
+        google.save_byo_client(cid, csec)
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+    # 사용자가 GCP 콘솔에서 이 redirect_uri 를 등록해야 OAuth 가 성공한다 — UI 가 안내.
+    return JSONResponse({"ok": True, "client_source": "byo", "redirect_uri": google._DEFAULT_REDIRECT})
+
+
+@router.post("/api/onboarding/google/byo/clear")
+async def google_clear_byo():
+    """BYO 클라이언트 제거 → 내장 클라이언트로 폴백(있으면)."""
+    from pipeline.auth import google
+    google.clear_byo_client()
+    return JSONResponse({"ok": True, "client_source": google.client_source()})
 
 
 class GoogleDisconnectPayload(BaseModel):

@@ -62,24 +62,62 @@ class GoogleOAuthNotConfigured(RuntimeError):
     """data/google_oauth_client.json 이 없거나 client_id/secret 이 비었을 때."""
 
 
-def _load_client() -> dict:
+# BYO(Bring-Your-Own) OAuth client — 사용자가 자기 GCP 프로젝트에서 만든 Desktop
+# 클라이언트의 client_id/secret 을 Keychain 에 저장해 둔 슬롯. 이게 있으면 우선 사용한다.
+# 내장 VEGA 클라이언트는 미검증 앱이라 타 사용자에게 "확인되지 않은 앱" 경고가 뜨고
+# gmail.modify/drive.readonly(restricted)는 CASA 유료 감사 없이는 일반 배포 불가다.
+# BYO 는 사용자 본인 앱(self-use)이라 검증·CASA 가 면제된다 → 기본 경로로 권장.
+BYO_CLIENT_ID_SLOT = "byo_client_id"
+BYO_CLIENT_SECRET_SLOT = "byo_client_secret"
+
+
+def _byo_client() -> dict | None:
+    """Keychain 에 저장된 사용자 BYO 클라이언트. 없으면 None."""
+    cid = (_kc.get_secret(BYO_CLIENT_ID_SLOT, service=KEYCHAIN_SERVICE) or "").strip()
+    csec = (_kc.get_secret(BYO_CLIENT_SECRET_SLOT, service=KEYCHAIN_SERVICE) or "").strip()
+    if not cid or not csec:
+        return None
+    return {
+        "client_id": cid,
+        "client_secret": csec,
+        "redirect_uri": _DEFAULT_REDIRECT,
+        "scopes": _FALLBACK_SCOPES,
+        "_source": "byo",
+    }
+
+
+def _builtin_client() -> dict | None:
+    """번들된 내장 VEGA 클라이언트(data/google_oauth_client.json). 없거나 비면 None."""
     path = google_oauth_client_path()
     if not path or not path.exists():
-        raise GoogleOAuthNotConfigured(
-            "Google OAuth 내장 클라이언트(data/google_oauth_client.json)가 없습니다. "
-            "이 빌드는 Google 연결을 지원하지 않습니다."
-        )
-    data = json.loads(path.read_text(encoding="utf-8"))
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
     cid = (data.get("client_id") or "").strip()
     csec = (data.get("client_secret") or "").strip()
     if not cid or not csec:
-        raise GoogleOAuthNotConfigured("google_oauth_client.json 에 client_id/secret 이 비어 있습니다.")
+        return None
     return {
         "client_id": cid,
         "client_secret": csec,
         "redirect_uri": data.get("redirect_uri") or _DEFAULT_REDIRECT,
         "scopes": data.get("scopes") or _FALLBACK_SCOPES,
+        "_source": "builtin",
     }
+
+
+def _load_client() -> dict:
+    """OAuth 클라이언트 해석. BYO(사용자 자기 GCP 앱) 우선 → 내장 VEGA 앱 폴백.
+    둘 다 없으면 GoogleOAuthNotConfigured."""
+    client = _byo_client() or _builtin_client()
+    if client is None:
+        raise GoogleOAuthNotConfigured(
+            "Google OAuth 클라이언트가 없습니다. 설정에서 본인 GCP 프로젝트의 "
+            "client_id/secret 을 입력하거나, 내장 클라이언트가 포함된 빌드를 사용하세요."
+        )
+    return client
 
 
 def is_configured() -> bool:
@@ -88,6 +126,31 @@ def is_configured() -> bool:
         return True
     except Exception:
         return False
+
+
+def client_source() -> str:
+    """현재 어떤 클라이언트로 동작하는지: 'byo' | 'builtin' | 'none'. UI 표시용."""
+    c = _byo_client() or _builtin_client()
+    return c["_source"] if c else "none"
+
+
+def save_byo_client(client_id: str, client_secret: str) -> None:
+    """사용자 BYO 클라이언트 저장(Keychain). 빈 값이면 ValueError.
+    client_secret.json 형식 검증은 호출부(라우터)에서 — 여기선 값만 받는다."""
+    cid = (client_id or "").strip()
+    csec = (client_secret or "").strip()
+    if not cid or not csec:
+        raise ValueError("client_id / client_secret 이 비어 있습니다.")
+    if not _kc.set_secret(BYO_CLIENT_ID_SLOT, cid, service=KEYCHAIN_SERVICE):
+        raise RuntimeError("client_id 저장 실패(secure store 미가용)")
+    if not _kc.set_secret(BYO_CLIENT_SECRET_SLOT, csec, service=KEYCHAIN_SERVICE):
+        raise RuntimeError("client_secret 저장 실패(secure store 미가용)")
+
+
+def clear_byo_client() -> None:
+    """BYO 클라이언트 제거 → 내장 클라이언트로 폴백(있으면)."""
+    _kc.delete_secret(BYO_CLIENT_ID_SLOT, service=KEYCHAIN_SERVICE)
+    _kc.delete_secret(BYO_CLIENT_SECRET_SLOT, service=KEYCHAIN_SERVICE)
 
 
 def _ssl_context() -> ssl.SSLContext:
