@@ -460,6 +460,8 @@ def refresh_access_token(refresh_token: str, client_id: str, client_secret: str)
     }
     try:
         data = _token_request(payload)
+        if "access_token" not in data:
+            raise RuntimeError(f"Google OAuth 응답에 access_token 없음: {data}")
         return data["access_token"]
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace")

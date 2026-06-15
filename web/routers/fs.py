@@ -50,6 +50,9 @@ async def shell_exec(request: Request):
     Allowlist/hard-block logic is handled centrally in pipeline.tools_code.host_exec.
     On allowlist miss returns 202 + needs_approval; frontend re-calls with ask="off" after user confirms.
     """
+    from web.state import is_remote_allowed as _is_remote_allowed
+    if not _is_remote_allowed(request):
+        return JSONResponse({"error": "원격 접속에서 호스트 명령 실행은 허용되지 않습니다."}, status_code=403)
     from pipeline.tools_code import host_exec as _host_exec
     body = await request.json()
     cmd = (body.get("command") or "").strip()

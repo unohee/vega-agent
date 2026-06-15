@@ -435,6 +435,13 @@ def host_exec(command: str, ask: str = "on-miss", timeout: int = 300) -> dict:
     cmd_stripped = (command.lower() if _IS_WINDOWS else command).lstrip()
     on_allowlist = any(cmd_stripped.startswith(p) for p in _HOST_ALLOWLIST)
 
+    # 셸 체인 연산자가 있으면 allowlist 통과를 취소 — `ls; curl|bash` 류 우회 방지.
+    # Windows PowerShell 은 별도 파서(파이프 허용)라 제외.
+    import re as _re
+    _SHELL_CHAIN = _re.compile(r"[;|&`]|\$\(")
+    if not _IS_WINDOWS and on_allowlist and _SHELL_CHAIN.search(command):
+        on_allowlist = False
+
     needs_approval = (ask == "always") or (ask == "on-miss" and not on_allowlist)
 
     if needs_approval:
