@@ -1395,7 +1395,9 @@ def _rules_save_all(rules: dict[str, dict]) -> None:
             for extra in rule_lines[1:]:
                 lines.append(f"  {extra}")
     _RULES_PATH.parent.mkdir(parents=True, exist_ok=True)
-    _RULES_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    _tmp = _RULES_PATH.with_suffix(".tmp")
+    _tmp.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    _tmp.replace(_RULES_PATH)
 
 
 def _rule_save(rule_id: str, section: str, rule_text: str, overwrite: bool = False) -> dict:
@@ -1520,7 +1522,10 @@ def _mcp_write(data):
     import json as _json
     if "mcpServers" not in data or not isinstance(data["mcpServers"], dict):
         data["mcpServers"] = {}
-    _mcp_json_path().write_text(_json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    _p = _mcp_json_path()
+    _tmp = _p.with_suffix(".tmp")
+    _tmp.write_text(_json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    _tmp.replace(_p)
 
 
 def mcp_list_servers() -> dict:
@@ -1681,9 +1686,9 @@ TOOL_FUNCTIONS: dict[str, Any] = {
     "icloud_mkdir": icloud_mkdir,
     "discord_notify": discord_notify,
     "contact_memo_update": lambda name, memo: (
-        __import__("json").dumps({"ok": True})
+        {"ok": True}
         if __import__("pipeline.contact_store", fromlist=["update_memo"]).update_memo(name, memo)
-        else __import__("json").dumps({"error": f"contact not found: {name}"})
+        else {"error": f"contact not found: {name}"}
     ),
     "memory_persona_update": lambda section_key, content, notes="": persona_upsert(section_key, content, notes),
     "memory_event_add": lambda event_date, title, body, tags="": event_add(event_date, title, body, tags),

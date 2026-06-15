@@ -52,7 +52,13 @@ def _gapi(path: str, account: str = "", params: dict | None = None,
         headers["Content-Type"] = "application/json"
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(req, timeout=20) as r:
+        import ssl
+        try:
+            import certifi
+            _ssl_ctx = ssl.create_default_context(cafile=certifi.where())
+        except ImportError:
+            _ssl_ctx = ssl.create_default_context()
+        with urllib.request.urlopen(req, timeout=20, context=_ssl_ctx) as r:
             raw = r.read()
             return json.loads(raw) if raw else {}
     except urllib.error.HTTPError as e:
@@ -613,8 +619,10 @@ def _docx_to_markdown(path: str) -> str:
     for ti, tbl in enumerate(doc.tables):
         if not tbl.rows:
             continue
-        out.append("")
         header_cells = [c.text.strip().replace("\n", " ") or " " for c in tbl.rows[0].cells]
+        if not header_cells:
+            continue
+        out.append("")
         out.append("| " + " | ".join(header_cells) + " |")
         out.append("|" + "|".join(["---"] * len(header_cells)) + "|")
         for row in tbl.rows[1:]:

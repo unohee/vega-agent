@@ -48,7 +48,9 @@ def save_profile(profile: dict[str, Any]) -> None:
     out = dict(DEFAULT_PROFILE)
     out.update(profile or {})
     out["onboarded"] = True
-    p.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp = p.with_suffix(".tmp")
+    tmp.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(p)
 
 
 def is_onboarded() -> bool:

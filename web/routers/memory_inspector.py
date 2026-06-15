@@ -148,8 +148,11 @@ async def list_events(
 
 
 @router.delete("/api/memory/events/{event_id}")
-async def delete_event(event_id: int):
+async def delete_event(event_id: int, request: Request):
     """Delete an event (hard delete — events can be re-ingested)."""
+    from web.state import is_loopback as _is_loopback
+    if not _is_loopback(request):
+        return JSONResponse({"error": "로컬 앱에서만 삭제할 수 있습니다."}, status_code=403)
     with _conn() as conn:
         r = conn.execute("DELETE FROM events WHERE id=?", (event_id,))
         conn.commit()
@@ -233,8 +236,11 @@ async def list_sensitive():
 
 
 @router.delete("/api/memory/entities/{entity_id}")
-async def delete_entity(entity_id: int):
+async def delete_entity(entity_id: int, request: Request):
     """Delete an entity. Hard delete instead of deactivating is_active (re-ingestable)."""
+    from web.state import is_loopback as _is_loopback
+    if not _is_loopback(request):
+        return JSONResponse({"error": "로컬 앱에서만 삭제할 수 있습니다."}, status_code=403)
     with _conn() as conn:
         r = conn.execute("DELETE FROM entities WHERE id=?", (entity_id,))
         conn.commit()

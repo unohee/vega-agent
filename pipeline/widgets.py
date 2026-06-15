@@ -36,7 +36,9 @@ def _load() -> dict:
 
 
 def _save(data: dict) -> None:
-    WIDGETS_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp = WIDGETS_PATH.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(WIDGETS_PATH)
 
 
 def save_widget(widget_id: str, title: str, type: str, source: str = "",

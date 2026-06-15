@@ -66,11 +66,13 @@ def get_enabled_groups() -> set[str]:
 
 def set_enabled_groups(groups: list[str]) -> None:
     _TOOL_GROUPS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    _TOOL_GROUPS_PATH.write_text(
+    tmp = _TOOL_GROUPS_PATH.with_suffix(".tmp")
+    tmp.write_text(
         json.dumps({"enabled": list(groups), "known": sorted(_ALL_GROUPS)},
                    indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
+    tmp.replace(_TOOL_GROUPS_PATH)
 
 
 def filter_tools(schemas: list[dict]) -> list[dict]:
