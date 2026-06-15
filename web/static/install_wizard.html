@@ -124,6 +124,22 @@
     </div>
   </div>
 
+  <!-- STEP-SANDBOX: 샌드박스 이미지 설치 (Docker OK, 이미지 없을 때만 표시) -->
+  <div class="card hidden" id="stepSandbox">
+    <h2>코드 실행 환경 준비</h2>
+    <div class="sub">VEGA 샌드박스 이미지를 다운로드합니다. 코드 실행·이미지 처리 기능에 필요합니다.</div>
+    <div id="sbPullProgress" style="margin:16px 0; font-size:13px; color:var(--muted); min-height:60px; font-family:monospace; white-space:pre-wrap; word-break:break-all; max-height:140px; overflow-y:auto"></div>
+    <div id="sbPullBar" style="height:4px; border-radius:2px; background:var(--border); margin-bottom:12px; overflow:hidden">
+      <div id="sbPullBarInner" style="height:100%; width:0%; background:var(--accent); transition:width .3s"></div>
+    </div>
+    <div id="sbPullMsg" class="msg" style="margin-bottom:12px"></div>
+    <div class="row">
+      <button class="btn ghost" id="sbSkip">건너뛰고 계속</button>
+      <div class="grow"></div>
+      <button class="btn" id="sbStart">다운로드 시작</button>
+    </div>
+  </div>
+
   <!-- STEP 2: 워크플레이스 플러그인 선택 + 순차 연결 -->
   <div class="card hidden" id="step2">
     <!-- 2a: 선택 화면 -->
@@ -259,7 +275,10 @@ async function turn(){
   for(const d of (res.directives||[])){
     if(d.action==='google_auth' || d.action==='finish'){
       addBubble('좋아요. 마지막으로 연결할 서비스를 고를게요.','bot');
-      setTimeout(enterPluginStep, 800);
+      setTimeout(async ()=>{
+        const wentSandbox = await maybeEnterSandboxStep();
+        if(!wentSandbox) enterPluginStep();
+      }, 800);
       return;
     }
   }
@@ -320,6 +339,91 @@ async function showSystemNotice(){
       $('sysDockerLink').onclick = (e)=>{ e.preventDefault(); openExternal(s.docker.install_url); };
     }
   }catch(e){ /* 백엔드 미지원 시 조용히 무시 */ }
+}
+
+// ── 샌드박스 이미지 설치 단계 ────────────────────────────────────────────
+async function maybeEnterSandboxStep(){
+  // Docker OK인데 이미지가 없으면 pull 단계를 선제적으로 표시한다.
+  try{
+    const r = await fetch('/api/onboarding/system-check');
+    const s = await r.json();
+    const dockerOk = s.docker && s.docker.available;
+    const imgReady = s.sandbox_image && s.sandbox_image.ready;
+    if(dockerOk && !imgReady){
+      showSandboxStep();
+      return true; // 샌드박스 단계로 진입함
+    }
+  }catch(e){ /* 백엔드 미지원 시 건너뜀 */ }
+  return false;
+}
+
+function showSandboxStep(){
+  // step2 dot을 재활용 — 시각적으로 "추가 스텝"처럼 표시
+  [0,1,2].forEach(i=>{
+    $('step'+i).classList.add('hidden');
+    const d=$('dot'+i);
+    d.classList.toggle('active', i===2);
+    d.classList.toggle('done', i<2);
+  });
+  $('stepSandbox').classList.remove('hidden');
+
+  const log = $('sbPullProgress');
+  const bar = $('sbPullBarInner');
+  const msg = $('sbPullMsg');
+  let pulling = false;
+
+  $('sbSkip').onclick = ()=>{ enterPluginStep(); };
+
+  $('sbStart').onclick = async ()=>{
+    if(pulling) return;
+    pulling = true;
+    $('sbStart').disabled = true;
+    $('sbSkip').disabled = true;
+    log.textContent = '';
+    msg.textContent = '';
+    msg.className = 'msg';
+
+    let lineCount = 0;
+    const es = new EventSource('/api/sandbox/pull');
+
+    es.onmessage = (e)=>{
+      lineCount++;
+      log.textContent += e.data + '\n';
+      log.scrollTop = log.scrollHeight;
+      // 진행 바 — 정확한 % 없으니 줄 수로 근사
+      const pct = Math.min(95, lineCount * 3);
+      bar.style.width = pct + '%';
+    };
+
+    es.addEventListener('done', ()=>{
+      es.close();
+      bar.style.width = '100%';
+      msg.className = 'msg ok';
+      msg.textContent = '샌드박스 이미지 준비 완료!';
+      setTimeout(()=> enterPluginStep(), 1200);
+    });
+
+    es.addEventListener('error', (e)=>{
+      es.close();
+      msg.className = 'msg err';
+      msg.textContent = '다운로드 실패: ' + (e.data || '알 수 없는 오류');
+      $('sbStart').disabled = false;
+      $('sbStart').textContent = '다시 시도';
+      $('sbSkip').disabled = false;
+      pulling = false;
+    });
+
+    es.onerror = ()=>{
+      if(es.readyState === EventSource.CLOSED) return; // done/error 이벤트가 먼저 닫음
+      es.close();
+      msg.className = 'msg err';
+      msg.textContent = '연결 오류 — Docker가 실행 중인지 확인해 주세요.';
+      $('sbStart').disabled = false;
+      $('sbStart').textContent = '다시 시도';
+      $('sbSkip').disabled = false;
+      pulling = false;
+    };
+  };
 }
 
 $('plugSkipAll').onclick = finishOnboarding;
