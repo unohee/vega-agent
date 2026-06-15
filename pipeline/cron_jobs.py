@@ -36,7 +36,9 @@ def _load() -> list[dict]:
 def _save(jobs: list[dict]) -> None:
     p = _path()
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(jobs, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp = p.with_suffix(".tmp")
+    tmp.write_text(json.dumps(jobs, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(p)
 
 
 def _valid_cron(expr: str) -> bool:

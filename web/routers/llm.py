@@ -340,7 +340,9 @@ async def llm_agent_md_set(request: Request):
         return JSONResponse({"error": "too large (>200KB)"}, status_code=400)
     _agent_md_dir().mkdir(parents=True, exist_ok=True)
     p = _agent_md_dir() / f"{name}.md"
-    p.write_text(text, encoding="utf-8")
+    tmp = p.with_suffix(".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    tmp.replace(p)
     return JSONResponse({"ok": True})
 
 
@@ -358,7 +360,10 @@ def _read_mcp_json() -> dict:
 def _write_mcp_json(data: dict) -> None:
     if "mcpServers" not in data or not isinstance(data["mcpServers"], dict):
         data["mcpServers"] = {}
-    _mcp_json_path().write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    _p = _mcp_json_path()
+    _tmp = _p.with_suffix(".tmp")
+    _tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    _tmp.replace(_p)
 
 
 def _validate_mcp_entry(name: str, entry: dict) -> str | None:

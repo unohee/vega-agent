@@ -62,15 +62,17 @@ def set_stt_config(stt_cfg: dict) -> None:
             try:
                 data = json.loads(path.read_text(encoding="utf-8"))
                 data["stt"] = stt_cfg
-                path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+                tmp = path.with_suffix(".tmp")
+                tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+                tmp.replace(path)
                 return
             except Exception:
                 continue
     # If neither file exists, write to user data path
     _PROVIDERS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    _PROVIDERS_PATH.write_text(
-        json.dumps({"stt": stt_cfg}, indent=2, ensure_ascii=False), encoding="utf-8"
-    )
+    tmp = _PROVIDERS_PATH.with_suffix(".tmp")
+    tmp.write_text(json.dumps({"stt": stt_cfg}, indent=2, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(_PROVIDERS_PATH)
 
 
 def _resolve_endpoint(stt_cfg: dict) -> str:
