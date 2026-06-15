@@ -133,14 +133,14 @@ def main() -> int:
         print("::error::updater 아티팩트가 하나도 없습니다 — latest.json 생성 불가", file=sys.stderr)
         return 1
 
+    import datetime
+    pub_date = os.environ.get("VEGA_PUB_DATE") or datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
     manifest = {
         "version": version,
         "notes": f"VEGA v{version}",
+        "pub_date": pub_date,
         "platforms": platforms,
     }
-    pub_date = os.environ.get("VEGA_PUB_DATE")
-    if pub_date:
-        manifest["pub_date"] = pub_date
 
     BUILD_DIR.mkdir(parents=True, exist_ok=True)
     out = BUILD_DIR / "latest.json"
