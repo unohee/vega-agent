@@ -195,7 +195,11 @@ class TestSandboxRmGuard:
         assert "SAFEGUARD" in result["error"]
 
     def test_safe_command_not_blocked(self):
-        """rm 없는 명령은 rm 가드를 통과 (Docker 없으면 다른 에러)."""
-        result = _sandbox_mod.sandbox_bash("echo hello")
-        # rm SAFEGUARD 에러가 아니어야 함
-        assert "SAFEGUARD" not in result.get("error", "")
+        """rm 없는 명령은 rm 가드를 통과 (Docker 없으면 예외/에러, SAFEGUARD는 아님)."""
+        try:
+            result = _sandbox_mod.sandbox_bash("echo hello")
+            # rm SAFEGUARD 에러가 아니어야 함
+            assert "SAFEGUARD" not in result.get("error", "")
+        except Exception as e:
+            # Docker 미설치 환경(CI Windows 등)에서는 CalledProcessError 등 발생 — SAFEGUARD 아님
+            assert "SAFEGUARD" not in str(e)

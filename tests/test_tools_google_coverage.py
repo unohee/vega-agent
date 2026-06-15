@@ -516,7 +516,10 @@ class TestIcloudFunctions:
         monkeypatch.setattr(tg, "_ICLOUD_ROOT", tmp_path)
         from pipeline.tools_google import _resolve_icloud_path
         result = _resolve_icloud_path("~/iCloud/Documents/test.txt")
-        assert "Documents/test.txt" in str(result)
+        # Path 구분자는 플랫폼마다 다르므로 parts로 비교
+        from pathlib import Path
+        assert "Documents" in Path(result).parts
+        assert Path(result).name == "test.txt"
 
     def test_icloud_list_missing_path(self, tmp_path, monkeypatch):
         import pipeline.tools_google as tg
