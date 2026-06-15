@@ -65,7 +65,9 @@ def _load_map() -> dict[str, str]:
 def _save_map(m: dict[str, str]) -> None:
     p = _map_path()
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(m, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp = p.with_suffix(".tmp")
+    tmp.write_text(json.dumps(m, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(p)
 
 
 def session_for(channel: str, conv_id: str, *, title: str = "") -> str:

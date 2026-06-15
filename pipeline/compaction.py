@@ -74,7 +74,9 @@ def save_memory_settings(settings: dict) -> dict:
         cur["keep_recent"] = max(2, cur["compact_threshold"] - 2)
     p = memory_settings_path()
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(cur, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp = p.with_suffix(".tmp")
+    tmp.write_text(json.dumps(cur, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(p)
     return cur
 
 
@@ -192,9 +194,9 @@ async def compact_history(
         )
     except Exception as e:
         logger.warning(f"Compaction LLM call failed: {e}")
-        summary = f"[이전 대화 {len(to_summarize)}턴 — 요약 실패, 최근 {keep}턴 보존]"
-        new_history = [{"role": "assistant", "content": summary}] + recent
-        return new_history, summary
+        # 실패 시 history 불변 — to_summarize를 버리지 않는다(INT-1523)
+        summary = f"[컴팩션 실패 — 히스토리 유지: {e}]"
+        return history, summary
 
     # Execute memory/rule tool calls — whitelist as a second defense (ignore any other tool the compaction model tries to call)
     # auto_memory_update가 off면 요약만 하고 persona/event/rule 갱신은 건너뛴다.

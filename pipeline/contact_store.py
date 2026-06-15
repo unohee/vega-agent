@@ -285,7 +285,11 @@ def get_contact_by_phone(phone: str) -> dict | None:
 def update_memo(name: str, memo: str) -> bool:
     """Update a contact's relationship memo. Returns True on success."""
     con = _open_db()
-    cur = con.execute("UPDATE contacts SET memo=? WHERE name LIKE ?", (memo, f"%{name}%"))
+    # 정확 일치 우선 — LIKE '%name%'는 동명 부분일치 전체 덮어씀(INT-1523)
+    cur = con.execute("UPDATE contacts SET memo=? WHERE name=?", (memo, name))
+    if cur.rowcount == 0:
+        # 정확 일치 없으면 접두사/접미사 LIKE (앵커 추가)
+        cur = con.execute("UPDATE contacts SET memo=? WHERE name LIKE ?", (memo, f"{name}%"))
     con.commit()
     con.close()
     return cur.rowcount > 0
