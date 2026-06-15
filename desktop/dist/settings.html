@@ -134,7 +134,6 @@
   <div class="shell">
     <nav class="nav" id="nav">
       <div class="nav-item active" data-pane="model"><span class="ico">◆</span><span id="t-nav-model">Model</span></div>
-      <div class="nav-item" data-pane="providers"><span class="ico">⚡</span><span id="t-nav-prov">Providers</span></div>
       <div class="nav-item" data-pane="workspace"><span class="ico">🔗</span><span id="t-nav-ws">Workspace</span></div>
       <div class="nav-item" data-pane="mcp"><span class="ico">⚙</span><span id="t-nav-mcp">MCP</span></div>
       <div class="nav-item" data-pane="tools"><span class="ico">🧰</span><span id="t-nav-tools">Tools &amp; Keys</span></div>
@@ -156,6 +155,21 @@
             <div class="field"><label id="t-mp-lbl">프로바이더</label><div class="hint" id="t-mp-hint">tier 라우팅의 기본(fallback) 프로바이더</div></div>
             <select id="model-prov"></select>
           </div>
+          <!-- 미인증 프로바이더 선택 시 인라인 인증 UI -->
+          <div id="model-auth-section" style="display:none">
+            <div class="row" id="model-key-row">
+              <div class="field"><label>API 키</label><div class="hint" id="model-key-hint">—</div></div>
+              <input type="text" id="model-key" placeholder="sk-..." autocomplete="off" />
+            </div>
+            <div class="row" id="model-url-row" style="display:none">
+              <div class="field"><label>서버 URL</label><div class="hint">OpenAI 호환 로컬/온프레미스 서버</div></div>
+              <input type="text" id="model-url" placeholder="http://localhost:1234/v1" />
+            </div>
+            <div class="row">
+              <div class="field"><label>인증</label><div class="hint" id="model-auth-hint">—</div></div>
+              <button class="btn" id="model-auth-apply">연결</button>
+            </div>
+          </div>
           <div class="row">
             <div class="field"><label id="t-mm-lbl">기본 모델</label><div class="hint" id="model-cat-hint">프로바이더 카탈로그에서 선택</div></div>
             <select id="model-name"></select>
@@ -169,30 +183,6 @@
             <button class="btn" id="model-apply">적용</button>
           </div>
           <div class="row"><span class="status" id="model-status"></span></div>
-        </div>
-      </div>
-
-      <!-- ── Providers ── -->
-      <div class="pane" id="pane-providers">
-        <h1 id="t-prov-h">Providers</h1>
-        <p class="desc" id="t-prov-d">계정 연결 · API 키 · 활성 프로바이더.</p>
-        <div class="section">
-          <div class="row">
-            <div class="field"><label id="t-prov-lbl">프로바이더</label><div class="hint" id="t-prov-hint">현재 활성 프로바이더와 키 상태</div></div>
-            <select id="prov-select"></select>
-          </div>
-          <div class="row" id="prov-key-row">
-            <div class="field"><label id="t-key-lbl">API 키</label><div class="hint" id="key-source-hint">—</div></div>
-            <input type="text" id="prov-key" placeholder="sk-..." autocomplete="off" />
-          </div>
-          <div class="row" id="prov-url-row" style="display:none">
-            <div class="field"><label>서버 URL</label><div class="hint">OpenAI 호환 로컬/온프레미스 서버</div></div>
-            <input type="text" id="prov-url" placeholder="http://localhost:1234/v1" />
-          </div>
-          <div class="row">
-            <div class="field"><label id="prov-status-lbl">상태</label><div class="hint" id="prov-status">—</div></div>
-            <button class="btn" id="prov-apply">적용</button>
-          </div>
         </div>
       </div>
 
@@ -459,18 +449,16 @@
 
 <script>
 const I18N = {
-  en: { title:'Settings', navModel:'Model', navProv:'Providers', navMcp:'MCP', navApp:'App', navLang:'Language',
+  en: { title:'Settings', navModel:'Model', navMcp:'MCP', navApp:'App', navLang:'Language',
     modelH:'Model', modelD:'Active provider and default model. Applies to new sessions.',
-    provH:'Providers', provD:'Connect accounts · API keys · active provider.',
     mcpH:'MCP', mcpD:'Model Context Protocol servers — expose external tools.', mcpAdd:'Add server',
     appH:'App', appD:'Server connection and window behavior.', secConn:'Connection', secApp:'Behavior',
     langH:'Language', langD:'Display language.',
     close:'Close', save:'Save', test:'Test', checking:'Checking…', notChecked:'—',
     connOk:(a,m)=>a==='ok'?(m?`Connected · Auth OK (${m} min)`:'Connected · Auth OK'):`Connected · ${a}`,
     connErr:(m)=>`Failed: ${m}`, saved:'✓ Saved' },
-  ko: { title:'환경설정', navModel:'모델', navProv:'프로바이더', navMcp:'MCP', navApp:'앱', navLang:'언어',
+  ko: { title:'환경설정', navModel:'모델', navMcp:'MCP', navApp:'앱', navLang:'언어',
     modelH:'모델', modelD:'활성 프로바이더와 기본 모델. 새 세션에 적용됩니다.',
-    provH:'프로바이더', provD:'계정 연결 · API 키 · 활성 프로바이더.',
     mcpH:'MCP', mcpD:'Model Context Protocol 서버 — 외부 도구를 노출합니다.', mcpAdd:'새 서버 추가',
     appH:'앱', appD:'서버 연결과 창 동작.', secConn:'서버 연결', secApp:'동작',
     langH:'언어', langD:'표시 언어.',
@@ -491,10 +479,9 @@ const $ = (id) => document.getElementById(id);
 function applyLang(lang) {
   T = I18N[lang] || I18N.en;
   $('t-title').textContent = T.title;
-  $('t-nav-model').textContent = T.navModel; $('t-nav-prov').textContent = T.navProv;
+  $('t-nav-model').textContent = T.navModel;
   $('t-nav-mcp').textContent = T.navMcp; $('t-nav-app').textContent = T.navApp; $('t-nav-lang').textContent = T.navLang;
   $('t-model-h').textContent = T.modelH; $('t-model-d').textContent = T.modelD;
-  $('t-prov-h').textContent = T.provH; $('t-prov-d').textContent = T.provD;
   $('t-mcp-h').textContent = T.mcpH; $('t-mcp-d').textContent = T.mcpD; $('t-mcp-add').textContent = T.mcpAdd;
   $('t-app-h').textContent = T.appH; $('t-app-d').textContent = T.appD;
   $('t-sec-conn').textContent = T.secConn; $('t-sec-app').textContent = T.secApp;
@@ -799,14 +786,48 @@ async function loadModelPane() {
     const sel = $('model-prov'); sel.innerHTML = '';
     for (const p of MODEL_PROVIDERS) {
       const o = document.createElement('option');
-      o.value = p.name; o.textContent = p.label + (p.name === r.active ? ' ●' : '');
+      const badge = p.active ? ' ●' : (p.has_key ? ' ✓' : '');
+      o.value = p.name; o.textContent = p.label + badge;
       sel.appendChild(o);
     }
     sel.value = r.active || (MODEL_PROVIDERS[0] && MODEL_PROVIDERS[0].name) || '';
+    onModelProvChange();
     await loadModelCatalog();
     loadToolGroups();
   } catch (e) {
     $('model-status').textContent = '백엔드에 연결할 수 없습니다'; $('model-status').style.color = 'var(--error)';
+  }
+}
+function _modelAuthKind(p) {
+  if (!p) return 'key';
+  if (p.auth_type === 'chatgpt_oauth') return 'pkce';
+  if (p.auth_type === 'none') return 'local';
+  return 'key';
+}
+function onModelProvChange() {
+  const p = MODEL_PROVIDERS.find(x => x.name === $('model-prov').value);
+  if (!p) return;
+  const kind = _modelAuthKind(p);
+  const configured = p.active || p.has_key === true || kind === 'local';
+  const authSec = $('model-auth-section');
+  if (configured) {
+    authSec.style.display = 'none';
+  } else {
+    authSec.style.display = '';
+    $('model-auth-hint').textContent = '미인증 — 연결하면 이 프로바이더가 활성화됩니다';
+    $('model-auth-hint').style.color = 'var(--muted)';
+    $('model-key').value = '';
+    if (kind === 'key') {
+      $('model-key-row').style.display = ''; $('model-url-row').style.display = 'none';
+      $('model-key').placeholder = p.api_key_env ? `${p.api_key_env} (sk-...)` : 'sk-...';
+      $('model-key-hint').textContent = p.api_key_env ? `env: ${p.api_key_env}` : '—';
+    } else if (kind === 'local') {
+      $('model-key-row').style.display = 'none'; $('model-url-row').style.display = '';
+      $('model-url').value = p.base_url || '';
+    } else {
+      $('model-key-row').style.display = 'none'; $('model-url-row').style.display = 'none';
+    }
+    $('model-auth-apply').textContent = kind === 'pkce' ? '브라우저로 로그인' : '연결';
   }
 }
 async function loadModelCatalog() {
@@ -837,7 +858,35 @@ async function loadToolGroups() {
     $('model-tools-hint').textContent = `${r.active_tools}/${r.total_tools}개 도구 활성 · ~${r.active_tokens} 토큰`;
   } catch { $('model-tools-hint').textContent = '도구 그룹 조회 실패'; }
 }
-$('model-prov').addEventListener('change', loadModelCatalog);
+$('model-prov').addEventListener('change', () => { onModelProvChange(); loadModelCatalog(); });
+$('model-auth-apply').addEventListener('click', async () => {
+  const p = MODEL_PROVIDERS.find(x => x.name === $('model-prov').value); if (!p) return;
+  const base = provBase(); const hint = $('model-auth-hint'); const btn = $('model-auth-apply');
+  const kind = _modelAuthKind(p);
+  btn.disabled = true; hint.textContent = '처리 중…'; hint.style.color = 'var(--muted)';
+  try {
+    if (kind === 'pkce') {
+      const r = await fetch(base + '/api/llm/gpt-relogin', { method:'POST', signal: AbortSignal.timeout(130000) }).then(r => r.json());
+      if (r.ok) {
+        await fetch(base + '/api/llm/active', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:p.name})});
+        hint.textContent = '✓ 로그인 완료'; hint.style.color = 'var(--ok)'; await loadModelPane();
+      } else { hint.textContent = r.error || '실패'; hint.style.color = 'var(--error)'; }
+    } else if (kind === 'local') {
+      const r = await fetch(base + '/api/llm/active', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name:p.name}) }).then(r => r.json());
+      if (r.ok) { hint.textContent = '✓ 활성화됨'; hint.style.color = 'var(--ok)'; await loadModelPane(); }
+      else { hint.textContent = r.error || '실패'; hint.style.color = 'var(--error)'; }
+    } else {
+      const key = $('model-key').value.trim();
+      if (!key) { hint.textContent = 'API 키를 입력하세요'; hint.style.color = 'var(--error)'; btn.disabled = false; return; }
+      const r = await fetch(base + '/api/onboarding/provider', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ provider: p.name, api_key: key }), signal: AbortSignal.timeout(15000) }).then(r => r.json());
+      if (r.ok || r.error === undefined) {
+        await fetch(base + '/api/llm/active', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:p.name})});
+        hint.textContent = '✓ 키 저장 · 활성화됨'; hint.style.color = 'var(--ok)'; await loadModelPane();
+      } else { hint.textContent = r.error || '실패'; hint.style.color = 'var(--error)'; }
+    }
+  } catch (e) { hint.textContent = (e.name === 'TimeoutError') ? '시간 초과' : ('오류: ' + (e.message || e)); hint.style.color = 'var(--error)'; }
+  finally { btn.disabled = false; }
+});
 $('model-apply').addEventListener('click', async () => {
   const base = provBase(); const name = $('model-prov').value; const model = $('model-name').value;
   const st = $('model-status'); st.textContent = '적용 중…'; st.style.color = 'var(--muted)';
@@ -903,78 +952,6 @@ $('mcp-reload').addEventListener('click', async () => {
   catch { st.textContent = 'reload 실패'; st.style.color = 'var(--error)'; }
 });
 
-// ── Providers 패널 (/api/llm/providers 기반 — 견고한 실데이터) ──
-// auth_type: chatgpt_oauth=PKCE 로그인 / bearer·anthropic_key=API 키 / none=로컬 URL
-let PROVIDERS = [];
-async function loadProviders() {
-  const base = provBase();
-  try {
-    const r = await fetch(base + '/api/llm/providers', { signal: AbortSignal.timeout(5000) }).then(r => r.json());
-    PROVIDERS = r.providers || [];
-    const sel = $('prov-select'); sel.innerHTML = '';
-    for (const p of PROVIDERS) {
-      const opt = document.createElement('option');
-      const badge = p.active ? ' ●' : (p.has_key ? ' ✓' : '');
-      opt.value = p.name; opt.textContent = p.label + badge; sel.appendChild(opt);
-    }
-    sel.value = r.active || (PROVIDERS[0] && PROVIDERS[0].name) || '';
-    onProvChange();
-  } catch (e) { $('prov-status').textContent = '백엔드에 연결할 수 없습니다'; $('prov-status').style.color = 'var(--error)'; }
-}
-function currentProv() { return PROVIDERS.find(p => p.name === $('prov-select').value); }
-function provAuthKind(p) {
-  if (p.auth_type === 'chatgpt_oauth') return 'pkce';
-  if (p.auth_type === 'none') return 'local';
-  return 'key';  // bearer, anthropic_key
-}
-function onProvChange() {
-  const p = currentProv(); if (!p) return;
-  const status = $('prov-status'); const kind = provAuthKind(p);
-  const configured = p.active || p.has_key === true || kind === 'local';
-  status.textContent = configured ? '설정됨' : '미설정';
-  status.style.color = configured ? 'var(--ok)' : 'var(--muted)';
-  $('prov-key').value = '';
-  if (kind === 'key') {
-    $('prov-key-row').style.display = ''; $('prov-url-row').style.display = 'none';
-    $('prov-key').placeholder = p.api_key_env ? `${p.api_key_env} (sk-...)` : 'sk-...';
-    $('key-source-hint').textContent = p.has_key ? `키 저장됨 (env: ${p.api_key_env})` : `저장된 키 없음 — 새 키 입력 (env: ${p.api_key_env})`;
-  } else if (kind === 'local') {
-    $('prov-key-row').style.display = 'none'; $('prov-url-row').style.display = '';
-    $('prov-url').value = p.base_url || '';
-  } else { // pkce
-    $('prov-key-row').style.display = 'none'; $('prov-url-row').style.display = 'none';
-  }
-  $('prov-apply').textContent = kind === 'pkce' ? (p.active ? '다시 로그인' : '브라우저로 로그인') : '적용';
-}
-$('prov-select').addEventListener('change', onProvChange);
-$('prov-apply').addEventListener('click', async () => {
-  const p = currentProv(); if (!p) return;
-  const base = provBase(); const status = $('prov-status'); const btn = $('prov-apply'); const kind = provAuthKind(p);
-  btn.disabled = true; status.textContent = '처리 중…'; status.style.color = 'var(--muted)';
-  try {
-    if (kind === 'pkce') {
-      // ChatGPT OAuth 재로그인 — 시스템 브라우저 흐름
-      const r = await fetch(base + '/api/llm/gpt-relogin', { method:'POST', signal: AbortSignal.timeout(130000) }).then(r => r.json());
-      if (r.ok) { status.textContent = '✓ 로그인 완료'; status.style.color = 'var(--ok)'; await fetch(base + '/api/llm/active', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:p.name})}); await loadProviders(); }
-      else { status.textContent = r.error || '실패'; status.style.color = 'var(--error)'; }
-    } else if (kind === 'local') {
-      // 로컬: active로 전환 (base_url은 config에 이미 존재)
-      const r = await fetch(base + '/api/llm/active', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name:p.name}) }).then(r => r.json());
-      if (r.ok) { status.textContent = '✓ 활성화됨'; status.style.color = 'var(--ok)'; await loadProviders(); $('prov-select').value = p.name; onProvChange(); }
-      else { status.textContent = r.error || '실패'; status.style.color = 'var(--error)'; }
-    } else {
-      // API 키 저장 (onboarding/provider) — key_env에 키 기록 후 active 전환
-      const key = $('prov-key').value.trim();
-      if (!key) { status.textContent = 'API 키를 입력하세요'; status.style.color = 'var(--error)'; btn.disabled = false; return; }
-      const r = await fetch(base + '/api/onboarding/provider', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ provider: p.name, api_key: key }), signal: AbortSignal.timeout(15000) }).then(r => r.json());
-      if (r.ok || r.error === undefined) {
-        await fetch(base + '/api/llm/active', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:p.name})});
-        status.textContent = '✓ 키 저장 · 활성화됨'; status.style.color = 'var(--ok)'; await loadProviders(); $('prov-select').value = p.name; onProvChange();
-      } else { status.textContent = r.error || '실패'; status.style.color = 'var(--error)'; }
-    }
-  } catch (e) { status.textContent = (e.name === 'TimeoutError') ? '시간 초과(로그인 미완료?)' : ('오류: ' + (e.message || e)); status.style.color = 'var(--error)'; }
-  finally { btn.disabled = false; }
-});
 
 // ── App / 공통 ──
 $('close-to-tray').addEventListener('click', (e) => e.currentTarget.classList.toggle('on'));
@@ -1374,7 +1351,6 @@ $('sched-save').addEventListener('click', async () => {
   const state = loadLocal();
   $('server-url').value = state.serverUrl;
   $('close-to-tray').classList.toggle('on', state.closeToTray);
-  loadProviders();    // Providers는 Model 패널 provider 목록과 별개로 미리 로드
   // 초기 탭: URL #section(톱니바퀴/모델 칩이 지정) 우선, 없으면 Model
   const initSec = location.hash.slice(1);
   activatePane(initSec && document.getElementById('pane-' + initSec) ? initSec : 'model');
