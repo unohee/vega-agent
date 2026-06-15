@@ -2127,6 +2127,14 @@ async def chat_stream(request: Request):
 async def terminal_ws(websocket: WebSocket, sid: str):
     import subprocess
     await websocket.accept()
+    # HTTP 미들웨어는 WebSocket scope를 커버하지 않으므로 여기서 직접 원격 게이트.
+    # loopback 또는 허용된 원격(Tailscale/enterprise key)이 아니면 즉시 닫는다.
+    if not _state_mod.is_remote_allowed(websocket):
+        await websocket.send_text(
+            "\r\n[VEGA] 원격 접속에서 내장 터미널은 허용되지 않습니다.\r\n"
+        )
+        await websocket.close(code=1008)
+        return
     if not _HAS_PTY:
         # Windows: pty/fcntl/termios 부재 — 내장 터미널만 미지원, 즉시 정상 종료.
         await websocket.send_text("\r\n[VEGA] 이 플랫폼에선 내장 터미널을 아직 지원하지 않습니다.\r\n")

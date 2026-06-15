@@ -64,12 +64,11 @@ def set_sandbox_project_dir(path: str | None) -> None:
 # Allows agents to pass host paths (e.g. ~/dev/VEGA/data) directly;
 # they are rewritten in command/code strings. VEGA data path is more specific, so it is substituted first.
 _HOST_HOME = str(Path.home())
-_VEGA_DATA_HOST = f"{_HOST_HOME}/dev/VEGA/data"
+# VEGA_DATA를 기준으로 경로맵을 구성 — ~/dev/VEGA/data 하드코딩 제거 (INT-1522)
+_VEGA_DATA_HOST = str(VEGA_DATA)
 # (host notation, container path) — longer paths first
 _PATH_MAP: list[tuple[str, str]] = [
     (_VEGA_DATA_HOST, "/vega_data"),
-    ("~/dev/VEGA/data", "/vega_data"),
-    ("$HOME/dev/VEGA/data", "/vega_data"),
     (_HOST_HOME, "/host_home"),
     ("~/", "/host_home/"),
     ("$HOME/", "/host_home/"),
@@ -451,6 +450,10 @@ def sandbox_bash(command: str, timeout: int = TIMEOUT_DEFAULT) -> dict:
     pip install is handled automatically via host-download → container-transfer (network-isolated sandbox).
     Returns: {stdout, stderr, returncode, error?}
     """
+    import re as _re
+    # /vega_data 하위 rm -rf 는 호스트 데이터 직접 삭제 — 차단(INT-1522).
+    if _re.search(r"\brm\b.*(/vega_data|/host_home)", command):
+        return {"error": "[SAFEGUARD] 샌드박스에서 /vega_data 또는 /host_home 직접 삭제는 차단됩니다."}
     pkgs_or_cmd, is_pip = _rewrite_pip(_rewrite_host_paths(command))
     if is_pip:
         result = sandbox_pip_install(pkgs_or_cmd)

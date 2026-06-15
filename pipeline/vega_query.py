@@ -31,10 +31,12 @@ def _ensure_schema() -> None:
                 section_key TEXT NOT NULL,
                 content     TEXT NOT NULL,
                 scope       TEXT NOT NULL DEFAULT 'global',
+                source      TEXT,
                 version     INTEGER NOT NULL DEFAULT 1,
                 is_active   INTEGER NOT NULL DEFAULT 1,
                 notes       TEXT,
                 updated_at  TEXT,
+                ingested_at TEXT,
                 user_edited INTEGER NOT NULL DEFAULT 0
             )
         """)
@@ -42,9 +44,12 @@ def _ensure_schema() -> None:
             CREATE TABLE IF NOT EXISTS events (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 event_date  TEXT NOT NULL,
+                date_raw    TEXT,
+                era         TEXT,
                 title       TEXT NOT NULL,
                 body        TEXT NOT NULL DEFAULT '',
                 tags        TEXT,
+                ingested_at TEXT,
                 created_at  TEXT
             )
         """)
@@ -67,10 +72,22 @@ def _ensure_schema() -> None:
                 match_text TEXT
             )
         """)
-        # Migration: add user_edited to existing persona_sections (INT-1395 — Memory Inspector edit)
-        cols = {r[1] for r in conn.execute("PRAGMA table_info(persona_sections)").fetchall()}
-        if "user_edited" not in cols:
+        # Migration: add columns to existing tables as schema evolves (idempotent)
+        ps_cols = {r[1] for r in conn.execute("PRAGMA table_info(persona_sections)").fetchall()}
+        if "user_edited" not in ps_cols:
             conn.execute("ALTER TABLE persona_sections ADD COLUMN user_edited INTEGER NOT NULL DEFAULT 0")
+        if "source" not in ps_cols:
+            conn.execute("ALTER TABLE persona_sections ADD COLUMN source TEXT")
+        if "ingested_at" not in ps_cols:
+            conn.execute("ALTER TABLE persona_sections ADD COLUMN ingested_at TEXT")
+
+        ev_cols = {r[1] for r in conn.execute("PRAGMA table_info(events)").fetchall()}
+        if "date_raw" not in ev_cols:
+            conn.execute("ALTER TABLE events ADD COLUMN date_raw TEXT")
+        if "era" not in ev_cols:
+            conn.execute("ALTER TABLE events ADD COLUMN era TEXT")
+        if "ingested_at" not in ev_cols:
+            conn.execute("ALTER TABLE events ADD COLUMN ingested_at TEXT")
 
 
 _ensure_schema()

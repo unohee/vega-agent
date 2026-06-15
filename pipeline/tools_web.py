@@ -153,7 +153,31 @@ def _fetch_browser(url: str, timeout: int) -> str:
     return text
 
 
+def _ssrf_guard(url: str) -> None:
+    """SSRF 방지: RFC1918/loopback/링크로컬/메타데이터 서비스 URL을 차단한다."""
+    import ipaddress
+    parsed = urllib.parse.urlparse(url)
+    scheme = parsed.scheme.lower()
+    if scheme not in ("http", "https"):
+        raise ValueError(f"허용되지 않는 스킴: {scheme}")
+    host = parsed.hostname or ""
+    # 인스턴스 메타데이터 서비스 호스트명 차단
+    _BLOCKED_HOSTS = {"metadata.google.internal", "169.254.169.254"}
+    if host.lower() in _BLOCKED_HOSTS:
+        raise ValueError(f"내부 메타데이터 호스트 접근 차단: {host}")
+    # IP 리터럴이면 프라이빗/링크로컬/루프백 차단
+    try:
+        ip = ipaddress.ip_address(host)
+        if ip.is_private or ip.is_loopback or ip.is_link_local:
+            raise ValueError(f"내부 IP 접근 차단: {host}")
+    except ValueError as e:
+        if "내부" in str(e):
+            raise
+        pass  # 호스트명은 IP 파싱 실패 → 통과(DNS 해석 시점 차단은 불가)
+
+
 def web_fetch(url: str, timeout: int = 20000) -> str:
+    _ssrf_guard(url)
     # 1차: httpx 정적 fetch — 호출마다 Chromium을 새로 띄우는 비용(1-3초 +
     # 수백 MB 메모리 스파이크, 저사양 Mac 체감 끊김 INT-1430)을 대부분의
     # 서버 렌더링 페이지에서 생략한다. 본문이 부족하면(JS 렌더) Chromium 폴백.

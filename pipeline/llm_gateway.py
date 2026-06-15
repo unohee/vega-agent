@@ -134,7 +134,9 @@ def _read_config() -> dict:
 
 def _write_config(data: dict) -> None:
     data.setdefault("providers", {})
-    _PROVIDERS_PATH.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    tmp = _PROVIDERS_PATH.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(_PROVIDERS_PATH)
 
 
 def _default_config() -> dict:

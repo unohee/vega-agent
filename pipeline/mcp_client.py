@@ -212,6 +212,10 @@ async def call_mcp_tool(qualified_name: str, arguments: dict) -> str:
     server_name = _tool_server.get(qualified_name)
     if not server_name:
         return json.dumps({"error": f"MCP tool not found: {qualified_name}"})
+    if server_name not in MCP_REGISTRY:
+        # stale _tool_server 엔트리 — 서버가 제거됐거나 재로드 전
+        _tool_server.pop(qualified_name, None)
+        return json.dumps({"error": f"MCP server '{server_name}' not in registry (stale)"})
 
     tool_name = qualified_name[len(server_name) + 2:]  # strip "__" prefix
     cfg = MCP_REGISTRY[server_name]
