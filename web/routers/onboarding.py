@@ -353,15 +353,38 @@ async def sandbox_setup():
         steps.append(("Docker 설치", install_docker_iter))
         steps.append(("Docker 실행", launch_docker_desktop_iter))
 
+        import queue as _queue
+        import threading as _threading
+
         for step_name, step_fn in steps:
             yield _sse(f"[{step_name}]")
             failed = False
-            for ok, msg in await loop.run_in_executor(None, lambda fn=step_fn: list(fn())):
+            # 제너레이터를 별도 스레드에서 실행하고 큐로 결과를 즉시 전달
+            q: _queue.Queue = _queue.Queue()
+            _DONE = object()
+
+            def _run(fn=step_fn, q=q):
+                try:
+                    for item in fn():
+                        q.put(item)
+                finally:
+                    q.put(_DONE)
+
+            t = _threading.Thread(target=_run, daemon=True)
+            t.start()
+
+            while True:
+                item = await loop.run_in_executor(None, q.get)
+                if item is _DONE:
+                    break
+                ok, msg = item
                 yield _sse(msg)
                 if not ok:
                     yield _sse(f"{step_name} 실패: {msg}", "error")
                     failed = True
                     break
+
+            t.join(timeout=5)
             if failed:
                 return
 
