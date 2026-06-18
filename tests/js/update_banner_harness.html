@@ -8,9 +8,11 @@
 <script>
 // ── __TAURI__.event.listen 스텁 — emit 을 흉내내는 미니 이벤트 버스 ──
 const _handlers = {};
+const _emitted = [];  // 코드가 __TAURI__.event.emit 로 보내는 것 캡처 (재시작 요청 검증, INT-1562)
 window.__TAURI__ = {
   event: {
     listen(name, cb) { (_handlers[name] = _handlers[name] || []).push(cb); return Promise.resolve(() => {}); },
+    emit(name, payload) { _emitted.push({ name, payload }); return Promise.resolve(); },
   },
 };
 function emit(name, payload) { (_handlers[name] || []).forEach(cb => cb({ payload })); }
@@ -52,7 +54,16 @@ async function run() {
   await sleep(30);
   results.idempotent_single = document.querySelectorAll('#update-banner').length === 1;
 
-  // 4) dismiss 클릭 → 배너 제거(애니메이션 후)
+  // 4) 재시작 버튼 존재 + 클릭 → request-restart emit (INT-1562)
+  const restartBtn = bar.querySelector('.ub-restart');
+  results.has_restart = !!restartBtn;
+  if (restartBtn) restartBtn.click();
+  await sleep(20);
+  results.restart_emits = _emitted.some(e => e.name === 'request-restart');
+  // 재시작 버튼 클릭은 배너를 닫지 않는다 (자동 close 제거 — 사용자가 결정)
+  results.restart_keeps_banner = !!document.getElementById('update-banner');
+
+  // 5) dismiss 클릭 → 배너 제거(애니메이션 후)
   bar.querySelector('.ub-dismiss').click();
   await sleep(500);
   results.dismiss_removes = !document.getElementById('update-banner');

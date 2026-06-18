@@ -107,6 +107,33 @@ async function run() {
     results.fence_none_balanced = T.fenceBalanced('plain text') === true;
   }
 
+  // 4) INT-1564: done 시 usage-meta는 타이퍼 최종 렌더 "뒤"에 붙어야 본문 중복이 안 난다.
+  //    타이핑 진행 중(timer 활성) flush(cb) 호출 시 cb는 최종 renderMarkdown 이후 실행돼야 함.
+  //    cb가 먼저 usage-meta를 append하면 getStreamContent가 그 뒤에 새 세그먼트를 만들어
+  //    본문이 메타 라인 뒤에 한 번 더 렌더된다(실제 버그 재현). 옛 flush()(콜백 미지원)였다면
+  //    cb가 영영 안 불려 waitFor가 타임아웃 → 이 케이스 실패(=회귀 감지).
+  {
+    const bub = makeBubble();
+    const typer = T.makeTyper(bub);
+    typer.push('사과 바나나 포도');   // 큐에 쌓여 타이핑 시작(timer 활성)
+    let cbRan = false;
+    typer.flush(() => {                // done 핸들러 모사 — 콜백에서 usage-meta append
+      cbRan = true;
+      const m = document.createElement('div');
+      m.className = 'usage-meta';
+      m.textContent = 'gpt-5.5 · meta';
+      bub.appendChild(m);
+    });
+    await waitFor(() => cbRan && bub.querySelector('.usage-meta'), 6000);
+    const segs = bub.querySelectorAll('.stream-content');
+    const bodyCount = bub.innerText.split('사과 바나나 포도').length - 1;
+    const meta = bub.querySelector('.usage-meta');
+    results.dup_single_segment = segs.length === 1;   // 본문 세그먼트 1개만
+    results.dup_body_once = bodyCount === 1;          // 본문 1회만 표시
+    results.dup_meta_after_body = !!(meta && segs.length === 1
+      && (segs[0].compareDocumentPosition(meta) & Node.DOCUMENT_POSITION_FOLLOWING));
+  }
+
   results.ok = Object.entries(results).every(
     ([k, v]) => typeof v !== 'boolean' || v === true
   );

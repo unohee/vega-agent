@@ -297,62 +297,87 @@ fn make_loading_page() -> WebviewUrl {
 //
 // remote 페이지(localhost:8100)에선 커스텀 invoke가 ACL 차단되므로, 프론트 알림은
 // invoke 가 아니라 event emit + listen 패턴으로 전달한다(tauri-remote-acl-invoke-trap).
+// 업데이트 체크 주기 — 앱이 며칠 켜져 있어도 새 릴리즈를 잡도록 주기적으로 폴링한다.
+// 시작 직후 1회 + 이후 이 간격마다 반복 (INT-1561).
+#[cfg(all(desktop, not(any(target_os = "android", target_os = "ios"))))]
+const UPDATE_CHECK_INTERVAL_SECS: u64 = 6 * 60 * 60; // 6시간
+
+// 앱 시작 직후 1회 + UPDATE_CHECK_INTERVAL_SECS 마다 반복 체크.
+// tokio 직접 의존이 없어 std::thread + async_runtime::block_on 으로 주기 loop 를 돌린다
+// (기존 코드 관례 — 340행 std::thread sleep 와 동일).
 #[cfg(all(desktop, not(any(target_os = "android", target_os = "ios"))))]
 fn spawn_update_check(app: tauri::AppHandle) {
+    std::thread::spawn(move || {
+        // 이미 설치·안내한 버전 — 같은 새 버전을 매 주기 재설치/재알림하지 않도록 기억한다.
+        let mut installed_version: Option<String> = None;
+        loop {
+            tauri::async_runtime::block_on(run_update_check(&app, &mut installed_version));
+            std::thread::sleep(std::time::Duration::from_secs(UPDATE_CHECK_INTERVAL_SECS));
+        }
+    });
+}
+
+// 1회 업데이트 체크 — 새 버전이면 조용히 내려받아 설치만 하고(재시작 안 함, INT-1434),
+// OS 알림 + `update-ready` 이벤트로 안내한다. 사용자는 배너의 "지금 재시작"으로 적용한다.
+#[cfg(all(desktop, not(any(target_os = "android", target_os = "ios"))))]
+async fn run_update_check(app: &tauri::AppHandle, installed_version: &mut Option<String>) {
     use tauri::Emitter;
     use tauri_plugin_updater::UpdaterExt;
 
-    tauri::async_runtime::spawn(async move {
-        // endpoints 미설정/placeholder면 updater()가 에러를 내므로 전부 조용히 흘린다.
-        let updater = match app.updater() {
-            Ok(u) => u,
-            Err(e) => {
-                vlog!("[VEGA] updater 초기화 skip: {e}");
+    // endpoints 미설정/placeholder면 updater()가 에러를 내므로 전부 조용히 흘린다.
+    let updater = match app.updater() {
+        Ok(u) => u,
+        Err(e) => {
+            vlog!("[VEGA] updater 초기화 skip: {e}");
+            return;
+        }
+    };
+
+    match updater.check().await {
+        Ok(Some(update)) => {
+            let version = update.version.clone();
+            // updater.check()는 실행 중 버전이 안 바뀌어 재시작 전까지 매 주기 같은 새
+            // 버전을 반환한다. 이미 설치·안내했으면 재설치/재알림하지 않는다.
+            if installed_version.as_deref() == Some(version.as_str()) {
                 return;
             }
-        };
-
-        match updater.check().await {
-            Ok(Some(update)) => {
-                let version = update.version.clone();
-                vlog!("[VEGA] 새 버전 발견: {version} — 백그라운드 다운로드 시작");
-                // download + install 만 수행하고 restart 는 호출하지 않는다.
-                // macOS 에선 .app 이 교체되어 다음 실행 때 새 버전이 적용된다.
-                match update.download_and_install(|_chunk, _total| {}, || {}).await {
-                    Ok(_) => {
-                        vlog!("[VEGA] 업데이트 설치 완료(대기) — 다음 재시작 시 v{version} 적용");
-                        // OS 알림 — 앱 창을 안 보고 있어도 재시작 안내가 보이도록 (INT-1467).
-                        // 실패(권한 거부 등)는 무시 — 채팅 배너가 폴백.
+            vlog!("[VEGA] 새 버전 발견: {version} — 백그라운드 다운로드 시작");
+            // download + install 만 수행하고 restart 는 호출하지 않는다.
+            // macOS 에선 .app 이 교체되어 재시작 때 새 버전이 적용된다.
+            match update.download_and_install(|_chunk, _total| {}, || {}).await {
+                Ok(_) => {
+                    *installed_version = Some(version.clone());
+                    vlog!("[VEGA] 업데이트 설치 완료(대기) — 재시작 시 v{version} 적용");
+                    // OS 알림 — 앱 창을 안 보고 있어도 재시작 안내가 보이도록 (INT-1467).
+                    // 실패(권한 거부 등)는 무시 — 채팅 배너가 폴백.
+                    {
+                        use tauri_plugin_notification::NotificationExt;
+                        if let Err(e) = app
+                            .notification()
+                            .builder()
+                            .title("VEGA 업데이트 준비 완료")
+                            .body(format!("v{version} 설치됨 — 앱을 재시작하면 적용됩니다."))
+                            .show()
                         {
-                            use tauri_plugin_notification::NotificationExt;
-                            if let Err(e) = app
-                                .notification()
-                                .builder()
-                                .title("VEGA 업데이트 준비 완료")
-                                .body(format!("v{version} 설치됨 — 앱을 재시작하면 적용됩니다."))
-                                .show()
-                            {
-                                vlog!("[VEGA] 업데이트 OS 알림 실패(무시): {e}");
-                            }
+                            vlog!("[VEGA] 업데이트 OS 알림 실패(무시): {e}");
                         }
-                        // 프론트(웹뷰)가 아직 로드 전이거나 리스너가 늦게 붙을 수 있으니
-                        // 별도 OS 스레드에서 간격을 두고 3회 emit(멱등 — 프론트가 중복 무시).
-                        // tokio 직접 의존이 없어 std::thread 로 sleep 한다(기존 코드 관례).
-                        let app2 = app.clone();
-                        std::thread::spawn(move || {
-                            for _ in 0..3 {
-                                let _ = app2.emit("update-ready", version.clone());
-                                std::thread::sleep(std::time::Duration::from_secs(3));
-                            }
-                        });
                     }
-                    Err(e) => vlog!("[VEGA] 업데이트 설치 실패: {e}"),
+                    // 프론트(웹뷰)가 아직 로드 전이거나 리스너가 늦게 붙을 수 있으니
+                    // 별도 OS 스레드에서 간격을 두고 3회 emit(멱등 — 프론트가 중복 무시).
+                    let app2 = app.clone();
+                    std::thread::spawn(move || {
+                        for _ in 0..3 {
+                            let _ = app2.emit("update-ready", version.clone());
+                            std::thread::sleep(std::time::Duration::from_secs(3));
+                        }
+                    });
                 }
+                Err(e) => vlog!("[VEGA] 업데이트 설치 실패: {e}"),
             }
-            Ok(None) => vlog!("[VEGA] 최신 버전 — 업데이트 없음"),
-            Err(e) => vlog!("[VEGA] 업데이트 체크 실패(무시): {e}"),
         }
-    });
+        Ok(None) => vlog!("[VEGA] 최신 버전 — 업데이트 없음"),
+        Err(e) => vlog!("[VEGA] 업데이트 체크 실패(무시): {e}"),
+    }
 }
 
 #[cfg(desktop)]
@@ -721,6 +746,21 @@ pub fn run() {
                     let raw = event.payload();
                     let section = serde_json::from_str::<String>(raw).unwrap_or_else(|_| raw.trim_matches('"').to_string());
                     open_settings_window_at(&handle, &section);
+                });
+            }
+
+            // 업데이트 적용 재시작 — 배너의 "지금 재시작"이 emit 하는 이벤트 (INT-1562).
+            // remote 페이지라 invoke 불가 → listen 으로 받는다. daemon 이면 백엔드 데몬도
+            // 새 바이너리로 재기동한 뒤 GUI 셸을 재시작해 업데이트를 적용한다.
+            #[cfg(desktop)]
+            {
+                use tauri::Listener;
+                let handle = app.handle().clone();
+                app.listen_any("request-restart", move |_event| {
+                    vlog!("[VEGA] 업데이트 적용 재시작 요청");
+                    #[cfg(all(feature = "daemon", not(mobile)))]
+                    restart_backend(&handle);
+                    handle.restart();
                 });
             }
 
