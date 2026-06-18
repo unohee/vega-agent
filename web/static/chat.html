@@ -1304,6 +1304,12 @@ header button, header button *, header a, header a * { -webkit-app-region: no-dr
   color: var(--muted); font-size: 12px; cursor: pointer;
 }
 #update-banner .ub-dismiss:hover { color: var(--text); background: var(--bg); }
+#update-banner .ub-restart {
+  margin-left: 2px; padding: 3px 11px; border-radius: 6px;
+  border: 1px solid var(--accent); background: var(--accent);
+  color: #fff; font-size: 12px; font-weight: 600; cursor: pointer;
+}
+#update-banner .ub-restart:hover { filter: brightness(1.08); }
 
 .compact-banner {
   margin: 12px 0; border: 1px solid var(--border);
@@ -2273,6 +2279,7 @@ window.addEventListener('DOMContentLoaded', () => {
 let currentSid = null;
 let streaming = false;
 let streamAbort = null;  // 진행 중 응답 중단용 AbortController
+let _switchingSession = false;  // 세션 전환으로 SSE를 끊는 중 — 서버 task는 백그라운드 유지(중단과 구분, INT-1565)
 let pendingImages = [];  // [{data: base64, type: 'image/png', url: objectURL, path: str}]
 let pendingFiles  = [];  // [{name: str, text: str, truncated: bool}]
 let pendingImageUploads = 0;  // 서버 업로드 진행 중인 이미지 수
@@ -2557,17 +2564,23 @@ window.addEventListener('drop', (e) => {
     bar.innerHTML =
       '<span class="ub-icon">✨</span>' +
       '<span class="ub-msg">VEGA' + (ver ? ' <b>' + ver + '</b>' : ' 새 버전') +
-      ' 준비 완료 — 다음에 앱을 다시 열면 적용돼요.</span>' +
-      '<button class="ub-dismiss">확인</button>';
+      ' 준비 완료 — 지금 재시작하면 적용돼요.</span>' +
+      '<button class="ub-restart">지금 재시작</button>' +
+      '<button class="ub-dismiss">나중에</button>';
     document.body.appendChild(bar);
     requestAnimationFrame(() => bar.classList.add('show'));
     const close = () => {
       bar.classList.remove('show');
       setTimeout(() => bar.remove(), 400);
     };
+    // "지금 재시작" → Rust(listen_any 'request-restart')가 받아 백엔드+GUI 재시작.
+    // remote 페이지라 invoke 불가 → event emit 으로 전달(tauri-remote-acl-invoke-trap).
+    bar.querySelector('.ub-restart').addEventListener('click', () => {
+      const emit = window.__TAURI__?.event?.emit;
+      if (emit) { try { emit('request-restart'); } catch (_e) {} }
+    });
     bar.querySelector('.ub-dismiss').addEventListener('click', close);
-    // 12초 후 자동으로 접힘 (정보성 — 계속 떠 있을 필요 없음)
-    setTimeout(close, 12000);
+    // 재시작 액션이 있으니 자동으로 닫지 않는다 — 사용자가 "지금 재시작"/"나중에"로 결정.
   }
 
   try {
@@ -3823,6 +3836,7 @@ function makeTyper(bub) {
   let charQueue  = '';
   let networkDone = false;
   let timer = null;
+  let onFlushDone = null;  // 최종 렌더 완료 후 1회 호출(usage-meta 순서 보장, INT-1564)
   let stableLen = 0;       // displayed[0..stableLen) — 파싱 확정된 안정 블록 길이
 
   // 세그먼트 안을 stable/tail 두 노드로 나눠 tail만 틱마다 재파싱한다.
@@ -3855,6 +3869,11 @@ function makeTyper(bub) {
         // 표시할 텍스트가 있을 때만 최종 확정 — 빈 세그먼트 생성 방지.
         if (displayed) renderMarkdown(bub, displayed);
         timer = null;
+        // 최종 렌더가 끝난 뒤에 콜백 — usage-meta를 본문 세그먼트 "뒤"에 붙이려는
+        // 호출자(done 핸들러)가 순서를 보장받는다. 콜백이 먼저 usage-meta를 append하면
+        // 다음 getStreamContent가 그 뒤에 새 세그먼트를 만들어 본문이 중복 렌더됨(INT-1564).
+        const cb = onFlushDone; onFlushDone = null;
+        if (cb) cb();
         return;
       }
       timer = setTimeout(tick, TYPING_SPEED);
@@ -3889,8 +3908,11 @@ function makeTyper(bub) {
       displayed = '';
       stableLen = 0;
     },
-    flush() {
+    // onDone(선택): 최종 renderMarkdown 완료 후 1회 호출. 타이핑 애니메이션은 유지하면서
+    // usage-meta를 본문 세그먼트 뒤에 붙여 순서를 보장한다(INT-1564).
+    flush(onDone) {
       networkDone = true;
+      if (onDone) onFlushDone = onDone;
       if (!timer) tick();
     },
   };
@@ -4011,7 +4033,6 @@ function _handleSseEvent(event, payload, bub, typer, tokenBufRef) {
       refreshSessions();
     }
   } else if (event === 'done') {
-    typer.flush();
     window._awaitingApproval = false;
     if (payload.session_id) {
       currentSid = payload.session_id;
@@ -4021,12 +4042,14 @@ function _handleSseEvent(event, payload, bub, typer, tokenBufRef) {
     refreshPlanMode();
     refreshResearchMode();
     refreshYoloMode();
-    // 응답 메타 라인 (모델·토큰·tok/s·비용) 추가
-    if (payload.usage && Object.keys(payload.usage).length > 0) {
-      _renderUsageMeta(bub, payload.usage);
-    }
-    // 컨텍스트 토큰 미리보기 갱신 (히스토리 늘어남)
-    try { window.dispatchEvent(new Event('vega:context-changed')); } catch {}
+    // usage-meta·컨텍스트 갱신은 typer 최종 렌더가 끝난 뒤에 실행 — 그래야 메타 라인이
+    // 본문 세그먼트 "뒤"에 붙고, 이후 getStreamContent가 메타 라인 뒤에 새 세그먼트를
+    // 만들어 본문을 다시 그리는 중복(메타 뒤 본문 재출력)이 안 생긴다 (INT-1564).
+    const _usage = (payload.usage && Object.keys(payload.usage).length > 0) ? payload.usage : null;
+    typer.flush(() => {
+      if (_usage) _renderUsageMeta(bub, _usage);
+      try { window.dispatchEvent(new Event('vega:context-changed')); } catch {}
+    });
     return 'done';
   } else if (event === 'error') {
     window._awaitingApproval = false;
@@ -4092,6 +4115,10 @@ async function streamChat(msg, opts) {
   startProgressWatch(bub);  // 버블 내부 진행 표시 연속성 보장 (idle 갭 메우기)
 
   const MAX_RETRIES = 4;
+  // 비승인 재연결 절대 상한 — 연결은 되지만 done을 못 받아(서버 무응답·부분종료 반복)
+  // 무한 재연결에 빠지면 응답이 "무알림 멈춤" 상태가 된다. 상한 도달 시 중단 안내(INT-1566).
+  // (연결 성공 시 retryCount는 리셋되므로 retryCount만으론 무한 루프를 못 끊는다.)
+  const MAX_RECONNECTS = 10;
   const RETRY_DELAYS = [1000, 2000, 4000, 8000];  // 지수 백오프
 
   let lastEventId = 0;   // 서버 buf 인덱스 — 재연결 시 이 위치부터 재개
@@ -4176,8 +4203,8 @@ async function streamChat(msg, opts) {
       reconnectTotal = (reconnectTotal || 0) + 1;
       const awaiting = window._awaitingApproval === true && reconnectTotal < 150;
 
-      // 읽기 실패(네트워크 끊김) → 재연결 시도
-      if (readFailed && (retryCount < MAX_RETRIES || awaiting)) {
+      // 읽기 실패(네트워크 끊김) → 재연결 시도 (단 비승인 재연결은 절대 상한 내에서만)
+      if (readFailed && (retryCount < MAX_RETRIES || awaiting) && (awaiting || reconnectTotal <= MAX_RECONNECTS)) {
         if (!awaiting) retryCount++;
         const delay = awaiting ? 2000 : RETRY_DELAYS[retryCount - 1];
         if (!awaiting) {
@@ -4190,8 +4217,8 @@ async function streamChat(msg, opts) {
         continue;
       }
 
-      // done 없이 연결 종료됐고 재시도 가능하면 재연결
-      if (!streamDone && (retryCount < MAX_RETRIES || awaiting)) {
+      // done 없이 연결 종료됐고 재시도 가능하면 재연결 (단 비승인 재연결은 절대 상한 내에서만)
+      if (!streamDone && (retryCount < MAX_RETRIES || awaiting) && (awaiting || reconnectTotal <= MAX_RECONNECTS)) {
         if (!awaiting) retryCount++;
         const delay = awaiting ? 2000 : RETRY_DELAYS[retryCount - 1];
         if (!awaiting) {
@@ -4212,12 +4239,25 @@ async function streamChat(msg, opts) {
         typer = makeTyper(bub);
       } else if (!streamDone) {
         typer.flush();
-        if (!tokenBufRef.v.trim()) showError(bub, '응답이 중간에 끊겼어');
+        // done 없이 재연결 한도까지 실패 → 부분 응답이든 빈 응답이든 중단을 명시 안내(INT-1566).
+        // 토큰을 일부 받았어도 done을 못 받았으면 불완전 — 다른 일 하다 돌아온 사용자가
+        // '왜 멈췄나'를 알 수 있어야 한다. (사용자가 누른 중단[Abort]은 위 catch에서
+        // '⏹ 중단됨'으로 별도 처리되므로 여기 오지 않는다.)
+        showError(bub, tokenBufRef.v.trim()
+          ? '응답이 완료되지 않고 끊겼어요 — 다시 시도해 주세요'
+          : '응답이 중간에 끊겼어요');
         break;
       }
 
     } catch (e) {
       if (e.name === 'AbortError') {
+        // 세션 전환으로 인한 abort는 "중단"이 아니다 — 서버 task는 백그라운드로 계속 진행되고
+        // 그 세션으로 돌아오면 reattach로 이어진다. 중단 마커를 남기지 않는다 (INT-1565).
+        if (_switchingSession) {
+          _switchingSession = false;
+          userAborted = true;  // 재연결 루프 진입 방지 → finally로 직행
+          break;
+        }
         userAborted = true;
         hideThinking(bub);          // 중단 시 생각 중 스피너 제거
         clearSpinningBadges(bub);   // 미완료 도구 배지를 중단 상태로 마감
@@ -4252,6 +4292,7 @@ async function streamChat(msg, opts) {
 
 // ── 세션 목록 ──
 let _showArchived = false;  // 사이드바 토글 상태
+let _loadSeq = 0;  // loadSession 호출 순번 — 연속/동시 전환 경합 방지(INT-1565)
 
 async function refreshSessions() {
   try {
@@ -4273,7 +4314,19 @@ async function refreshSessions() {
         </div>`;
       item.addEventListener('click', (e) => {
         if (e.target.closest('.s-del')) return;
-        loadSession(s.uuid, s.name);
+        if (s.uuid === currentSid) return;  // 이미 보고 있는 세션
+        // 스트리밍 중에도 다른 대화로 전환 — 진행 중 응답은 서버 백그라운드 task로 유지하고
+        // SSE 연결만 끊는다. 돌아오면 loadSession의 active 감지가 자동 reattach (INT-1565).
+        if (streaming) {
+          _switchingSession = true;
+          if (streamAbort) streamAbort.abort();
+        }
+        // tmux attach식 낙관적 전환 — history fetch 지연과 무관하게 헤더·active·currentSid를
+        // 클릭 즉시 반영한다. 연속 클릭 시 직전 loadSession 결과는 myseq가 폐기한다 (INT-1565).
+        currentSid = s.uuid;
+        headerSid.textContent = s.uuid.slice(0, 8) + '…';
+        document.querySelectorAll('.session-item').forEach(el => el.classList.toggle('active', el.dataset.sid === s.uuid));
+        loadSession(s.uuid, s.name, { force: true });
       });
       item.querySelector('.s-del').addEventListener('click', async (e) => {
         e.stopPropagation();
@@ -4306,6 +4359,10 @@ async function loadSession(sid, name, opts) {
   // 호출 측에서 streamAbort로 현재 SSE를 먼저 끊어 streaming 플래그를 정리해야 한다.
   const force = !!(opts && opts.force);
   if (streaming && !force) return;
+  // 연속/동시 전환 경합 방지 — 이 호출의 순번을 찍고, await 뒤 자기 순번이 최신일 때만
+  // DOM·currentSid를 반영한다. 늦게 끝난 옛 전환(초기 자동로드 등)이 새 전환을 덮어쓰는
+  // 것을 막는다 (INT-1565: 응답 중 사이드바 클릭 시 활성 세션이 어긋나던 경합).
+  const myseq = ++_loadSeq;
   // 모바일: history fetch/렌더 전에 드로어를 즉시 닫아 채팅 화면으로 바로 진입.
   // (await 뒤의 closeSidebar는 ~1.5s 지연돼 드로어가 한참 열려 보였음)
   closeSidebar();
@@ -4313,6 +4370,7 @@ async function loadSession(sid, name, opts) {
     const r = await fetch(`/api/sessions/${sid}/history`);
     if (!r.ok) return;
     const data = await r.json();
+    if (myseq !== _loadSeq) return;  // 더 최신 전환이 시작됨 → 이 결과 폐기
     messagesEl.innerHTML = '';
     for (const m of data.messages) {
       if (m.role === 'human') addUserMessage(m.content);
@@ -4340,6 +4398,7 @@ async function loadSession(sid, name, opts) {
     try {
       const ar = await fetch('/api/sessions/active');
       const ad = await ar.json();
+      if (myseq !== _loadSeq) return;  // 그 사이 다른 전환 시작 → stale, reattach 안 함
       const active = (ad.active || []).find(s => s.sid === sid);
       if (active && !streaming) {
         // 새 user 메시지 없이 SSE 버퍼에만 다시 붙는다 — 진행 중인 토큰/도구 이벤트 흡수
@@ -4386,7 +4445,7 @@ function tauriInvoke(cmd, args) {
 
 async function pickWorkdir() {
   if (!currentSid) {
-    alert('먼저 대화를 시작하거나 세션을 선택해줘.');
+    alert('먼저 대화를 시작하거나 세션을 선택해 주세요.');
     return;
   }
   let chosen = null;
@@ -4399,11 +4458,11 @@ async function pickWorkdir() {
       });
     } catch (e) {
       console.error('dialog open 실패:', e);
-      chosen = prompt('작업 폴더의 절대 경로를 입력해줘:', '');
+      chosen = prompt('작업 폴더의 절대 경로를 입력해 주세요:', '');
       if (chosen) chosen = chosen.trim();
     }
   } else {
-    chosen = prompt('작업 폴더의 절대 경로를 입력해줘:', '');
+    chosen = prompt('작업 폴더의 절대 경로를 입력해 주세요:', '');
     if (chosen) chosen = chosen.trim();
   }
   if (!chosen) return;  // 취소
@@ -4565,7 +4624,7 @@ async function copyText(text) {
 async function handleCtxAction(action, path, isDir, name) {
   switch (action) {
     case 'copy-path':
-      try { await copyText(path); showToast('경로를 복사했어'); }
+      try { await copyText(path); showToast('경로를 복사했어요'); }
       catch (e) { showToast('복사 실패 — ' + (e.message || e)); }
       break;
     case 'insert-path':
@@ -5335,7 +5394,7 @@ async function buildMcpEntry() {
   const mode = document.querySelector('.mcp-tab.active').dataset.mode;
   if (mode === 'quick') {
     const cmd = document.getElementById('mcp-quick-cmd').value.trim();
-    if (!cmd) throw new Error('명령어를 붙여넣어');
+    if (!cmd) throw new Error('명령어를 붙여넣어 주세요');
     const r = await fetch('/api/mcp/parse-command', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({command: cmd}),
@@ -5438,7 +5497,7 @@ document.getElementById('mcp-save-btn').addEventListener('click', async () => {
       mcpFormResult.textContent = '✗ ' + (data.error || '저장 실패');
       return;
     }
-    showToast(`${isEdit ? '수정' : '추가'}됨 — 핫리로드로 적용해`);
+    showToast(`${isEdit ? '수정' : '추가'}됨 — 핫리로드로 적용해 주세요`);
     hideMcpForm();
     await loadMcpServers();
   } catch (e) {
@@ -7145,7 +7204,9 @@ function applyLang(lang) {
 (function initLang() {
   // 언어 토글 버튼은 제거됨(헤더 정리). 저장된 언어만 적용한다.
   // 언어 전환이 필요하면 localStorage.vega_lang 을 'en'/'ko'로 설정 후 새로고침.
-  const saved = localStorage.getItem('vega_lang') || 'ko';
+  // 저장된 선택이 없으면 브라우저/OS 언어 환경을 따른다 (한국어 환경만 ko, 그 외 en).
+  const saved = localStorage.getItem('vega_lang')
+    || ((navigator.language || '').toLowerCase().startsWith('ko') ? 'ko' : 'en');
   applyLang(saved);
 })();
 </script>
