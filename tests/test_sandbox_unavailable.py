@@ -151,6 +151,66 @@ class TestGracefulToolResults:
         assert result.get("sandbox_disabled") is True
 
 
+class TestProjectMountBoundary:
+    """연결 폴더(_PROJECT_DIR) 모드의 권한 경계 회귀 (INT-1470).
+
+    "위험해서 격리한다면서 홈 전체(/host_home)를 노출"하던 자가무효화 설계를 제거.
+    연결 폴더가 설정된 요청은 그 폴더(/project)와 VEGA data(/vega_data)만 마운트해야 한다.
+    """
+
+    def _capture_docker_runs(self, monkeypatch):
+        """subprocess.run 을 가로채 docker run argv 들을 수집. docker_state 는 'ok' 로 고정."""
+        calls: list[list[str]] = []
+
+        def _fake_run(args, *a, **kw):
+            if isinstance(args, list):
+                calls.append(args)
+            r = MagicMock()
+            r.returncode = 0
+            r.stdout = ""
+            r.stderr = ""
+            return r
+
+        monkeypatch.setattr(sb, "docker_state", lambda: "ok")
+        monkeypatch.setattr(sb.subprocess, "run", _fake_run)
+        return calls
+
+    def _docker_runs(self, calls):
+        return [c for c in calls if len(c) >= 2 and c[0] == "docker" and c[1] == "run"]
+
+    def test_project_mode_does_not_mount_full_home(self, monkeypatch, tmp_path):
+        calls = self._capture_docker_runs(monkeypatch)
+        token = sb._PROJECT_DIR.set(str(tmp_path))
+        try:
+            sb.sandbox_bash("ls")
+        finally:
+            sb._PROJECT_DIR.reset(token)
+        runs = self._docker_runs(calls)
+        assert runs, "docker run 이 호출되어야 한다"
+        for argv in runs:
+            joined = " ".join(argv)
+            # 홈 전체 마운트(/host_home)가 더 이상 없어야 한다.
+            assert "/host_home" not in joined
+            # 연결 폴더는 /project 로, VEGA data 는 /vega_data 로 마운트된다.
+            assert f"{tmp_path}:/project:rw" in joined
+            assert "/vega_data:rw" in joined
+
+    def test_rewrite_does_not_emit_host_home_in_project_mode(self):
+        token = sb._PROJECT_DIR.set("/some/connected/dir")
+        try:
+            out = sb._rewrite_host_paths("cat ~/secret.txt && cat $HOME/x")
+        finally:
+            sb._PROJECT_DIR.reset(token)
+        # 연결 폴더 모드에선 홈 경로를 /host_home 으로 매핑하지 않는다.
+        assert "/host_home" not in out
+
+    def test_legacy_mode_still_maps_home(self):
+        """연결 폴더가 없으면(영속 컨테이너 경로) 기존 ~/ → /host_home 매핑 유지."""
+        # _PROJECT_DIR 기본값(None) 상태
+        out = sb._rewrite_host_paths("cat ~/notes.txt")
+        assert "/host_home/notes.txt" in out
+
+
 class TestEnsureSandboxReady:
     def test_reason_distinguishes_missing_vs_down(self, monkeypatch, tmp_path):
         _strip_docker_from_path(monkeypatch, tmp_path)

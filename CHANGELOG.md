@@ -6,6 +6,9 @@
 
 ## [Unreleased]
 
+### Changed (코드 실행 경계 — INT-1470)
+- **샌드박스 홈 전체 마운트 제거 → 연결 폴더로 축소** (`pipeline/sandbox.py`) — 연결 작업 폴더(`_PROJECT_DIR`)가 설정된 요청은 그 폴더(`/project`, rw)와 VEGA data(`/vega_data`, rw)만 마운트한다. 기존엔 "격리"를 표방하면서 호스트 홈 전체(`$HOME`→`/host_home`)를 함께 노출해 격리 이점을 자가무효화했다. 연결 폴더 모드에선 홈→`/host_home` 경로 재작성도 하지 않아 연결 폴더 밖 호스트 경로 접근이 차단된다. 연결 폴더가 없는 레거시 영속 컨테이너 경로는 기존 동작 유지. 도구 설명(`bash_exec`/`python_exec`)도 경계를 반영하도록 갱신.
+
 ## [0.1.14] - 2026-06-11
 
 ### Added (Windows 빌드 — INT-1438)
