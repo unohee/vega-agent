@@ -66,4 +66,8 @@ def test_update_ready_banner():
     assert result["banner_appears"], "update-ready 이벤트에 배너가 안 뜸"
     assert result["shows_version"], "배너에 버전(0.1.12) 미표시"
     assert result["idempotent_single"], "중복 emit에 배너가 여러 개 생김(멱등 깨짐)"
-    assert result["dismiss_removes"], "확인 버튼으로 배너가 안 닫힘"
+    assert result["dismiss_removes"], "'나중에' 버튼으로 배너가 안 닫힘"
+    # INT-1562: 배너의 '지금 재시작' → request-restart emit + 자동닫힘 제거(사용자 결정까지 유지)
+    assert result["has_restart"], "배너에 '지금 재시작' 버튼 없음(INT-1562)"
+    assert result["restart_emits"], "재시작 버튼이 request-restart 이벤트를 emit 안 함(INT-1562)"
+    assert result["restart_keeps_banner"], "재시작 버튼 클릭이 배너를 닫음 — 자동닫힘 제거 회귀(INT-1562)"

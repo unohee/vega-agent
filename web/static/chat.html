@@ -4256,6 +4256,7 @@ async function streamChat(msg, opts) {
         if (_switchingSession) {
           _switchingSession = false;
           userAborted = true;  // 재연결 루프 진입 방지 → finally로 직행
+          typer.flush();       // 떠나는 버블의 타이퍼 타이머 정리 (orphan 렌더 방지, code-review)
           break;
         }
         userAborted = true;
@@ -4284,6 +4285,7 @@ async function streamChat(msg, opts) {
   clearSpinningBadges(bub); // 안전망 — 미완료 도구 배지를 멈춤 상태로 마감
   streaming = false;
   streamAbort = null;
+  _switchingSession = false;  // 안전망 — abort가 catch에 도달 못 한 경우의 플래그 잔류 방지 (code-review)
   setSendMode(false);
   updateWorkIndicator();
   pollActiveWork();  // 완료 직후 서버 상태 즉시 동기화
@@ -4326,6 +4328,9 @@ async function refreshSessions() {
         currentSid = s.uuid;
         headerSid.textContent = s.uuid.slice(0, 8) + '…';
         document.querySelectorAll('.session-item').forEach(el => el.classList.toggle('active', el.dataset.sid === s.uuid));
+        // 본문도 즉시 로딩 표시로 교체 — loadSession이 history fetch 실패(5xx)나 myseq 폐기로
+        // 조기 반환해도 옛 세션 본문이 새 currentSid 아래 남는 불일치를 막는다 (code-review).
+        messagesEl.innerHTML = '<div class="dir-loading" style="padding:20px">불러오는 중…</div>';
         loadSession(s.uuid, s.name, { force: true });
       });
       item.querySelector('.s-del').addEventListener('click', async (e) => {
@@ -6149,7 +6154,7 @@ function _formatBytes(n) {
   return (n / 1024 / 1024).toFixed(2) + ' MB';
 }
 
-const _IMG_EXTS = new Set(['.png','.jpg','.jpeg','.gif','.webp','.svg','.bmp','.ico']);
+const _IMG_EXTS = new Set(['.png','.jpg','.jpeg','.gif','.webp','.svg','.bmp','.ico','.heic','.heif','.tiff','.tif','.avif']);
 const _PDF_EXTS = new Set(['.pdf']);
 const _MD_EXTS  = new Set(['.md','.markdown','.rst']);
 

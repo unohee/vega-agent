@@ -760,7 +760,10 @@ pub fn run() {
                     vlog!("[VEGA] 업데이트 적용 재시작 요청");
                     #[cfg(all(feature = "daemon", not(mobile)))]
                     restart_backend(&handle);
-                    handle.restart();
+                    // restart()는 비메인 스레드(listen_any 워커)에서 호출하면 exit 처리를
+                    // 기다리며 그 스레드가 무한 park될 수 있다 — 메인 스레드에서 실행한다 (code-review).
+                    let h = handle.clone();
+                    let _ = handle.run_on_main_thread(move || { h.restart(); });
                 });
             }
 
