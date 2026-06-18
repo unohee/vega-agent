@@ -61,6 +61,34 @@ def _st(path: str, method: str = "GET", body: dict | None = None, params: dict |
         raise RuntimeError(f"Superthread API HTTP {e.code}: {err[:300]}") from e
 
 
+def _content_to_html(content: str) -> str:
+    """마크다운 content 를 Superthread(TipTap) 호환 HTML 로 변환 (INT-1571).
+
+    Superthread 카드 content 필드는 HTML 을 받는다(TipTap 에디터가 HTML 로
+    직렬화·저장 — 실측: 기존 카드 content 가 모두 <p>/<ul><li>/<hr> 형태).
+    LLM 이 생성한 마크다운을 그대로 POST 하면 헤딩·리스트·줄바꿈이 렌더되지
+    않고 한 줄로 뭉쳐 보인다. markdown 라이브러리로 시맨틱 HTML 변환하고,
+    미설치(구 배포본 등) 시 tools_google._md_to_html 로 폴백한다.
+    이미 HTML 이면 이중 변환을 피한다.
+    """
+    if not content or not content.strip():
+        return content
+    stripped = content.lstrip()
+    if stripped.startswith("<") and ("</" in content or "/>" in content):
+        return content  # 이미 HTML — 그대로 둔다
+    try:
+        import markdown as _markdown
+        return _markdown.markdown(
+            content, extensions=["extra", "nl2br", "sane_lists"]
+        )
+    except Exception:
+        try:
+            from pipeline.tools_google import _md_to_html
+            return _md_to_html(content)
+        except Exception:
+            return content
+
+
 # ── Tools ─────────────────────────────────────────────────────────────────────
 
 def superthread_list_projects() -> list[dict]:
@@ -123,7 +151,7 @@ def superthread_create_card(title: str, board_id: str, list_id: str,
     """카드 생성. board_id/list_id 는 superthread_list_boards 로 확인. due_date: YYYY-MM-DD."""
     body: dict = {"title": title, "board_id": board_id, "list_id": list_id}
     if content:
-        body["content"] = content
+        body["content"] = _content_to_html(content)
     if priority is not None:
         body["priority"] = int(priority)
     if due_date:

@@ -106,6 +106,11 @@ PLUGIN_CATALOG = [
         "desc": "베이스·레코드 조회 및 관리.",
         "icon": "A",
         "auth": "key",
+        "key_env": "AIRTABLE_PERSONAL_ACCESS_TOKEN",
+        "key_hint": "pat...",
+        "verify_url": "https://api.airtable.com/v0/meta/whoami",
+        "verify_header": "bearer",
+        # 도구 본체는 완성(개발자는 .env/keychain로 사용). 비개발자 GUI key 연결은 INT-1575.
         "status": "coming_soon",
     },
     {
@@ -121,7 +126,12 @@ PLUGIN_CATALOG = [
         "label": "GitHub",
         "desc": "이슈·PR·코드 검색.",
         "icon": "GH",
-        "auth": "oauth",
+        "auth": "key",
+        "key_env": "GITHUB_PERSONAL_ACCESS_TOKEN",
+        "key_hint": "ghp_... 또는 github_pat_...",
+        "verify_url": "https://api.github.com/user",
+        "verify_header": "bearer",
+        # 도구 본체는 완성(개발자는 .env/keychain로 사용). 비개발자 GUI key 연결은 INT-1575.
         "status": "coming_soon",
     },
 ]
