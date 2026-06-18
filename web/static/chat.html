@@ -5485,11 +5485,23 @@ async function openSettings(section) {
   }
   openLlmModal();  // 순수 웹(브라우저) 폴백
 }
+
+// 모델 칩 클릭 → 활성 프로바이더의 모델 셀렉터를 인앱 모달로 바로 펼친다.
+// 구버전 동작 복원: 데스크탑에서 빈약한 설정창 드롭다운 대신 검색·정렬·즐겨찾기(★) 피커.
+async function openModelPicker() {
+  await openLlmModal();  // 모달 + 프로바이더 목록 + 도구그룹
+  try {
+    const r = await fetch('/api/llm/providers');
+    const { providers, active } = await r.json();
+    const name = active || (providers && providers[0] && providers[0].name);
+    if (name) await editLlmModel(name);  // 풍부한 모델 피커 펼침
+  } catch (_e) { /* 활성 파악 실패 시 프로바이더 목록만 표시 */ }
+}
 // 우상단 톱니바퀴 → 설정 창(기본 탭)
 const settingsBtn = document.getElementById('open-settings');
 if (settingsBtn) settingsBtn.addEventListener('click', () => openSettings(''));
-// 우하단 모델 칩 → 설정 창 Model 섹션
-statusLlm.addEventListener('click', () => openSettings('model'));
+// 우하단 모델 칩 → 모델 셀렉터(검색·정렬·즐겨찾기) 인앱 모달
+statusLlm.addEventListener('click', () => openModelPicker());
 document.getElementById('llm-modal-close').addEventListener('click', () => llmModal.classList.add('hidden'));
 document.querySelector('#llm-modal .modal-backdrop').addEventListener('click', () => llmModal.classList.add('hidden'));
 document.addEventListener('keydown', (e) => {
