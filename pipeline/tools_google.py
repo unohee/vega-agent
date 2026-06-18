@@ -517,26 +517,18 @@ def drive_search(query: str, max_results: int = 10, account: str = "") -> list[d
 
 
 def _pdf_bytes_to_text(pdf_bytes: bytes, name: str = "") -> str:
-    import io, os, sys as _sys
-    try:
-        from pdfminer.high_level import extract_text
-        devnull = open(os.devnull, 'w')
-        old_stderr, _sys.stderr = _sys.stderr, devnull
-        try:
-            text = extract_text(io.BytesIO(pdf_bytes))
-        finally:
-            _sys.stderr = old_stderr
-            devnull.close()
-        return (f"[{name}]\n\n" if name else "") + text[:8000]
-    except ImportError:
-        pass
+    import io
+    # pypdf 단독 — requirements.txt·vega-backend.spec에 번들돼 dev/배포 동일하게 동작.
+    # (과거 pdfminer 1차 시도는 미번들이라 배포본에선 안 타던 dev-전용 경로 → 제거, INT-1561)
     try:
         import pypdf
         reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
         text = "\n".join(p.extract_text() or "" for p in reader.pages)
         return (f"[{name}]\n\n" if name else "") + text[:8000]
     except ImportError:
-        return f"[{name}] PDF — pdfminer/pypdf not installed"
+        return f"[{name}] PDF — pypdf not installed"
+    except Exception as e:
+        return f"[{name}] PDF 추출 실패: {e}"
 
 
 def _docx_to_html(path: str) -> str:

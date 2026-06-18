@@ -71,3 +71,7 @@ def test_typer_streaming_performance_and_correctness():
     assert result["final_state_exact"], "최종 상태가 전체 1회 파싱과 다름"
     assert result["break_first_closed"], "breakSegment 후 첫 세그먼트 미확정"
     assert result["fence_open_not_balanced"], "열린 코드펜스를 stable 경계로 오인"
+    # INT-1564: done 시 usage-meta를 typer flush 콜백 후로 미뤄 본문 중복(메타 뒤 재렌더)을 막는다.
+    assert result["dup_single_segment"], "done 후 본문 세그먼트가 1개 초과 — 중복 렌더 회귀(INT-1564)"
+    assert result["dup_body_once"], "본문이 2회 렌더됨 — usage-meta flush 순서 회귀(INT-1564)"
+    assert result["dup_meta_after_body"], "usage-meta가 본문 세그먼트 뒤에 위치하지 않음(INT-1564)"
