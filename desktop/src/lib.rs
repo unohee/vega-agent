@@ -416,6 +416,16 @@ fn resources_dir(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
     app.path().resource_dir().ok()
 }
 
+#[cfg(all(feature = "daemon", not(mobile), target_os = "macos"))]
+fn plist_text(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
+}
+
 /// 번들된 sidecar 백엔드 실행 파일 경로.
 /// macOS: VEGA.app/Contents/MacOS/vega-backend (externalBin 이 메인 바이너리 옆에 실림)
 /// Windows/Linux: 메인 실행 파일과 같은 디렉터리의 vega-backend(.exe)
@@ -495,6 +505,16 @@ fn ensure_launchagent(app: &tauri::AppHandle) -> bool {
     let _ = log_dir(); // cxt-ignore: error_swallow
 
     let plist_dst = launchagent_plist_path();
+    let Some(backend_path) = bundled_backend_path(app) else {
+        vlog!("[VEGA] LaunchAgent 등록 실패: 백엔드 실행 파일 경로 확인 실패");
+        return false;
+    };
+    if !backend_path.exists() {
+        vlog!("[VEGA] LaunchAgent 등록 실패: 백엔드 실행 파일 없음: {}", backend_path.display());
+        return false;
+    }
+    let backend_arg = backend_path.to_string_lossy().into_owned();
+    let backend_plist_arg = plist_text(&backend_arg);
 
     if let Some(res) = resources_dir(app) {
         let plist_src = res.join("com.unohee.vega-backend.plist");
@@ -507,7 +527,11 @@ fn ensure_launchagent(app: &tauri::AppHandle) -> bool {
                     let home = dirs_next::home_dir()
                         .map(|p| p.to_string_lossy().into_owned())
                         .unwrap_or_else(|| "/tmp".to_string());
-                    let replaced = content.replace("__HOME__", &home);
+                    let home_plist = plist_text(&home);
+                    let replaced = content
+                        .replace("__HOME__", &home_plist)
+                        .replace("__BACKEND__", &backend_plist_arg)
+                        .replace("/Applications/VEGA.app/Contents/MacOS/vega-backend", &backend_plist_arg);
                     if let Err(e) = std::fs::write(&plist_dst, replaced) {
                         vlog!("[VEGA] LaunchAgent plist 쓰기 실패: {e}");
                         return false;

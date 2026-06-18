@@ -6,7 +6,7 @@
     <string>com.unohee.vega-backend</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Applications/VEGA.app/Contents/MacOS/vega-backend</string>
+        <string>__BACKEND__</string>
     </array>
     <key>RunAtLoad</key>
     <true/>

@@ -4716,7 +4716,7 @@ dependencies = [
 
 [[package]]
 name = "vega-desktop"
-version = "0.1.25"
+version = "0.1.34"
 dependencies = [
  "dirs-next",
  "libc",
