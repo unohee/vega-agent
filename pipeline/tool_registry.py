@@ -45,6 +45,16 @@ def _superthread_check() -> bool:
     return is_authenticated()
 
 
+def _airtable_check() -> bool:
+    from pipeline.auth.airtable import is_authenticated
+    return is_authenticated()
+
+
+def _github_check() -> bool:
+    from pipeline.auth.github import is_authenticated
+    return is_authenticated()
+
+
 # ── toolset 정의 ──────────────────────────────────────────────────────────────
 # hermes-agent toolsets.py의 TOOLSETS 패턴 — 서비스(toolset) 단위로 도구를 묶고
 # check_fn 하나로 가용성을 판정한다.
@@ -88,6 +98,24 @@ WORKSPACE_TOOLSETS: dict[str, dict] = {
         ],
         "check_fn": _linear_check,
         "connect_hint": "LINEAR_API_KEY 설정 시 MCP linear__* 서버가 자동 등록된다.",
+    },
+    "airtable": {
+        "description": "Airtable (베이스/테이블/레코드 조회·생성·수정)",
+        "tools": [
+            "airtable_list_bases", "airtable_list_tables", "airtable_list_records",
+            "airtable_get_records", "airtable_create_record", "airtable_update_record",
+        ],
+        "check_fn": _airtable_check,
+        "connect_hint": "설정 → 워크스페이스에서 Airtable PAT 를 연결하라 (AIRTABLE_PERSONAL_ACCESS_TOKEN).",
+    },
+    "github": {
+        "description": "GitHub (이슈/PR 조회·생성, 코드 검색, 파일 읽기)",
+        "tools": [
+            "github_list_issues", "github_get_issue", "github_create_issue",
+            "github_list_pulls", "github_get_pull", "github_search_code", "github_read_file",
+        ],
+        "check_fn": _github_check,
+        "connect_hint": "설정 → 워크스페이스에서 GitHub PAT 를 연결하라 (GITHUB_PERSONAL_ACCESS_TOKEN).",
     },
 }
 

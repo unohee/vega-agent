@@ -33,6 +33,8 @@ pydantic==2.12.5
 
 # 파일 변환 / 사무 문서 (VEGA.app 단독 동봉 — Docker 없이 PDF/XLS/DOCX/PPTX 처리)
 mammoth==1.12.0
+# 마크다운 → HTML (Superthread 카드 content 변환 등 — INT-1571)
+markdown==3.10.2
 openpyxl==3.1.5
 pandas==2.3.3
 pillow==12.2.0
@@ -66,3 +68,6 @@ nltk==3.9.4
 # 채널 어댑터 (텔레그램 / 슬랙 봇)
 python-telegram-bot>=22
 slack_bolt>=1.21
+
+# 워크스페이스 통합 (Airtable 네이티브 도구 — INT-1498/1570)
+pyairtable==3.3.0

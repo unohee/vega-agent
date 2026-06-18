@@ -74,6 +74,15 @@ for pkg in ("matplotlib", "pptx", "openpyxl"):
     except Exception:
         pass
 
+# 워크스페이스 도구 의존 — markdown(Superthread content HTML 변환; extension 을
+# importlib 로 동적 로드해 정적 분석이 못 잡는다) + pyairtable(Airtable 도구; 함수 안
+# lazy import). 둘 다 작은 순수 파이썬 패키지라 번들 폭발 없음 (INT-1498/1570/1571).
+for pkg in ("markdown", "pyairtable"):
+    try:
+        hiddenimports += collect_submodules(pkg)
+    except Exception:
+        pass
+
 # fastmcp 데이터 파일(스키마 등) 동봉
 datas += collect_data_files("fastmcp", include_py_files=True)
 try:
