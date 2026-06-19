@@ -68,6 +68,15 @@ async function run() {
   await sleep(500);
   results.dismiss_removes = !document.getElementById('update-banner');
 
+  // 6) update-error emit → 실패 배너(조용한 실패 노출, 2026-06-19)
+  //    "재시작해도 업데이트 안 됨"의 원인을 사용자가 알 수 있도록.
+  emit('update-error');
+  await sleep(50);
+  const errBar = document.getElementById('update-banner');
+  results.error_banner_appears = !!errBar;
+  results.error_shows_warning = errBar ? errBar.innerHTML.includes('실패') : false;
+  results.error_has_dismiss = errBar ? !!errBar.querySelector('.ub-dismiss') : false;
+
   results.ok = Object.entries(results).every(([k, v]) => typeof v !== 'boolean' || v === true);
   document.getElementById('result-sink').textContent = 'RESULT_JSON:' + JSON.stringify(results);
 }

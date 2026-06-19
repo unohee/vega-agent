@@ -298,9 +298,18 @@ fn make_loading_page() -> WebviewUrl {
 // remote 페이지(localhost:8100)에선 커스텀 invoke가 ACL 차단되므로, 프론트 알림은
 // invoke 가 아니라 event emit + listen 패턴으로 전달한다(tauri-remote-acl-invoke-trap).
 // 업데이트 체크 주기 — 앱이 며칠 켜져 있어도 새 릴리즈를 잡도록 주기적으로 폴링한다.
-// 시작 직후 1회 + 이후 이 간격마다 반복 (INT-1561).
+// 시작 직후 1회 + 이후 이 간격마다 반복 + 창 포커스 시(트레이 상주로 재실행이 드문 점 보완).
+// "언제나 새 업데이트를 받도록" 주기를 1시간으로 단축 (INT-1561, 2026-06-19).
 #[cfg(all(desktop, not(any(target_os = "android", target_os = "ios"))))]
-const UPDATE_CHECK_INTERVAL_SECS: u64 = 6 * 60 * 60; // 6시간
+const UPDATE_CHECK_INTERVAL_SECS: u64 = 60 * 60; // 1시간
+
+// 업데이트 체크 공유 상태 — 주기 loop 와 창 포커스 핸들러가 함께 쓴다.
+// 설치·안내한 버전(매 주기/포커스마다 같은 새 버전 재설치·재알림 방지) +
+// 마지막 체크 시각(창 포커스 연타 시 과다 체크 디바운스).
+#[cfg(all(desktop, not(any(target_os = "android", target_os = "ios"))))]
+static UPDATE_INSTALLED_VER: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+#[cfg(all(desktop, not(any(target_os = "android", target_os = "ios"))))]
+static UPDATE_LAST_CHECK: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
 
 // 앱 시작 직후 1회 + UPDATE_CHECK_INTERVAL_SECS 마다 반복 체크.
 // tokio 직접 의존이 없어 std::thread + async_runtime::block_on 으로 주기 loop 를 돌린다
@@ -308,10 +317,8 @@ const UPDATE_CHECK_INTERVAL_SECS: u64 = 6 * 60 * 60; // 6시간
 #[cfg(all(desktop, not(any(target_os = "android", target_os = "ios"))))]
 fn spawn_update_check(app: tauri::AppHandle) {
     std::thread::spawn(move || {
-        // 이미 설치·안내한 버전 — 같은 새 버전을 매 주기 재설치/재알림하지 않도록 기억한다.
-        let mut installed_version: Option<String> = None;
         loop {
-            tauri::async_runtime::block_on(run_update_check(&app, &mut installed_version));
+            tauri::async_runtime::block_on(run_update_check(&app));
             std::thread::sleep(std::time::Duration::from_secs(UPDATE_CHECK_INTERVAL_SECS));
         }
     });
@@ -320,9 +327,22 @@ fn spawn_update_check(app: tauri::AppHandle) {
 // 1회 업데이트 체크 — 새 버전이면 조용히 내려받아 설치만 하고(재시작 안 함, INT-1434),
 // OS 알림 + `update-ready` 이벤트로 안내한다. 사용자는 배너의 "지금 재시작"으로 적용한다.
 #[cfg(all(desktop, not(any(target_os = "android", target_os = "ios"))))]
-async fn run_update_check(app: &tauri::AppHandle, installed_version: &mut Option<String>) {
+async fn run_update_check(app: &tauri::AppHandle) {
     use tauri::Emitter;
     use tauri_plugin_updater::UpdaterExt;
+
+    // 창 포커스 핸들러가 연타로 호출해도 과다 체크되지 않도록 10분 디바운스.
+    // 주기 loop(1h)는 항상 통과한다. 첫 호출(시작 직후)도 last=None 이라 통과.
+    {
+        let now = std::time::Instant::now();
+        let mut last = UPDATE_LAST_CHECK.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(t) = *last {
+            if now.duration_since(t).as_secs() < 600 {
+                return;
+            }
+        }
+        *last = Some(now);
+    }
 
     // endpoints 미설정/placeholder면 updater()가 에러를 내므로 전부 조용히 흘린다.
     let updater = match app.updater() {
@@ -337,8 +357,10 @@ async fn run_update_check(app: &tauri::AppHandle, installed_version: &mut Option
         Ok(Some(update)) => {
             let version = update.version.clone();
             // updater.check()는 실행 중 버전이 안 바뀌어 재시작 전까지 매 주기 같은 새
-            // 버전을 반환한다. 이미 설치·안내했으면 재설치/재알림하지 않는다.
-            if installed_version.as_deref() == Some(version.as_str()) {
+            // 버전을 반환한다. 이미 설치·안내했으면 재설치/재알림하지 않는다(loop/포커스 공유).
+            if UPDATE_INSTALLED_VER.lock().unwrap_or_else(|e| e.into_inner()).as_deref()
+                == Some(version.as_str())
+            {
                 return;
             }
             vlog!("[VEGA] 새 버전 발견: {version} — 백그라운드 다운로드 시작");
@@ -346,7 +368,8 @@ async fn run_update_check(app: &tauri::AppHandle, installed_version: &mut Option
             // macOS 에선 .app 이 교체되어 재시작 때 새 버전이 적용된다.
             match update.download_and_install(|_chunk, _total| {}, || {}).await {
                 Ok(_) => {
-                    *installed_version = Some(version.clone());
+                    *UPDATE_INSTALLED_VER.lock().unwrap_or_else(|e| e.into_inner()) =
+                        Some(version.clone());
                     vlog!("[VEGA] 업데이트 설치 완료(대기) — 재시작 시 v{version} 적용");
                     // OS 알림 — 앱 창을 안 보고 있어도 재시작 안내가 보이도록 (INT-1467).
                     // 실패(권한 거부 등)는 무시 — 채팅 배너가 폴백.
@@ -372,7 +395,28 @@ async fn run_update_check(app: &tauri::AppHandle, installed_version: &mut Option
                         }
                     });
                 }
-                Err(e) => vlog!("[VEGA] 업데이트 설치 실패: {e}"),
+                Err(e) => {
+                    // 조용한 실패 금지 — 다운로드/설치 실패를 사용자에게 알린다(2026-06-19).
+                    // 이게 없으면 "재시작해도 업데이트가 안 됨"의 원인을 사용자가 알 수 없다.
+                    vlog!("[VEGA] 업데이트 설치 실패: {e}");
+                    {
+                        use tauri_plugin_notification::NotificationExt;
+                        let _ = app
+                            .notification()
+                            .builder()
+                            .title("VEGA 업데이트 실패")
+                            .body("새 버전 설치에 실패했습니다 — 잠시 후 자동 재시도하며, 계속 실패하면 최신 버전 수동 설치가 필요할 수 있습니다.")
+                            .show();
+                    }
+                    let msg = format!("{e}");
+                    let app2 = app.clone();
+                    std::thread::spawn(move || {
+                        for _ in 0..3 {
+                            let _ = app2.emit("update-error", msg.clone());
+                            std::thread::sleep(std::time::Duration::from_secs(3));
+                        }
+                    });
+                }
             }
         }
         Ok(None) => vlog!("[VEGA] 최신 버전 — 업데이트 없음"),
@@ -905,6 +949,19 @@ pub fn run() {
                 if window.label() == "main" {
                     let _ = window.hide(); // cxt-ignore: error_swallow
                     api.prevent_close();
+                }
+            }
+            // 창이 포커스를 받을 때마다 업데이트 확인 — 트레이 상주로 프로세스 재시작이
+            // 드문 점을 보완한다(창을 볼 때마다 최신 확인 = "항상 업데이트 알림").
+            // run_update_check 내부 10분 디바운스로 포커스 연타 시 과다 체크를 막는다 (2026-06-19).
+            #[cfg(all(desktop, not(any(target_os = "android", target_os = "ios"))))]
+            if let WindowEvent::Focused(true) = event {
+                if window.label() == "main" {
+                    use tauri::Manager;
+                    let app = window.app_handle().clone();
+                    std::thread::spawn(move || {
+                        tauri::async_runtime::block_on(run_update_check(&app));
+                    });
                 }
             }
             #[cfg(not(desktop))]
