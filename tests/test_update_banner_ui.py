@@ -71,3 +71,7 @@ def test_update_ready_banner():
     assert result["has_restart"], "배너에 '지금 재시작' 버튼 없음(INT-1562)"
     assert result["restart_emits"], "재시작 버튼이 request-restart 이벤트를 emit 안 함(INT-1562)"
     assert result["restart_keeps_banner"], "재시작 버튼 클릭이 배너를 닫음 — 자동닫힘 제거 회귀(INT-1562)"
+    # 2026-06-19: 업데이트 다운로드/설치 실패도 사용자에게 노출(조용한 실패 금지)
+    assert result["error_banner_appears"], "update-error 이벤트에 실패 배너가 안 뜸"
+    assert result["error_shows_warning"], "실패 배너에 '실패' 안내 문구 없음"
+    assert result["error_has_dismiss"], "실패 배너에 닫기 버튼 없음"

@@ -2583,10 +2583,33 @@ window.addEventListener('drop', (e) => {
     // 재시작 액션이 있으니 자동으로 닫지 않는다 — 사용자가 "지금 재시작"/"나중에"로 결정.
   }
 
+  // 업데이트 다운로드/설치 실패 알림 — 조용한 실패를 사용자에게 노출(2026-06-19).
+  // 이게 없으면 "재시작해도 업데이트가 안 됨"의 원인을 사용자가 알 수 없다.
+  let _errShown = false;
+  function showUpdateError() {
+    if (_errShown) return;
+    _errShown = true;
+    const bar = document.createElement('div');
+    bar.id = 'update-banner';
+    bar.innerHTML =
+      '<span class="ub-icon">⚠️</span>' +
+      '<span class="ub-msg">업데이트 설치에 실패했어요 — 잠시 후 자동 재시도합니다. ' +
+      '계속 안 되면 최신 버전을 직접 받아 설치해 주세요.</span>' +
+      '<button class="ub-dismiss">닫기</button>';
+    document.body.appendChild(bar);
+    requestAnimationFrame(() => bar.classList.add('show'));
+    bar.querySelector('.ub-dismiss').addEventListener('click', () => {
+      bar.classList.remove('show');
+      setTimeout(() => bar.remove(), 400);
+      _errShown = false;  // 다음 실패 시 다시 안내
+    });
+  }
+
   try {
     listen('update-ready', (e) => showUpdateBanner(e?.payload));
+    listen('update-error', () => showUpdateError());
   } catch (err) {
-    console.error('[vega] update-ready 리스너 등록 실패:', err);
+    console.error('[vega] update 리스너 등록 실패:', err);
   }
 })();
 

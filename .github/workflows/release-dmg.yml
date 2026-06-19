@@ -192,6 +192,15 @@ jobs:
             --cache-control "no-cache, max-age=0" --remote
           echo "✓ R2 업로드 완료 — https://download.intrect.io/${PREFIX}/latest.json"
 
+      - name: 자동 업데이트 매니페스트 검증 (배포된 latest.json + tar.gz HTTP 200)
+        # 업로드 직후 공개 도메인에서 darwin 자산이 올바른 버전·서명·HTTP 200 으로
+        # 서빙되는지 확인 — "업데이트가 안 받아짐" 회귀를 릴리즈 시점에 잡는다.
+        # 표준 urllib 은 CF 봇 보호에 403 으로 막혀(2026-06-19 실측) verify script 가
+        # requests 를 쓴다 → 빌드 venv(arm64_vega_env, requirements 동기화됨)의 python 으로 실행.
+        run: |
+          "$HOME/dev/arm64_vega_env/bin/python3" scripts/verify_update_manifest.py \
+            "${{ steps.version.outputs.version }}" --platforms darwin-aarch64,darwin-x86_64
+
       - name: GitHub Release 생성/갱신
         uses: softprops/action-gh-release@v2
         with:

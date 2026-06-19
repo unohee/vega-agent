@@ -66,3 +66,71 @@ def test_version_sync():
         l.split('"')[1] for l in cargo.splitlines() if l.startswith("version = ")
     )
     assert conf_ver == cargo_ver, f"tauri.conf={conf_ver} != Cargo={cargo_ver}"
+
+
+# ── verify_update_manifest.py 로직 (배포 후 CI 검증 스크립트) ──────────────────
+
+def _load_verify():
+    spec = importlib.util.spec_from_file_location(
+        "vum", REPO / "scripts" / "verify_update_manifest.py")
+    m = importlib.util.module_from_spec(spec)
+    sys.modules["vum"] = m
+    spec.loader.exec_module(m)
+    return m
+
+
+def test_verify_passes_on_good_manifest(monkeypatch):
+    v = _load_verify()
+
+    def fake_get(url, timeout=20.0, retries=3, head=False):
+        if url.endswith("latest.json"):
+            return 200, json.dumps({
+                "version": "0.1.40",
+                "platforms": {
+                    "darwin-aarch64": {"url": "https://x/v0.1.40/a.tar.gz", "signature": "sig"},
+                },
+            }).encode()
+        return 200, None  # 자산 HEAD
+
+    monkeypatch.setattr(v, "_get", fake_get)
+    errs = v.verify("0.1.40", ["darwin-aarch64"], v.DEFAULT_BASE, True)
+    assert errs == [], errs
+
+
+def test_verify_detects_missing_sig_bad_url_and_missing_platform(monkeypatch):
+    v = _load_verify()
+
+    def fake_get(url, timeout=20.0, retries=3, head=False):
+        if url.endswith("latest.json"):
+            return 200, json.dumps({
+                "version": "0.1.39",  # 기대(0.1.40)와 불일치
+                "platforms": {
+                    # 빈 서명 + 구버전 url, darwin-x86_64 누락
+                    "darwin-aarch64": {"url": "https://x/v0.1.39/a.tar.gz", "signature": ""},
+                },
+            }).encode()
+        return 200, None
+
+    monkeypatch.setattr(v, "_get", fake_get)
+    errs = v.verify("0.1.40", ["darwin-aarch64", "darwin-x86_64"], v.DEFAULT_BASE, True)
+    joined = " ".join(errs)
+    assert "version" in joined          # top-level 버전 불일치
+    assert "signature" in joined        # 빈 서명
+    assert "v0.1.40" in joined          # 자산 url 버전 불일치
+    assert "누락" in joined             # darwin-x86_64 누락
+
+
+def test_verify_flags_non_200_asset(monkeypatch):
+    v = _load_verify()
+
+    def fake_get(url, timeout=20.0, retries=3, head=False):
+        if url.endswith("latest.json"):
+            return 200, json.dumps({
+                "version": "0.1.40",
+                "platforms": {"darwin-aarch64": {"url": "https://x/v0.1.40/a.tar.gz", "signature": "sig"}},
+            }).encode()
+        return 404, None  # 자산 HTTP 404
+
+    monkeypatch.setattr(v, "_get", fake_get)
+    errs = v.verify("0.1.40", ["darwin-aarch64"], v.DEFAULT_BASE, True)
+    assert any("404" in e for e in errs), errs
