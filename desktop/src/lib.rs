@@ -318,7 +318,7 @@ static UPDATE_LAST_CHECK: std::sync::Mutex<Option<std::time::Instant>> = std::sy
 fn spawn_update_check(app: tauri::AppHandle) {
     std::thread::spawn(move || {
         loop {
-            tauri::async_runtime::block_on(run_update_check(&app));
+            tauri::async_runtime::block_on(run_update_check(&app, false));
             std::thread::sleep(std::time::Duration::from_secs(UPDATE_CHECK_INTERVAL_SECS));
         }
     });
@@ -327,13 +327,14 @@ fn spawn_update_check(app: tauri::AppHandle) {
 // 1회 업데이트 체크 — 새 버전이면 조용히 내려받아 설치만 하고(재시작 안 함, INT-1434),
 // OS 알림 + `update-ready` 이벤트로 안내한다. 사용자는 배너의 "지금 재시작"으로 적용한다.
 #[cfg(all(desktop, not(any(target_os = "android", target_os = "ios"))))]
-async fn run_update_check(app: &tauri::AppHandle) {
+async fn run_update_check(app: &tauri::AppHandle, force: bool) {
     use tauri::Emitter;
     use tauri_plugin_updater::UpdaterExt;
 
     // 창 포커스 핸들러가 연타로 호출해도 과다 체크되지 않도록 10분 디바운스.
     // 주기 loop(1h)는 항상 통과한다. 첫 호출(시작 직후)도 last=None 이라 통과.
-    {
+    // force=true(수동 "지금 업데이트 확인" 버튼)는 디바운스를 무시하고 즉시 체크한다.
+    if !force {
         let now = std::time::Instant::now();
         let mut last = UPDATE_LAST_CHECK.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(t) = *last {
@@ -440,7 +441,13 @@ async fn run_update_check(app: &tauri::AppHandle) {
                 }
             }
         }
-        Ok(None) => vlog!("[VEGA] 최신 버전 — 업데이트 없음"),
+        Ok(None) => {
+            vlog!("[VEGA] 최신 버전 — 업데이트 없음");
+            // 수동 확인(force)일 때만 "이미 최신" 을 프론트에 알린다(update-none 배너).
+            if force {
+                let _ = app.emit("update-none", env!("CARGO_PKG_VERSION"));
+            }
+        }
         Err(e) => vlog!("[VEGA] 업데이트 체크 실패(무시): {e}"),
     }
 }
@@ -832,6 +839,22 @@ pub fn run() {
                 });
             }
 
+            // 수동 업데이트 확인 — 설정/메뉴의 "지금 업데이트 확인" 버튼이 emit 한다.
+            // remote 페이지(chat.html)라 invoke 불가 → listen 으로 받아 run_update_check 를
+            // force(디바운스 무시)로 즉시 실행. 결과는 update-ready/update-none/update-error 이벤트.
+            #[cfg(all(desktop, not(any(target_os = "android", target_os = "ios"))))]
+            {
+                use tauri::Listener;
+                let handle = app.handle().clone();
+                app.listen_any("check-update-now", move |_event| {
+                    vlog!("[VEGA] 수동 업데이트 확인 요청");
+                    let h = handle.clone();
+                    tauri::async_runtime::spawn(async move {
+                        run_update_check(&h, true).await;
+                    });
+                });
+            }
+
             // remote 페이지(설치 마법사·chat·설정)에서 외부 브라우저를 여는 경로.
             // open-settings와 같은 이유 — remote 오리진은 invoke(open_url)가 ACL에 막힌다.
             {
@@ -1004,7 +1027,7 @@ pub fn run() {
                     use tauri::Manager;
                     let app = window.app_handle().clone();
                     std::thread::spawn(move || {
-                        tauri::async_runtime::block_on(run_update_check(&app));
+                        tauri::async_runtime::block_on(run_update_check(&app, false));
                     });
                 }
             }

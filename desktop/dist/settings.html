@@ -259,6 +259,12 @@
             <div id="sys-docker-action"></div>
           </div>
         </div>
+        <div class="section">
+          <div class="row">
+            <div class="field"><label id="t-update-lbl" data-i18n="updateLbl">앱 업데이트</label><div class="hint" id="update-status" data-i18n="updateIdle">새 버전을 자동으로 확인·설치합니다.</div></div>
+            <div><button class="btn-secondary" id="check-update-btn" data-i18n="updateCheck">지금 확인</button></div>
+          </div>
+        </div>
       </div>
 
       <!-- ── Agent (지침 .md) ── -->
@@ -477,6 +483,7 @@ const I18N = {
     searchKeyLbl:'Auth key (X-VEGA-Key)', searchKeyHint:'For edge authentication. Leave empty if none. Saved keys are not shown.',
     searchKeyPh:'(optional) auth key', searchSave:'Save · test connection',
     sysH:'System', sysD:'The code-execution sandbox requires Docker Desktop. Chat, memory and workspace integrations work fine without it.',
+    updateLbl:'App update', updateIdle:'New versions are checked and installed automatically.', updateCheck:'Check now', updateChecking:'Checking…', updateLatest:"You're on the latest version.", updateInstalled:'Update installed — restart to apply.', updateFailed:'Check failed — will retry shortly.',
     // ── Agent 패널 ──
     agentD:'Agent behavior instructions. Edit _default (immutable constitution) and RULES (mutable rules) directly.',
     agentSelLbl:'Instruction file', agentOptDefault:'_default (constitution)', agentOptRules:'RULES (mutable rules)',
@@ -626,6 +633,7 @@ const I18N = {
     searchKeyLbl:'인증 키 (X-VEGA-Key)', searchKeyHint:'엣지 인증용. 없으면 비워둠. 저장된 키는 표시되지 않습니다.',
     searchKeyPh:'(선택) 인증 키', searchSave:'저장 · 연결 테스트',
     sysH:'시스템', sysD:'코드 실행 샌드박스는 Docker Desktop이 필요합니다. 없어도 채팅·메모리·워크스페이스 연동은 정상 작동합니다.',
+    updateLbl:'앱 업데이트', updateIdle:'새 버전을 자동으로 확인·설치합니다.', updateCheck:'지금 확인', updateChecking:'확인 중…', updateLatest:'최신 버전입니다.', updateInstalled:'업데이트 설치됨 — 재시작하면 적용돼요.', updateFailed:'확인 실패 — 잠시 후 재시도합니다.',
     // ── Agent 패널 ──
     agentD:'에이전트 행동 지침. _default(불변 헌법)와 RULES(가변 규칙)를 직접 편집합니다.',
     agentSelLbl:'지침 파일', agentOptDefault:'_default (헌법)', agentOptRules:'RULES (가변 규칙)',
@@ -1647,6 +1655,26 @@ $('sched-save').addEventListener('click', async () => {
   // 초기 탭: URL #section(톱니바퀴/모델 칩이 지정) 우선, 없으면 Model
   const initSec = location.hash.slice(1);
   activatePane(initSec && document.getElementById('pane-' + initSec) ? initSec : 'model');
+})();
+
+// ── 수동 앱 업데이트 확인 (Tauri event → lib.rs listen_any 가 force 로 즉시 체크) ──
+// remote 가 아닌 로컬 설정창이지만, 결과 이벤트(update-ready/none/error)는 lib.rs 가
+// 전역 emit 하므로 여기서 listen 으로 받아 상태를 표시한다.
+(function setupUpdateCheck(){
+  const TE = window.__TAURI__ && window.__TAURI__.event;
+  const btn = document.getElementById('check-update-btn');
+  const st = document.getElementById('update-status');
+  if (!TE || !btn || !st) return;
+  const set = (msg) => { st.textContent = msg; st.removeAttribute('data-i18n'); btn.disabled = false; };
+  btn.addEventListener('click', async () => {
+    st.textContent = T.updateChecking; st.removeAttribute('data-i18n'); btn.disabled = true;
+    try { await TE.emit('check-update-now'); } catch (_e) {}
+    // 응답 이벤트가 없을 수도(이미 디바운스 우회로 즉시 체크) → 8s 후 버튼 복구.
+    setTimeout(() => { btn.disabled = false; }, 8000);
+  });
+  TE.listen('update-none', () => set(T.updateLatest));
+  TE.listen('update-ready', () => set(T.updateInstalled));
+  TE.listen('update-error', () => set(T.updateFailed));
 })();
 
 // ── Docker 자동 설치 모달 ─────────────────────────────────────────────────
