@@ -829,7 +829,30 @@ pub fn run() {
             // 모바일(iOS/Android): 전체화면 단일 윈도우 — TitleBarStyle/inner_size 등은
             // macOS 전용이거나 무의미하므로 적용하지 않는다.
             let win_builder = WebviewWindowBuilder::new(app, "main", make_loading_page())
-                .title("VEGA");
+                .title("VEGA")
+                // 외부 http(s) 링크는 WebView 안에서 열지 않고 OS 기본 브라우저로 보낸다.
+                // (앱 안에서 브라우저가 열리던 버그 수정 — 2026-06-19). 내부(로컬 백엔드 daemon,
+                // client 원격 서버, 앱 자산/로딩 페이지)는 정상 네비게이션 허용.
+                .on_navigation(|url| {
+                    let s = url.as_str();
+                    if s.starts_with("tauri://") || s.starts_with("about:") || s.starts_with("data:") {
+                        return true;
+                    }
+                    if s.starts_with("http://localhost") || s.starts_with("http://127.0.0.1")
+                        || s.starts_with("https://localhost") || s.starts_with("https://127.0.0.1")
+                    {
+                        return true;
+                    }
+                    let base = backend_base();
+                    if !base.is_empty() && s.starts_with(&base) {
+                        return true;
+                    }
+                    if s.starts_with("http://") || s.starts_with("https://") {
+                        let _ = open_url(s.to_string());
+                        return false; // WebView 네비게이션 차단
+                    }
+                    true
+                });
 
             #[cfg(desktop)]
             let win_builder = win_builder
