@@ -109,3 +109,92 @@ def get_recent_briefs(limit: int = 4) -> list[dict]:
 def get_recent_narratives(limit: int = 7) -> list[dict]:
     """최근 narrative 목록. agent.db 분기에서는 미구현 — 빈 리스트 반환."""
     return []
+
+
+_SUGGEST_SYSTEM = (
+    "사용자의 최근 작업 세션 목록을 보고, 지금 이어서 하면 좋을 구체적이고 실행 가능한 "
+    "할 일 3~5개를 제안한다. 추상적 조언이 아니라 바로 착수할 수 있는 행동이어야 한다.\n"
+    "반드시 JSON 배열만 반환한다: [{\"title\": \"짧은 할 일(한 줄)\", \"reason\": \"왜 지금 하면 좋은지 한 문장\"}]\n"
+    "규칙:\n"
+    "- 마크다운 펜스·설명 없이 JSON 만 출력\n"
+    "- 사용자가 쓴 언어(대부분 한국어)로 작성\n"
+    "- title 은 8단어 이하"
+)
+
+
+def suggest_todos(_unused=None) -> list[dict]:
+    """최근 작업 세션을 컨텍스트로 active provider 가 다음 할 일을 제안한다.
+
+    위젯/대시보드 'VEGA 제안' 배너의 소스. Things 미연동이라 제안 표시 전용
+    (수락→외부 트래커 연동은 없음). 컨텍스트(의미있는 최근 세션)가 없으면 빈
+    리스트를 반환한다 → dashboard 가 "활동이 쌓이면 제안" 안내를 띄운다.
+
+    tier="cloud" 로 호출 → llm_providers.json 의 tiers.cloud(없으면 active)로
+    라우팅. 로컬 SLM 유무와 무관하게 동작한다(INT goal 2026-06-19 검증).
+    반환: [{"title": str, "reason": str}] (최대 6개).
+    """
+    import asyncio
+    import re
+
+    try:
+        from pipeline.session_store import list_sessions
+        sessions = list_sessions(limit=12)
+    except Exception as e:
+        print(f"[heartbeat] suggest_todos: session load failed: {e}")
+        return []
+
+    # 기본 제목/거의 빈 세션 제외 — 의미있는 활동만 컨텍스트로
+    meaningful = [
+        s for s in sessions
+        if s.get("name") and s["name"] != "VEGA 세션" and (s.get("msg_count") or 0) >= 2
+    ]
+    if not meaningful:
+        return []
+
+    ctx = "\n".join(
+        f"- {s['name']} ({s.get('msg_count', 0)}개 메시지)" for s in meaningful[:10]
+    )
+    user_msg = f"최근 작업 세션:\n{ctx}\n\n이어서 하면 좋을 할 일을 제안해줘."
+
+    collected = {"text": ""}
+
+    async def _run() -> None:
+        from pipeline.streaming import stream_gpt
+
+        async def on_token(tok: str) -> None:
+            collected["text"] += tok
+
+        await stream_gpt(
+            messages=[{"role": "user", "content": user_msg}],
+            system=_SUGGEST_SYSTEM,
+            on_token=on_token,
+            tier="cloud",
+            ce_mode=False,
+        )
+
+    loop = None
+    try:
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(_run())
+    except Exception as e:
+        print(f"[heartbeat] suggest_todos: LLM call failed: {e}")
+        return []
+    finally:
+        if loop is not None:
+            loop.close()
+
+    raw = re.sub(r"^```[a-z]*\s*|\s*```$", "", collected["text"].strip(), flags=re.DOTALL).strip()
+    try:
+        data = json.loads(raw)
+    except Exception:
+        return []
+    if not isinstance(data, list):
+        return []
+    out = []
+    for s in data:
+        if isinstance(s, dict) and s.get("title"):
+            out.append({
+                "title": str(s["title"]).strip(),
+                "reason": str(s.get("reason", "")).strip(),
+            })
+    return out[:6]

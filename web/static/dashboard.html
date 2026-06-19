@@ -669,7 +669,7 @@ async function loadSuggestions() {
     const d = await (await fetch('/api/todos/suggest')).json();
     const sugg = d.suggestions || [];
     banner.classList.remove('hidden');
-    if (!sugg.length) { text.innerHTML = 'VEGA 제안 없음 — gemma 분석 대기 중'; return; }
+    if (!sugg.length) { text.innerHTML = 'VEGA 제안 없음 — 작업 세션이 쌓이면 제안해 드려요'; return; }
     text.innerHTML = `<b>VEGA 제안 ${sugg.length}건</b> — ${esc(sugg[0].title)}`;
     toggle.style.display = '';
     list.innerHTML = sugg.map((s, i) => `
