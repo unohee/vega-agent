@@ -23,20 +23,29 @@ DEFAULT_BASE = "https://download.intrect.io/vega/updates"
 # 표준 urllib 은 download.intrect.io(Cloudflare 봇 보호)에 403 으로 막힌다(urllib 의 TLS
 # fingerprint 를 봇으로 판정 — 2026-06-19 실측: urllib 403 / curl·requests·reqwest 200).
 # 실제 updater(reqwest)와 같은 "정상 클라이언트" 조건으로 검증하기 위해 requests 를 쓴다.
-def _get(url: str, timeout: float = 20.0, retries: int = 3, head: bool = False):
-    """공개 GET/HEAD — R2 전파 지연 대비 재시도. (status, body_bytes_or_None) 반환."""
+def _get(url: str, timeout: float = 20.0, retries: int = 6, head: bool = False):
+    """공개 GET/HEAD — R2/CF 전파 지연 대비 재시도(자산 HEAD 가 막 업로드돼 늦을 수 있음).
+    HTTP 4xx/5xx 도 전파 지연일 수 있으니 200/3xx 가 아니면 재시도. (status, body) 반환."""
     last = None
     for i in range(retries):
         try:
             if head:
                 r = requests.head(url, timeout=timeout, allow_redirects=True)
-                return r.status_code, None
-            r = requests.get(url, timeout=timeout)
-            return r.status_code, r.content
+                if r.status_code < 400:
+                    return r.status_code, None
+                last = f"HTTP {r.status_code}"
+            else:
+                r = requests.get(url, timeout=timeout)
+                if r.status_code < 400:
+                    return r.status_code, r.content
+                last = f"HTTP {r.status_code}"
         except Exception as e:  # noqa: BLE001 — 네트워크 전부 재시도 대상
             last = e
-            if i < retries - 1:
-                time.sleep(5)
+        if i < retries - 1:
+            time.sleep(8)
+    # 마지막 시도 결과(상태 코드)를 그대로 반환 — 호출부가 4xx/5xx 를 에러로 기록.
+    if isinstance(last, str) and last.startswith("HTTP "):
+        return int(last.split()[1]), None
     raise RuntimeError(f"{url} 접근 실패({retries}회): {last}")
 
 
@@ -74,6 +83,13 @@ def verify(version: str, platforms: list[str], base: str, version_match: bool) -
 
 
 def main() -> int:
+    # Windows 콘솔(cp1252/cp949)에서 ✓/✗·한국어 print 가 UnicodeEncodeError 로 죽어
+    # 검증이 통과여도 step 이 실패하던 것 방지 (make_latest_json 과 동일 함정).
+    for _s in (sys.stdout, sys.stderr):
+        try:
+            _s.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
     ap = argparse.ArgumentParser(description="배포된 업데이트 매니페스트 검증")
     ap.add_argument("version", help="기대 버전 (예: 0.1.40)")
     ap.add_argument("--platforms", default="darwin-aarch64,darwin-x86_64",
