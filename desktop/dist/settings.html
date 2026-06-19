@@ -130,57 +130,57 @@
 </style>
 </head>
 <body>
-  <div class="titlebar" id="t-title">Settings</div>
+  <div class="titlebar" id="t-title" data-i18n="title">Settings</div>
   <div class="shell">
     <nav class="nav" id="nav">
-      <div class="nav-item active" data-pane="model"><span class="ico">◆</span><span id="t-nav-model">Model</span></div>
-      <div class="nav-item" data-pane="workspace"><span class="ico">🔗</span><span id="t-nav-ws">Workspace</span></div>
-      <div class="nav-item" data-pane="mcp"><span class="ico">⚙</span><span id="t-nav-mcp">MCP</span></div>
-      <div class="nav-item" data-pane="tools"><span class="ico">🧰</span><span id="t-nav-tools">Tools &amp; Keys</span></div>
-      <div class="nav-item" data-pane="agent"><span class="ico">📝</span><span id="t-nav-agent">Agent</span></div>
-      <div class="nav-item" data-pane="memory"><span class="ico">🧠</span><span id="t-nav-memory">Memory &amp; Context</span></div>
-      <div class="nav-item" data-pane="voice"><span class="ico">🎙</span><span id="t-nav-voice">Voice</span></div>
-      <div class="nav-item" data-pane="advanced"><span class="ico">⏱</span><span id="t-nav-adv">Advanced</span></div>
-      <div class="nav-item" data-pane="app"><span class="ico">▦</span><span id="t-nav-app">App</span></div>
-      <div class="nav-item" data-pane="lang"><span class="ico">⌘</span><span id="t-nav-lang">Language</span></div>
+      <div class="nav-item active" data-pane="model"><span class="ico">◆</span><span id="t-nav-model" data-i18n="navModel">Model</span></div>
+      <div class="nav-item" data-pane="workspace"><span class="ico">🔗</span><span id="t-nav-ws" data-i18n="navWs">Workspace</span></div>
+      <div class="nav-item" data-pane="mcp"><span class="ico">⚙</span><span id="t-nav-mcp" data-i18n="navMcp">MCP</span></div>
+      <div class="nav-item" data-pane="tools"><span class="ico">🧰</span><span id="t-nav-tools" data-i18n="navTools">Tools &amp; Keys</span></div>
+      <div class="nav-item" data-pane="agent"><span class="ico">📝</span><span id="t-nav-agent" data-i18n="navAgent">Agent</span></div>
+      <div class="nav-item" data-pane="memory"><span class="ico">🧠</span><span id="t-nav-memory" data-i18n="navMemory">Memory &amp; Context</span></div>
+      <div class="nav-item" data-pane="voice"><span class="ico">🎙</span><span id="t-nav-voice" data-i18n="navVoice">Voice</span></div>
+      <div class="nav-item" data-pane="advanced"><span class="ico">⏱</span><span id="t-nav-adv" data-i18n="navAdv">Advanced</span></div>
+      <div class="nav-item" data-pane="app"><span class="ico">▦</span><span id="t-nav-app" data-i18n="navApp">App</span></div>
+      <div class="nav-item" data-pane="lang"><span class="ico">⌘</span><span id="t-nav-lang" data-i18n="navLang">Language</span></div>
     </nav>
     <div class="panel">
 
       <!-- ── Model ── -->
       <div class="pane active" id="pane-model">
-        <h1 id="t-model-h">Model</h1>
-        <p class="desc" id="t-model-d">활성 프로바이더와 기본 모델. 새 세션에 적용됩니다.</p>
+        <h1 id="t-model-h" data-i18n="modelH">Model</h1>
+        <p class="desc" id="t-model-d" data-i18n="modelD">활성 프로바이더와 기본 모델. 새 세션에 적용됩니다.</p>
         <div class="section">
           <div class="row">
-            <div class="field"><label id="t-mp-lbl">프로바이더</label><div class="hint" id="t-mp-hint">tier 라우팅의 기본(fallback) 프로바이더</div></div>
+            <div class="field"><label id="t-mp-lbl" data-i18n="mpLbl">프로바이더</label><div class="hint" id="t-mp-hint" data-i18n="mpHint">tier 라우팅의 기본(fallback) 프로바이더</div></div>
             <select id="model-prov"></select>
           </div>
           <!-- 미인증 프로바이더 선택 시 인라인 인증 UI -->
           <div id="model-auth-section" style="display:none">
             <div class="row" id="model-key-row">
-              <div class="field"><label>API 키</label><div class="hint" id="model-key-hint">—</div></div>
+              <div class="field"><label data-i18n="modelKeyLbl">API 키</label><div class="hint" id="model-key-hint">—</div></div>
               <input type="text" id="model-key" placeholder="sk-..." autocomplete="off" />
             </div>
             <div class="row" id="model-url-row" style="display:none">
-              <div class="field"><label>서버 URL</label><div class="hint">OpenAI 호환 로컬/온프레미스 서버</div></div>
+              <div class="field"><label data-i18n="modelUrlLbl">서버 URL</label><div class="hint" data-i18n="modelUrlHint">OpenAI 호환 로컬/온프레미스 서버</div></div>
               <input type="text" id="model-url" placeholder="http://localhost:1234/v1" />
             </div>
             <div class="row">
-              <div class="field"><label>인증</label><div class="hint" id="model-auth-hint">—</div></div>
-              <button class="btn" id="model-auth-apply">연결</button>
+              <div class="field"><label data-i18n="modelAuthLbl">인증</label><div class="hint" id="model-auth-hint">—</div></div>
+              <button class="btn" id="model-auth-apply" data-i18n="connect">연결</button>
             </div>
           </div>
           <div class="row">
-            <div class="field"><label id="t-mm-lbl">기본 모델</label><div class="hint" id="model-cat-hint">프로바이더 카탈로그에서 선택</div></div>
+            <div class="field"><label id="t-mm-lbl" data-i18n="mmLbl">기본 모델</label><div class="hint" id="model-cat-hint" data-i18n="modelCatHint">프로바이더 카탈로그에서 선택</div></div>
             <select id="model-name"></select>
           </div>
           <div class="row">
-            <div class="field"><label id="t-mt-lbl">tier 라우팅</label><div class="hint" id="model-tier-hint">단순 검색→fast, 복잡 추론→cloud 자동 분기</div></div>
+            <div class="field"><label id="t-mt-lbl" data-i18n="mtLbl">tier 라우팅</label><div class="hint" id="model-tier-hint" data-i18n="modelTierHint">단순 검색→fast, 복잡 추론→cloud 자동 분기</div></div>
             <span class="pill" id="model-tier-pill">3-tier</span>
           </div>
           <div class="row">
-            <div class="field"><label id="t-mtools-lbl">활성 도구</label><div class="hint" id="model-tools-hint">—</div></div>
-            <button class="btn" id="model-apply">적용</button>
+            <div class="field"><label id="t-mtools-lbl" data-i18n="activeTools">활성 도구</label><div class="hint" id="model-tools-hint">—</div></div>
+            <button class="btn" id="model-apply" data-i18n="apply">적용</button>
           </div>
           <div class="row"><span class="status" id="model-status"></span></div>
         </div>
@@ -188,22 +188,22 @@
 
       <!-- ── Workspace 연결 (Google/Slack/Superthread OAuth) ── -->
       <div class="pane" id="pane-workspace">
-        <h1 id="t-ws-h">워크스페이스 연결</h1>
-        <p class="desc" id="t-ws-d">Google·Slack·Superthread 계정 연결을 관리합니다. 온보딩 이후에도 여기서 연결·해제할 수 있습니다.</p>
+        <h1 id="t-ws-h" data-i18n="wsH">워크스페이스 연결</h1>
+        <p class="desc" id="t-ws-d" data-i18n="wsD">Google·Slack·Superthread 계정 연결을 관리합니다. 온보딩 이후에도 여기서 연결·해제할 수 있습니다.</p>
         <div class="section">
-          <div id="ws-list"><div class="empty">불러오는 중…</div></div>
+          <div id="ws-list"><div class="empty" data-i18n="loading">불러오는 중…</div></div>
         </div>
       </div>
 
       <!-- ── MCP ── -->
       <div class="pane" id="pane-mcp">
-        <h1 id="t-mcp-h">MCP</h1>
-        <p class="desc" id="t-mcp-d">Model Context Protocol 서버 — 외부 도구를 노출합니다.</p>
+        <h1 id="t-mcp-h" data-i18n="mcpH">MCP</h1>
+        <p class="desc" id="t-mcp-d" data-i18n="mcpD">Model Context Protocol 서버 — 외부 도구를 노출합니다.</p>
         <div class="section">
-          <div id="mcp-list"><div class="empty" id="mcp-empty">불러오는 중…</div></div>
+          <div id="mcp-list"><div class="empty" id="mcp-empty" data-i18n="loading">불러오는 중…</div></div>
         </div>
         <div class="section">
-          <h2 id="t-mcp-add">새 서버 추가</h2>
+          <h2 id="t-mcp-add" data-i18n="mcpAdd">새 서버 추가</h2>
           <div class="row">
             <div class="field"><label>Name</label></div>
             <input type="text" id="mcp-name" placeholder="filesystem" />
@@ -227,35 +227,35 @@
       <!-- ── Tools & Keys ── -->
       <div class="pane" id="pane-tools">
         <h1 id="t-tools-h">Tools &amp; Keys</h1>
-        <p class="desc" id="t-tools-d">도구 그룹을 켜고 끕니다. 끄면 LLM 프롬프트에서 제외돼 토큰을 아낍니다.</p>
+        <p class="desc" id="t-tools-d" data-i18n="toolsD">도구 그룹을 켜고 끕니다. 끄면 LLM 프롬프트에서 제외돼 토큰을 아낍니다.</p>
         <div class="section">
           <div class="row">
-            <div class="field"><label id="t-tools-sum-lbl">활성 도구</label><div class="hint" id="tools-summary">—</div></div>
-            <button class="btn" id="tools-save">적용</button>
+            <div class="field"><label id="t-tools-sum-lbl" data-i18n="activeTools">활성 도구</label><div class="hint" id="tools-summary">—</div></div>
+            <button class="btn" id="tools-save" data-i18n="apply">적용</button>
           </div>
-          <div id="tools-list"><div class="empty">불러오는 중…</div></div>
+          <div id="tools-list"><div class="empty" data-i18n="loading">불러오는 중…</div></div>
           <div class="row"><span class="status" id="tools-status"></span></div>
         </div>
 
-        <h2 id="t-search-h" style="margin-top:22px">검색 엔드포인트</h2>
-        <p class="desc" id="t-search-d">웹 검색(web_search)이 쓰는 SearXNG 인스턴스. 비우면 로컬 기본값(localhost:18888)을 씁니다. 사내 배포 시 공용 인스턴스 URL과 인증 키를 입력하세요.</p>
+        <h2 id="t-search-h" style="margin-top:22px" data-i18n="searchH">검색 엔드포인트</h2>
+        <p class="desc" id="t-search-d" data-i18n="searchD">웹 검색(web_search)이 쓰는 SearXNG 인스턴스. 비우면 로컬 기본값(localhost:18888)을 씁니다. 사내 배포 시 공용 인스턴스 URL과 인증 키를 입력하세요.</p>
         <div class="section">
           <div class="row">
-            <div class="field"><label id="t-search-url-lbl">SearXNG URL</label><div class="hint" id="search-url-hint">예: https://search.example.com</div></div>
+            <div class="field"><label id="t-search-url-lbl">SearXNG URL</label><div class="hint" id="search-url-hint" data-i18n="searchUrlHint">예: https://search.example.com</div></div>
             <input type="text" id="search-url" placeholder="http://localhost:18888" style="width:260px" />
           </div>
           <div class="row">
-            <div class="field"><label id="t-search-key-lbl">인증 키 (X-VEGA-Key)</label><div class="hint" id="search-key-hint">엣지 인증용. 없으면 비워둠. 저장된 키는 표시되지 않습니다.</div></div>
-            <input type="password" id="search-key" placeholder="(선택) 인증 키" style="width:260px" autocomplete="off" />
+            <div class="field"><label id="t-search-key-lbl" data-i18n="searchKeyLbl">인증 키 (X-VEGA-Key)</label><div class="hint" id="search-key-hint" data-i18n="searchKeyHint">엣지 인증용. 없으면 비워둠. 저장된 키는 표시되지 않습니다.</div></div>
+            <input type="password" id="search-key" placeholder="(선택) 인증 키" data-i18n-placeholder="searchKeyPh" style="width:260px" autocomplete="off" />
           </div>
-          <div class="actions"><span class="status" id="search-status"></span><button class="btn primary" id="search-save">저장 · 연결 테스트</button></div>
+          <div class="actions"><span class="status" id="search-status"></span><button class="btn primary" id="search-save" data-i18n="searchSave">저장 · 연결 테스트</button></div>
         </div>
 
-        <h2 id="t-sys-h" style="margin-top:22px">시스템</h2>
-        <p class="desc" id="t-sys-d">코드 실행 샌드박스는 Docker Desktop이 필요합니다. 없어도 채팅·메모리·워크스페이스 연동은 정상 작동합니다.</p>
+        <h2 id="t-sys-h" style="margin-top:22px" data-i18n="sysH">시스템</h2>
+        <p class="desc" id="t-sys-d" data-i18n="sysD">코드 실행 샌드박스는 Docker Desktop이 필요합니다. 없어도 채팅·메모리·워크스페이스 연동은 정상 작동합니다.</p>
         <div class="section">
           <div class="row">
-            <div class="field"><label id="t-sys-docker-lbl">Docker</label><div class="hint" id="sys-docker">확인 중…</div></div>
+            <div class="field"><label id="t-sys-docker-lbl">Docker</label><div class="hint" id="sys-docker" data-i18n="checking">확인 중…</div></div>
             <div id="sys-docker-action"></div>
           </div>
         </div>
@@ -264,173 +264,173 @@
       <!-- ── Agent (지침 .md) ── -->
       <div class="pane" id="pane-agent">
         <h1 id="t-agent-h">Agent</h1>
-        <p class="desc" id="t-agent-d">에이전트 행동 지침. _default(불변 헌법)와 RULES(가변 규칙)를 직접 편집합니다.</p>
+        <p class="desc" id="t-agent-d" data-i18n="agentD">에이전트 행동 지침. _default(불변 헌법)와 RULES(가변 규칙)를 직접 편집합니다.</p>
         <div class="section">
           <div class="row">
-            <div class="field"><label id="t-agent-sel-lbl">지침 파일</label><div class="hint" id="agent-md-hint">data/agents/{name}.md</div></div>
+            <div class="field"><label id="t-agent-sel-lbl" data-i18n="agentSelLbl">지침 파일</label><div class="hint" id="agent-md-hint">data/agents/{name}.md</div></div>
             <select id="agent-md-select">
-              <option value="_default">_default (헌법)</option>
-              <option value="RULES">RULES (가변 규칙)</option>
+              <option value="_default" data-i18n="agentOptDefault">_default (헌법)</option>
+              <option value="RULES" data-i18n="agentOptRules">RULES (가변 규칙)</option>
             </select>
           </div>
           <div class="field" style="margin:8px 0">
-            <textarea id="agent-md-text" spellcheck="false" style="min-height:260px">불러오는 중…</textarea>
+            <textarea id="agent-md-text" spellcheck="false" style="min-height:260px" data-i18n="loading">불러오는 중…</textarea>
           </div>
-          <div class="actions"><span class="status" id="agent-md-status"></span><button class="btn primary" id="agent-md-save">저장</button></div>
+          <div class="actions"><span class="status" id="agent-md-status"></span><button class="btn primary" id="agent-md-save" data-i18n="save">저장</button></div>
         </div>
       </div>
 
       <!-- ── Memory & Context ── -->
       <div class="pane" id="pane-memory">
         <h1 id="t-mem-h">Memory &amp; Context</h1>
-        <p class="desc" id="t-mem-d">대화 압축(compaction)과 장기 기억 동작. VEGA는 메시지 수 기준으로 오래된 대화를 요약합니다.</p>
+        <p class="desc" id="t-mem-d" data-i18n="memD">대화 압축(compaction)과 장기 기억 동작. VEGA는 메시지 수 기준으로 오래된 대화를 요약합니다.</p>
         <div class="section">
-          <h2>컨텍스트 압축</h2>
+          <h2 data-i18n="memCompactH">컨텍스트 압축</h2>
           <div class="row">
-            <div class="field"><label>압축 임계값</label><div class="hint">대화가 이 메시지 수를 넘으면 오래된 부분을 요약 (기본 20)</div></div>
+            <div class="field"><label data-i18n="memThresholdLbl">압축 임계값</label><div class="hint" data-i18n="memThresholdHint">대화가 이 메시지 수를 넘으면 오래된 부분을 요약 (기본 20)</div></div>
             <input type="text" id="mem-threshold" placeholder="20" style="width:90px" />
           </div>
           <div class="row">
-            <div class="field"><label>보존 메시지 수</label><div class="hint">요약 후 그대로 남길 최근 메시지 (임계값보다 작아야 함, 기본 6)</div></div>
+            <div class="field"><label data-i18n="memKeepLbl">보존 메시지 수</label><div class="hint" data-i18n="memKeepHint">요약 후 그대로 남길 최근 메시지 (임계값보다 작아야 함, 기본 6)</div></div>
             <input type="text" id="mem-keep" placeholder="6" style="width:90px" />
           </div>
           <div class="row">
-            <div class="field"><label>메모리 자동 업데이트</label><div class="hint">압축 시 persona·이벤트·규칙을 자동 갱신</div></div>
+            <div class="field"><label data-i18n="memAutoLbl">메모리 자동 업데이트</label><div class="hint" data-i18n="memAutoHint">압축 시 persona·이벤트·규칙을 자동 갱신</div></div>
             <div class="toggle on" id="mem-auto-toggle"></div>
           </div>
-          <div class="actions"><span class="status" id="mem-status"></span><button class="btn primary" id="mem-save">저장</button></div>
+          <div class="actions"><span class="status" id="mem-status"></span><button class="btn primary" id="mem-save" data-i18n="save">저장</button></div>
         </div>
         <div class="section">
-          <h2>저장된 기억 (조회)</h2>
-          <div class="row"><div class="field"><label>페르소나 섹션</label></div><span class="pill" id="mem-persona">—</span></div>
-          <div class="row"><div class="field"><label>이벤트</label></div><span class="pill" id="mem-events">—</span></div>
-          <div class="row"><div class="field"><label>엔티티</label></div><span class="pill" id="mem-entities">—</span></div>
-          <div class="row"><div class="field"><label>세션 요약</label></div><span class="pill" id="mem-sessions">—</span></div>
+          <h2 data-i18n="memStoredH">저장된 기억 (조회)</h2>
+          <div class="row"><div class="field"><label data-i18n="memPersonaLbl">페르소나 섹션</label></div><span class="pill" id="mem-persona">—</span></div>
+          <div class="row"><div class="field"><label data-i18n="memEventsLbl">이벤트</label></div><span class="pill" id="mem-events">—</span></div>
+          <div class="row"><div class="field"><label data-i18n="memEntitiesLbl">엔티티</label></div><span class="pill" id="mem-entities">—</span></div>
+          <div class="row"><div class="field"><label data-i18n="memSessionsLbl">세션 요약</label></div><span class="pill" id="mem-sessions">—</span></div>
         </div>
 
         <!-- Memory Inspector — 조회·편집·삭제 (INT-1395) -->
         <div class="section">
           <h2 id="t-mem-insp">Memory Inspector</h2>
-          <p class="desc">VEGA가 나에 대해 기억하는 것을 직접 보고 편집·삭제합니다. 다음 대화에 반영됩니다.</p>
+          <p class="desc" data-i18n="memInspDesc">VEGA가 나에 대해 기억하는 것을 직접 보고 편집·삭제합니다. 다음 대화에 반영됩니다.</p>
           <div id="mem-insp-tabs" role="tablist" style="display:flex;gap:4px;margin-bottom:8px">
-            <button class="side-tab active" data-mtab="persona">페르소나</button>
-            <button class="side-tab" data-mtab="events">이벤트</button>
-            <button class="side-tab" data-mtab="entities">엔티티</button>
+            <button class="side-tab active" data-mtab="persona" data-i18n="memTabPersona">페르소나</button>
+            <button class="side-tab" data-mtab="events" data-i18n="memTabEvents">이벤트</button>
+            <button class="side-tab" data-mtab="entities" data-i18n="memTabEntities">엔티티</button>
           </div>
-          <input type="text" id="mem-insp-q" placeholder="검색…" style="width:100%;margin-bottom:8px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px 10px;font-size:12px" />
-          <div id="mem-insp-list"><div class="empty">불러오는 중…</div></div>
+          <input type="text" id="mem-insp-q" placeholder="검색…" data-i18n-placeholder="searchPh" style="width:100%;margin-bottom:8px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px 10px;font-size:12px" />
+          <div id="mem-insp-list"><div class="empty" data-i18n="loading">불러오는 중…</div></div>
           <div class="row"><span class="status" id="mem-insp-status"></span></div>
         </div>
       </div>
 
       <!-- ── Voice (STT) ── -->
       <div class="pane" id="pane-voice">
-        <h1 id="t-voice-h">Voice</h1>
-        <p class="desc" id="t-voice-d">음성 입력(STT) 설정. 마이크 버튼이 사용합니다.</p>
+        <h1 id="t-voice-h" data-i18n="voiceH">Voice</h1>
+        <p class="desc" id="t-voice-d" data-i18n="voiceD">음성 입력(STT) 설정. 마이크 버튼이 사용합니다.</p>
         <div class="section">
           <div class="row">
-            <div class="field"><label>Provider</label><div class="hint">STT 프로바이더</div></div>
-            <select id="stt-provider"><option value="openai">OpenAI Whisper</option><option value="local">로컬</option></select>
+            <div class="field"><label>Provider</label><div class="hint" data-i18n="voiceProvHint">STT 프로바이더</div></div>
+            <select id="stt-provider"><option value="openai">OpenAI Whisper</option><option value="local" data-i18n="voiceLocal">로컬</option></select>
           </div>
           <div class="row">
-            <div class="field"><label>Model</label><div class="hint">예: whisper-1</div></div>
+            <div class="field"><label>Model</label><div class="hint" data-i18n="voiceModelHint">예: whisper-1</div></div>
             <input type="text" id="stt-model" placeholder="whisper-1" />
           </div>
           <div class="row">
-            <div class="field"><label>Language</label><div class="hint">비우면 자동 감지</div></div>
+            <div class="field"><label>Language</label><div class="hint" data-i18n="voiceLangHint">비우면 자동 감지</div></div>
             <input type="text" id="stt-language" placeholder="(auto)" />
           </div>
-          <div class="actions"><span class="status" id="stt-status"></span><button class="btn primary" id="stt-save">저장</button></div>
+          <div class="actions"><span class="status" id="stt-status"></span><button class="btn primary" id="stt-save" data-i18n="save">저장</button></div>
         </div>
       </div>
 
       <!-- ── Advanced (Scheduler) ── -->
       <div class="pane" id="pane-advanced">
         <h1 id="t-adv-h">Advanced</h1>
-        <p class="desc" id="t-adv-d">자동 브리핑 스케줄러. LaunchAgent로 아침/저녁에 실행됩니다.</p>
+        <p class="desc" id="t-adv-d" data-i18n="advD">자동 브리핑 스케줄러. LaunchAgent로 아침/저녁에 실행됩니다.</p>
         <div class="section">
-          <h2>아침 브리핑</h2>
+          <h2 data-i18n="schedMorningH">아침 브리핑</h2>
           <div class="row">
-            <div class="field"><label>활성화</label><div class="hint" id="sched-morning-hint">—</div></div>
+            <div class="field"><label data-i18n="schedEnableLbl">활성화</label><div class="hint" id="sched-morning-hint">—</div></div>
             <div class="toggle" id="sched-morning-toggle"></div>
           </div>
           <div class="row">
-            <div class="field"><label>시각</label><div class="hint">HH:MM</div></div>
+            <div class="field"><label data-i18n="schedTimeLbl">시각</label><div class="hint">HH:MM</div></div>
             <input type="text" id="sched-morning-time" placeholder="08:00" style="width:90px" />
           </div>
         </div>
         <div class="section">
-          <h2>저녁 리뷰</h2>
+          <h2 data-i18n="schedEveningH">저녁 리뷰</h2>
           <div class="row">
-            <div class="field"><label>활성화</label><div class="hint" id="sched-evening-hint">—</div></div>
+            <div class="field"><label data-i18n="schedEnableLbl">활성화</label><div class="hint" id="sched-evening-hint">—</div></div>
             <div class="toggle" id="sched-evening-toggle"></div>
           </div>
           <div class="row">
-            <div class="field"><label>시각</label><div class="hint">HH:MM</div></div>
+            <div class="field"><label data-i18n="schedTimeLbl">시각</label><div class="hint">HH:MM</div></div>
             <input type="text" id="sched-evening-time" placeholder="20:00" style="width:90px" />
           </div>
-          <div class="actions"><span class="status" id="sched-status"></span><button class="btn" id="sched-runnow">지금 실행</button><button class="btn primary" id="sched-save">저장</button></div>
+          <div class="actions"><span class="status" id="sched-status"></span><button class="btn" id="sched-runnow" data-i18n="schedRunNow">지금 실행</button><button class="btn primary" id="sched-save" data-i18n="save">저장</button></div>
         </div>
       </div>
 
       <!-- ── App ── -->
       <div class="pane" id="pane-app">
-        <h1 id="t-app-h">App</h1>
-        <p class="desc" id="t-app-d">서버 연결과 창 동작.</p>
+        <h1 id="t-app-h" data-i18n="appH">App</h1>
+        <p class="desc" id="t-app-d" data-i18n="appD">서버 연결과 창 동작.</p>
         <div class="section">
-          <h2 id="t-sec-conn">Connection</h2>
+          <h2 id="t-sec-conn" data-i18n="secConn">Connection</h2>
           <div class="row">
-            <div class="field"><label id="t-url-lbl">Server URL</label><div class="hint" id="t-url-hint">Local VEGA FastAPI server</div></div>
+            <div class="field"><label id="t-url-lbl" data-i18n="urlLbl">Server URL</label><div class="hint" id="t-url-hint" data-i18n="urlHint">Local VEGA FastAPI server</div></div>
             <input type="text" id="server-url" placeholder="http://localhost:8100" />
           </div>
           <div class="row">
-            <div class="field"><label id="t-conn-lbl">Status</label><div class="hint" id="conn-hint">—</div></div>
-            <button class="btn" id="test-conn">Test</button>
+            <div class="field"><label id="t-conn-lbl" data-i18n="connLbl">Status</label><div class="hint" id="conn-hint">—</div></div>
+            <button class="btn" id="test-conn" data-i18n="test">Test</button>
           </div>
         </div>
         <div class="section">
-          <h2 id="t-sec-app">Behavior</h2>
+          <h2 id="t-sec-app" data-i18n="secApp">Behavior</h2>
           <div class="row">
-            <div class="field"><label id="t-hide-lbl">Close = Hide</label><div class="hint" id="t-hide-hint">Red button hides to tray instead of quitting</div></div>
+            <div class="field"><label id="t-hide-lbl" data-i18n="hideLbl">Close = Hide</label><div class="hint" id="t-hide-hint" data-i18n="hideHint">Red button hides to tray instead of quitting</div></div>
             <div class="toggle on" id="close-to-tray"></div>
           </div>
         </div>
 
         <!-- 데이터 & 프라이버시 (INT-1383) -->
         <div class="section">
-          <h2 id="t-sec-data">데이터 &amp; 프라이버시</h2>
-          <p class="desc">내 데이터는 모두 이 맥에 있습니다(<span id="data-dir-path">—</span>). 모델로는 프롬프트·도구 결과만 나갑니다. 원본 DB·파일·토큰은 전송되지 않습니다.</p>
-          <div id="data-asset-list"><div class="empty">불러오는 중…</div></div>
+          <h2 id="t-sec-data" data-i18n="dataPrivacyH">데이터 &amp; 프라이버시</h2>
+          <p class="desc"><span data-i18n="dataPrivacyDescPre">내 데이터는 모두 이 맥에 있습니다(</span><span id="data-dir-path">—</span><span data-i18n="dataPrivacyDescPost">). 모델로는 프롬프트·도구 결과만 나갑니다. 원본 DB·파일·토큰은 전송되지 않습니다.</span></p>
+          <div id="data-asset-list"><div class="empty" data-i18n="loading">불러오는 중…</div></div>
           <div class="row" style="margin-top:8px">
-            <div class="field"><label>토큰 포함</label><div class="hint">export/wipe에 OAuth·API 토큰 포함</div></div>
+            <div class="field"><label data-i18n="dataIncludeTokensLbl">토큰 포함</label><div class="hint" data-i18n="dataIncludeTokensHint">export/wipe에 OAuth·API 토큰 포함</div></div>
             <div class="toggle" id="data-include-tokens"></div>
           </div>
           <div class="actions">
             <span class="status" id="data-status"></span>
-            <button class="btn" id="data-export">내보내기 (zip)</button>
-            <button class="btn" id="data-wipe" style="border-color:rgba(248,81,73,.4);color:#f85149">전체 삭제</button>
+            <button class="btn" id="data-export" data-i18n="dataExport">내보내기 (zip)</button>
+            <button class="btn" id="data-wipe" style="border-color:rgba(248,81,73,.4);color:#f85149" data-i18n="dataWipe">전체 삭제</button>
           </div>
         </div>
 
         <!-- 온보딩 초기화 (빌드 디버깅용) -->
         <div class="section">
-          <h2>온보딩 초기화</h2>
-          <p class="desc">설치 마법사를 처음부터 다시 보고 싶을 때 사용합니다. 온보딩 완료 표시를 지워 다음 실행 시 마법사로 시작합니다(빌드·온보딩 흐름 디버깅용).</p>
+          <h2 data-i18n="onbResetH">온보딩 초기화</h2>
+          <p class="desc" data-i18n="onbResetDesc">설치 마법사를 처음부터 다시 보고 싶을 때 사용합니다. 온보딩 완료 표시를 지워 다음 실행 시 마법사로 시작합니다(빌드·온보딩 흐름 디버깅용).</p>
           <div class="actions">
             <span class="status" id="onb-reset-status"></span>
-            <button class="btn" id="onb-reset-soft">온보딩만 초기화</button>
-            <button class="btn" id="onb-reset-full" style="border-color:rgba(248,81,73,.4);color:#f85149">전체 초기화 (토큰 포함)</button>
+            <button class="btn" id="onb-reset-soft" data-i18n="onbResetSoft">온보딩만 초기화</button>
+            <button class="btn" id="onb-reset-full" style="border-color:rgba(248,81,73,.4);color:#f85149" data-i18n="onbResetFull">전체 초기화 (토큰 포함)</button>
           </div>
         </div>
       </div>
 
       <!-- ── Language ── -->
       <div class="pane" id="pane-lang">
-        <h1 id="t-lang-h">Language</h1>
-        <p class="desc" id="t-lang-d">표시 언어.</p>
+        <h1 id="t-lang-h" data-i18n="langH">Language</h1>
+        <p class="desc" id="t-lang-d" data-i18n="langD">표시 언어.</p>
         <div class="section">
           <div class="row">
-            <div class="field"><label id="t-lang-lbl">Display language</label><div class="hint" id="t-lang-hint">Applies to tray menu immediately</div></div>
+            <div class="field"><label id="t-lang-lbl" data-i18n="langLbl">Display language</label><div class="hint" id="t-lang-hint" data-i18n="langHint">Applies to tray menu immediately</div></div>
             <select id="lang-select">
               <option value="en">English</option>
               <option value="ko">한국어</option>
@@ -441,30 +441,312 @@
 
       <div class="actions">
         <span class="status" id="save-status"></span>
-        <button class="btn" id="cancel">Close</button>
-        <button class="btn primary" id="save">Save</button>
+        <button class="btn" id="cancel" data-i18n="close">Close</button>
+        <button class="btn primary" id="save" data-i18n="save">Save</button>
       </div>
     </div>
   </div>
 
 <script>
 const I18N = {
-  en: { title:'Settings', navModel:'Model', navMcp:'MCP', navApp:'App', navLang:'Language',
-    modelH:'Model', modelD:'Active provider and default model. Applies to new sessions.',
-    mcpH:'MCP', mcpD:'Model Context Protocol servers — expose external tools.', mcpAdd:'Add server',
-    appH:'App', appD:'Server connection and window behavior.', secConn:'Connection', secApp:'Behavior',
-    langH:'Language', langD:'Display language.',
-    close:'Close', save:'Save', test:'Test', checking:'Checking…', notChecked:'—',
+  en: {
+    // ── 네비게이션 / 공통 헤딩 ──
+    title:'Settings', navModel:'Model', navWs:'Workspace', navMcp:'MCP', navTools:'Tools & Keys',
+    navAgent:'Agent', navMemory:'Memory & Context', navVoice:'Voice', navAdv:'Advanced', navApp:'App', navLang:'Language',
+    // ── 공통 버튼/상태 ──
+    close:'Close', save:'Save', apply:'Apply', test:'Test', connect:'Connect',
+    checking:'Checking…', notChecked:'—', loading:'Loading…',
+    activeTools:'Active tools', saved:'✓ Saved',
     connOk:(a,m)=>a==='ok'?(m?`Connected · Auth OK (${m} min)`:'Connected · Auth OK'):`Connected · ${a}`,
-    connErr:(m)=>`Failed: ${m}`, saved:'✓ Saved' },
-  ko: { title:'환경설정', navModel:'모델', navMcp:'MCP', navApp:'앱', navLang:'언어',
-    modelH:'모델', modelD:'활성 프로바이더와 기본 모델. 새 세션에 적용됩니다.',
-    mcpH:'MCP', mcpD:'Model Context Protocol 서버 — 외부 도구를 노출합니다.', mcpAdd:'새 서버 추가',
-    appH:'앱', appD:'서버 연결과 창 동작.', secConn:'서버 연결', secApp:'동작',
-    langH:'언어', langD:'표시 언어.',
-    close:'닫기', save:'저장', test:'연결 테스트', checking:'확인 중…', notChecked:'확인 안 됨',
+    connErr:(m)=>`Failed: ${m}`,
+    // ── Model 패널 ──
+    modelH:'Model', modelD:'Active provider and default model. Applies to new sessions.',
+    mpLbl:'Provider', mpHint:'Default (fallback) provider for tier routing',
+    modelKeyLbl:'API key', modelUrlLbl:'Server URL', modelUrlHint:'OpenAI-compatible local/on-prem server',
+    modelAuthLbl:'Authentication',
+    mmLbl:'Default model', modelCatHint:'Pick from the provider catalog',
+    mtLbl:'Tier routing', modelTierHint:'Simple search → fast, complex reasoning → cloud, auto-routed',
+    // ── Workspace 패널 ──
+    wsH:'Workspace connections', wsD:'Manage Google, Slack and Superthread account connections. You can connect or disconnect here after onboarding too.',
+    // ── MCP 패널 ──
+    mcpH:'MCP', mcpD:'Model Context Protocol servers — expose external tools.', mcpAdd:'Add server',
+    // ── Tools & Keys 패널 ──
+    toolsD:'Toggle tool groups on and off. Disabling one removes it from the LLM prompt and saves tokens.',
+    searchH:'Search endpoint', searchD:'The SearXNG instance used by web search (web_search). Leave empty to use the local default (localhost:18888). For team deployment, enter a shared instance URL and auth key.',
+    searchUrlHint:'e.g. https://search.example.com',
+    searchKeyLbl:'Auth key (X-VEGA-Key)', searchKeyHint:'For edge authentication. Leave empty if none. Saved keys are not shown.',
+    searchKeyPh:'(optional) auth key', searchSave:'Save · test connection',
+    sysH:'System', sysD:'The code-execution sandbox requires Docker Desktop. Chat, memory and workspace integrations work fine without it.',
+    // ── Agent 패널 ──
+    agentD:'Agent behavior instructions. Edit _default (immutable constitution) and RULES (mutable rules) directly.',
+    agentSelLbl:'Instruction file', agentOptDefault:'_default (constitution)', agentOptRules:'RULES (mutable rules)',
+    // ── Memory & Context 패널 ──
+    memD:'Conversation compaction and long-term memory behavior. VEGA summarizes older conversation based on message count.',
+    memCompactH:'Context compaction',
+    memThresholdLbl:'Compaction threshold', memThresholdHint:'When a conversation exceeds this many messages, older parts are summarized (default 20)',
+    memKeepLbl:'Messages to keep', memKeepHint:'Recent messages kept verbatim after summarizing (must be less than threshold, default 6)',
+    memAutoLbl:'Auto-update memory', memAutoHint:'Automatically refresh persona, events and rules on compaction',
+    memStoredH:'Stored memory (view)',
+    memPersonaLbl:'Persona sections', memEventsLbl:'Events', memEntitiesLbl:'Entities', memSessionsLbl:'Session summaries',
+    memInspDesc:'Review and edit what VEGA remembers about you. Changes apply to the next conversation.',
+    memTabPersona:'Persona', memTabEvents:'Events', memTabEntities:'Entities',
+    searchPh:'Search…',
+    // ── Voice 패널 ──
+    voiceH:'Voice', voiceD:'Voice input (STT) settings. Used by the microphone button.',
+    voiceProvHint:'STT provider', voiceLocal:'Local', voiceModelHint:'e.g. whisper-1', voiceLangHint:'Leave empty to auto-detect',
+    // ── Advanced (Scheduler) 패널 ──
+    advD:'Automatic briefing scheduler. Runs in the morning/evening via LaunchAgent.',
+    schedMorningH:'Morning brief', schedEveningH:'Evening review',
+    schedEnableLbl:'Enabled', schedTimeLbl:'Time', schedRunNow:'Run now',
+    // ── App 패널 ──
+    appH:'App', appD:'Server connection and window behavior.',
+    secConn:'Connection', urlLbl:'Server URL', urlHint:'Local VEGA FastAPI server',
+    connLbl:'Status', secApp:'Behavior', hideLbl:'Close = Hide', hideHint:'Red button hides to tray instead of quitting',
+    dataPrivacyH:'Data & privacy',
+    dataPrivacyDescPre:'All your data stays on this Mac (', dataPrivacyDescPost:'). Only prompts and tool results leave for the model. Raw DBs, files and tokens are never sent.',
+    dataIncludeTokensLbl:'Include tokens', dataIncludeTokensHint:'Include OAuth/API tokens in export/wipe',
+    dataExport:'Export (zip)', dataWipe:'Wipe all',
+    onbResetH:'Reset onboarding', onbResetDesc:'Use this when you want to see the setup wizard from scratch. Clears the onboarding-complete flag so the next launch starts with the wizard (for build/onboarding-flow debugging).',
+    onbResetSoft:'Reset onboarding only', onbResetFull:'Full reset (incl. tokens)',
+    // ── Language 패널 ──
+    langH:'Language', langD:'Display language.', langLbl:'Display language', langHint:'Applies to tray menu immediately',
+    // ── 동적 JS 문자열 ──
+    wsDescSlack:'Channels · read & search DMs', wsDescSuperthread:'Boards · read & manage cards',
+    // Workspace 상태/버튼
+    wsNotConfigured:'Not configured (no OAuth client in this build)', wsConnected:'Connected', wsNotConnected:'Not connected',
+    wsBtnDisconnect:'Disconnect', wsBtnDisconnecting:'Disconnecting…', wsBtnConnect:'Connect',
+    wsDisconnectFail:'Disconnect failed: ', wsConsentPrompt:'Please complete the consent screen in your browser…',
+    wsTimeout:'Timed out — please try again.',
+    // Google 멀티계정
+    gAppByo:'My GCP app', gAppBuiltin:'Built-in VEGA app (unverified)', gAppNone:'No OAuth app',
+    gNoApp:'No OAuth app to connect — register your own GCP app below',
+    gAccountsConnected:(n,src)=>`${n} account(s) connected · ${src}`, gNotConnectedSrc:(src)=>`Not connected · ${src}`,
+    gBtnAddAccount:'Add account', gDefaultAccount:'Default account',
+    gLoginPrompt:'Complete the login in your browser… (an account picker will appear)',
+    gStatusFail:(e)=>`Status check failed (${e}) — check the backend connection. Retrying…`,
+    gTimeout:'Timed out — if you finished logging in, reopen the panel to check',
+    // Google BYO 등록 UI
+    byoTitleUsing:'Connect with my Google app (in use ✓)', byoTitleRec:'Connect with my Google app (recommended)',
+    byoIntro:'The built-in VEGA app is unverified by Google, so an "unverified app" warning appears. Using your own GCP app removes the warning and is free (2–3 min).',
+    byoStep1:'Create a GCP project', byoStep2Enable:' enabled',
+    byoStep3Link:'OAuth consent screen', byoStep3Rest:' → External → add your email as a test user (or publish the app)',
+    byoStep4Link:'Credentials → OAuth client ID', byoStep4Rest:' → type Desktop app → Create → download JSON',
+    byoStep5pre:'Paste the contents of the downloaded ', byoStep5post:' below',
+    byoRedirLabel:'Authorized redirect URI (if needed): ', byoCopy:'Copy', byoCopied:'Copied',
+    byoSaveBtn:'Register my app', byoRevertBtn:'Revert to built-in app',
+    byoPasteJson:'Paste the JSON', byoRegistering:'Registering…',
+    byoSavedReauth:'✓ Registered — the client changed, so the existing connection was disconnected. Press "Connect" to log in again',
+    byoSavedOk:'✓ Registered — now press "Connect" to log in',
+    byoConfirmClear:'Clear your GCP app registration and revert to the built-in VEGA app?\n(The existing Google connection will be disconnected and you will need to log in again)',
+    byoProcessing:'Processing…', byoReverted:'Reverted to built-in app — existing connection disconnected, press "Connect" to log in again',
+    byoFail:'Failed: ',
+    gConfirmDisconnect:(email)=>`Disconnect ${email}?\nGmail, Calendar and Drive tools will lose access to this account.`,
+    // 모델 인증/적용 상태
+    backendUnreachable:'Cannot connect to the backend', modelUnauth:'Unauthenticated — connecting will activate this provider',
+    processing:'Processing…', loginDone:'✓ Login complete', fail:'Failed', activated:'✓ Activated',
+    enterApiKey:'Enter the API key', loginBrowser:'Log in via browser',
+    keySavedActivated:'✓ Key saved · activated', timedOut:'Timed out', errPrefix:'Error: ',
+    applying:'Applying…', appliedModel:(n,m)=>`✓ Applied: ${n} / ${m}`,
+    catalogLoading:'Loading…', modelCurrent:' (current)', modelCount:(n)=>`${n} models`,
+    catalogFail:' (catalog lookup failed)', catalogFailKeep:'Catalog lookup failed — keeping current model',
+    toolGroupsFail:'Tool group lookup failed',
+    activeToolsSummary:(a,t,tok)=>`${a}/${t} tools active · ~${tok} tokens`,
+    toolsSummary:(a,t,tok)=>`${a}/${t} active · ~${tok} tokens`,
+    // MCP 동적
+    mcpNone:'No MCP servers registered.', mcpAuto:'auto', mcpConfigured:'configured',
+    mcpBtnTest:'Test', mcpBtnDelete:'Delete', mcpTesting:'Testing…',
+    mcpTestFail:'✗ Failed', mcpTestErr:'✗ Error', mcpListFail:'Failed to load MCP server list',
+    mcpConfirmDel:(name)=>`Delete MCP server '${name}'?`,
+    mcpEnterName:'Enter a name', mcpJsonErr:'JSON parse error', mcpSaving:'Saving…',
+    mcpReloading:'reloading…', mcpReloadFail:'reload failed',
+    // 검색 엔드포인트 동적
+    searchKeySaved:'Key saved', searchTesting:'Testing connection…', searchConnOk:'Connection OK',
+    // 시스템 체크 (Docker)
+    dockerInstalled:'✓ Installed — code execution (bash/python) tools active',
+    dockerMissing:'Not installed (optional) — code execution tools will be disabled. Chat, memory and workspace work fine.',
+    dockerAutoInstall:'Auto install', dockerManualInstall:'Install manually',
+    dockerStatusFail:'Status check failed (backend not responding)',
+    // 도구 그룹 행
+    toolGroupRow:(c,tok)=>`${c} tools · ~${tok} tokens`,
+    // 데이터 & 프라이버시 동적
+    dataNone:'No data', dataLoadFail:'Lookup failed', dataTotal:'Total',
+    dataExporting:'Exporting…', dataExported:(b)=>`✓ Saved (${b})`,
+    dataConfirmWipe:(inc)=>'This moves local data to the trash (recoverable).' + (inc ? ' Tokens included.' : '') + '\nContinue?',
+    dataWiping:'Wiping…', dataWiped:(n,note)=>`✓ ${n} removed (${note})`,
+    // 온보딩 초기화 동적
+    onbConfirmFull:'This resets onboarding plus all LLM token/provider settings (trash, recoverable).\nIt returns to a clean first-run state. Continue?',
+    onbConfirmSoft:'This clears the onboarding-complete flag (trash, recoverable).\nDBs, memory and tokens are kept. The next launch starts with the setup wizard. Continue?',
+    onbResetting:'Resetting…', onbReset:(note)=>`✓ Reset — ${note}`, onbRestartWizard:'wizard on restart',
+    // Agent .md 동적
+    agentMdMissing:(name)=>`(missing) saving creates it — ${name}.md`, agentMdFail:'Lookup failed', saving:'Saving…',
+    // Memory 동적
+    memSettingsFail:'Failed to load settings', enterNumbers:'Enter numbers',
+    settingMem:'Setting…', miSetting:'Setting sensitivity…',
+    miSensSet:(v)=>`✓ Sensitivity: ${v}`, miSensCleared:'✓ Sensitivity cleared',
+    miEdit:'Edit', miSave:'Save', miDelete:'Delete', miDeleting:'Deleting…', miDeleted:'✓ Deleted',
+    miNone:'None', miEvent:(id)=>`Event #${id}`, miEntity:(id)=>`Entity #${id}`, miInactive:'Inactive',
+    miSensNone:'(no sensitivity)',
+    // Voice 동적
+    voiceSaved:'✓ Saved',
+    // Scheduler 동적
+    schedScheduled:'Scheduled', schedInstalledNotLoaded:'Installed (not loaded)', schedNotInstalled:'Not installed',
+    schedRunning:'Running…', schedRunRequested:'✓ Run requested',
+    // Docker 설치 모달
+    dsTitle:'Install code execution environment',
+    dsDesc:'Automatically installs Homebrew → Docker Desktop → the sandbox image.',
+    dsClose:'Close', dsStart:'Start auto install', dsRetry:'Retry',
+    dsDone:'✓ Install complete! The code execution environment is ready.',
+    dsFailPrefix:'Failed: ', dsUnknownErr:'Unknown error', dsConnErr:'Connection error',
+  },
+  ko: {
+    // ── 네비게이션 / 공통 헤딩 ──
+    title:'환경설정', navModel:'모델', navWs:'워크스페이스', navMcp:'MCP', navTools:'Tools & Keys',
+    navAgent:'Agent', navMemory:'Memory & Context', navVoice:'Voice', navAdv:'Advanced', navApp:'앱', navLang:'언어',
+    // ── 공통 버튼/상태 ──
+    close:'닫기', save:'저장', apply:'적용', test:'연결 테스트', connect:'연결',
+    checking:'확인 중…', notChecked:'확인 안 됨', loading:'불러오는 중…',
+    activeTools:'활성 도구', saved:'✓ 저장됨',
     connOk:(a,m)=>a==='ok'?(m?`연결됨 · 인증 OK (${m}분)`:'연결됨 · 인증 OK'):`연결됨 · ${a}`,
-    connErr:(m)=>`연결 실패: ${m}`, saved:'✓ 저장됨' },
+    connErr:(m)=>`연결 실패: ${m}`,
+    // ── Model 패널 ──
+    modelH:'모델', modelD:'활성 프로바이더와 기본 모델. 새 세션에 적용됩니다.',
+    mpLbl:'프로바이더', mpHint:'tier 라우팅의 기본(fallback) 프로바이더',
+    modelKeyLbl:'API 키', modelUrlLbl:'서버 URL', modelUrlHint:'OpenAI 호환 로컬/온프레미스 서버',
+    modelAuthLbl:'인증',
+    mmLbl:'기본 모델', modelCatHint:'프로바이더 카탈로그에서 선택',
+    mtLbl:'tier 라우팅', modelTierHint:'단순 검색→fast, 복잡 추론→cloud 자동 분기',
+    // ── Workspace 패널 ──
+    wsH:'워크스페이스 연결', wsD:'Google·Slack·Superthread 계정 연결을 관리합니다. 온보딩 이후에도 여기서 연결·해제할 수 있습니다.',
+    // ── MCP 패널 ──
+    mcpH:'MCP', mcpD:'Model Context Protocol 서버 — 외부 도구를 노출합니다.', mcpAdd:'새 서버 추가',
+    // ── Tools & Keys 패널 ──
+    toolsD:'도구 그룹을 켜고 끕니다. 끄면 LLM 프롬프트에서 제외돼 토큰을 아낍니다.',
+    searchH:'검색 엔드포인트', searchD:'웹 검색(web_search)이 쓰는 SearXNG 인스턴스. 비우면 로컬 기본값(localhost:18888)을 씁니다. 사내 배포 시 공용 인스턴스 URL과 인증 키를 입력하세요.',
+    searchUrlHint:'예: https://search.example.com',
+    searchKeyLbl:'인증 키 (X-VEGA-Key)', searchKeyHint:'엣지 인증용. 없으면 비워둠. 저장된 키는 표시되지 않습니다.',
+    searchKeyPh:'(선택) 인증 키', searchSave:'저장 · 연결 테스트',
+    sysH:'시스템', sysD:'코드 실행 샌드박스는 Docker Desktop이 필요합니다. 없어도 채팅·메모리·워크스페이스 연동은 정상 작동합니다.',
+    // ── Agent 패널 ──
+    agentD:'에이전트 행동 지침. _default(불변 헌법)와 RULES(가변 규칙)를 직접 편집합니다.',
+    agentSelLbl:'지침 파일', agentOptDefault:'_default (헌법)', agentOptRules:'RULES (가변 규칙)',
+    // ── Memory & Context 패널 ──
+    memD:'대화 압축(compaction)과 장기 기억 동작. VEGA는 메시지 수 기준으로 오래된 대화를 요약합니다.',
+    memCompactH:'컨텍스트 압축',
+    memThresholdLbl:'압축 임계값', memThresholdHint:'대화가 이 메시지 수를 넘으면 오래된 부분을 요약 (기본 20)',
+    memKeepLbl:'보존 메시지 수', memKeepHint:'요약 후 그대로 남길 최근 메시지 (임계값보다 작아야 함, 기본 6)',
+    memAutoLbl:'메모리 자동 업데이트', memAutoHint:'압축 시 persona·이벤트·규칙을 자동 갱신',
+    memStoredH:'저장된 기억 (조회)',
+    memPersonaLbl:'페르소나 섹션', memEventsLbl:'이벤트', memEntitiesLbl:'엔티티', memSessionsLbl:'세션 요약',
+    memInspDesc:'VEGA가 나에 대해 기억하는 것을 직접 보고 편집·삭제합니다. 다음 대화에 반영됩니다.',
+    memTabPersona:'페르소나', memTabEvents:'이벤트', memTabEntities:'엔티티',
+    searchPh:'검색…',
+    // ── Voice 패널 ──
+    voiceH:'Voice', voiceD:'음성 입력(STT) 설정. 마이크 버튼이 사용합니다.',
+    voiceProvHint:'STT 프로바이더', voiceLocal:'로컬', voiceModelHint:'예: whisper-1', voiceLangHint:'비우면 자동 감지',
+    // ── Advanced (Scheduler) 패널 ──
+    advD:'자동 브리핑 스케줄러. LaunchAgent로 아침/저녁에 실행됩니다.',
+    schedMorningH:'아침 브리핑', schedEveningH:'저녁 리뷰',
+    schedEnableLbl:'활성화', schedTimeLbl:'시각', schedRunNow:'지금 실행',
+    // ── App 패널 ──
+    appH:'앱', appD:'서버 연결과 창 동작.',
+    secConn:'서버 연결', urlLbl:'서버 주소', urlHint:'로컬 VEGA FastAPI 서버',
+    connLbl:'상태', secApp:'동작', hideLbl:'닫기 = 숨기기', hideHint:'빨간 버튼이 종료 대신 트레이로 숨깁니다',
+    dataPrivacyH:'데이터 & 프라이버시',
+    dataPrivacyDescPre:'내 데이터는 모두 이 맥에 있습니다(', dataPrivacyDescPost:'). 모델로는 프롬프트·도구 결과만 나갑니다. 원본 DB·파일·토큰은 전송되지 않습니다.',
+    dataIncludeTokensLbl:'토큰 포함', dataIncludeTokensHint:'export/wipe에 OAuth·API 토큰 포함',
+    dataExport:'내보내기 (zip)', dataWipe:'전체 삭제',
+    onbResetH:'온보딩 초기화', onbResetDesc:'설치 마법사를 처음부터 다시 보고 싶을 때 사용합니다. 온보딩 완료 표시를 지워 다음 실행 시 마법사로 시작합니다(빌드·온보딩 흐름 디버깅용).',
+    onbResetSoft:'온보딩만 초기화', onbResetFull:'전체 초기화 (토큰 포함)',
+    // ── Language 패널 ──
+    langH:'언어', langD:'표시 언어.', langLbl:'Display language', langHint:'Applies to tray menu immediately',
+    // ── 동적 JS 문자열 ──
+    wsDescSlack:'채널 · DM 읽기 및 검색', wsDescSuperthread:'보드 · 카드 읽기 및 관리',
+    // Workspace 상태/버튼
+    wsNotConfigured:'구성 안 됨 (빌드에 OAuth client 없음)', wsConnected:'연결됨', wsNotConnected:'연결 안 됨',
+    wsBtnDisconnect:'해제', wsBtnDisconnecting:'해제 중…', wsBtnConnect:'연결',
+    wsDisconnectFail:'해제 실패: ', wsConsentPrompt:'브라우저에서 동의 화면을 완료해 주세요…',
+    wsTimeout:'시간 초과 — 다시 시도해 주세요.',
+    // Google 멀티계정
+    gAppByo:'내 GCP 앱', gAppBuiltin:'내장 VEGA 앱(미검증)', gAppNone:'OAuth 앱 없음',
+    gNoApp:'연결할 OAuth 앱이 없음 — 아래에서 내 GCP 앱을 등록하세요',
+    gAccountsConnected:(n,src)=>`${n}개 계정 연결됨 · ${src}`, gNotConnectedSrc:(src)=>`연결 안 됨 · ${src}`,
+    gBtnAddAccount:'계정 추가', gDefaultAccount:'기본 계정',
+    gLoginPrompt:'브라우저에서 로그인을 완료하세요… (계정 선택 화면이 표시됩니다)',
+    gStatusFail:(e)=>`상태 확인 실패 (${e}) — 백엔드 연결을 확인하세요. 재시도 중…`,
+    gTimeout:'시간 초과 — 로그인을 완료했다면 패널을 다시 열어 확인하세요',
+    // Google BYO 등록 UI
+    byoTitleUsing:'내 Google 앱으로 연결 (사용 중 ✓)', byoTitleRec:'내 Google 앱으로 연결 (권장)',
+    byoIntro:'내장 VEGA 앱은 Google 미검증이라 "확인되지 않은 앱" 경고가 뜹니다. 본인 GCP 앱을 쓰면 경고가 없고 무료입니다(2~3분).',
+    byoStep1:'GCP 프로젝트 생성', byoStep2Enable:' 사용 설정',
+    byoStep3Link:'OAuth 동의 화면', byoStep3Rest:' → External → 본인 이메일을 테스트 사용자로 추가(또는 앱 게시)',
+    byoStep4Link:'사용자 인증 정보 → OAuth 클라이언트 ID', byoStep4Rest:' → 유형 데스크톱 앱 → 만들기 → JSON 다운로드',
+    byoStep5pre:'아래에 다운받은 ', byoStep5post:' 내용을 그대로 붙여넣기',
+    byoRedirLabel:'승인된 redirect URI(필요 시): ', byoCopy:'복사', byoCopied:'복사됨',
+    byoSaveBtn:'내 앱 등록', byoRevertBtn:'내장 앱으로 되돌리기',
+    byoPasteJson:'JSON을 붙여넣으세요', byoRegistering:'등록 중…',
+    byoSavedReauth:'✓ 등록됨 — 클라이언트가 바뀌어 기존 연결이 해제됐습니다. "연결"을 눌러 다시 로그인하세요',
+    byoSavedOk:'✓ 등록됨 — 이제 "연결"을 눌러 로그인하세요',
+    byoConfirmClear:'내 GCP 앱 등록을 지우고 내장 VEGA 앱으로 되돌릴까요?\n(기존 Google 연결은 해제되어 다시 로그인이 필요합니다)',
+    byoProcessing:'처리 중…', byoReverted:'내장 앱으로 되돌림 — 기존 연결 해제됨, "연결"로 다시 로그인하세요',
+    byoFail:'실패: ',
+    gConfirmDisconnect:(email)=>`${email} 연결을 해제할까요?\nGmail·Calendar·Drive 도구가 이 계정에 접근할 수 없게 됩니다.`,
+    // 모델 인증/적용 상태
+    backendUnreachable:'백엔드에 연결할 수 없습니다', modelUnauth:'미인증 — 연결하면 이 프로바이더가 활성화됩니다',
+    processing:'처리 중…', loginDone:'✓ 로그인 완료', fail:'실패', activated:'✓ 활성화됨',
+    enterApiKey:'API 키를 입력하세요', loginBrowser:'브라우저로 로그인',
+    keySavedActivated:'✓ 키 저장 · 활성화됨', timedOut:'시간 초과', errPrefix:'오류: ',
+    applying:'적용 중…', appliedModel:(n,m)=>`✓ 적용됨: ${n} / ${m}`,
+    catalogLoading:'불러오는 중…', modelCurrent:' (현재)', modelCount:(n)=>`${n}개 모델`,
+    catalogFail:' (카탈로그 조회 실패)', catalogFailKeep:'카탈로그 조회 실패 — 현재 모델 유지',
+    toolGroupsFail:'도구 그룹 조회 실패',
+    activeToolsSummary:(a,t,tok)=>`${a}/${t}개 도구 활성 · ~${tok} 토큰`,
+    toolsSummary:(a,t,tok)=>`${a}/${t}개 활성 · ~${tok} 토큰`,
+    // MCP 동적
+    mcpNone:'등록된 MCP 서버가 없습니다.', mcpAuto:'auto', mcpConfigured:'설정됨',
+    mcpBtnTest:'테스트', mcpBtnDelete:'삭제', mcpTesting:'테스트 중…',
+    mcpTestFail:'✗ 실패', mcpTestErr:'✗ 오류', mcpListFail:'MCP 서버 목록 조회 실패',
+    mcpConfirmDel:(name)=>`MCP 서버 '${name}'을 삭제할까요?`,
+    mcpEnterName:'이름을 입력하세요', mcpJsonErr:'JSON 파싱 오류', mcpSaving:'저장 중…',
+    mcpReloading:'reload 중…', mcpReloadFail:'reload 실패',
+    // 검색 엔드포인트 동적
+    searchKeySaved:'키 저장됨', searchTesting:'연결 테스트 중…', searchConnOk:'연결 성공',
+    // 시스템 체크 (Docker)
+    dockerInstalled:'✓ 설치됨 — 코드 실행(bash/python) 도구 활성',
+    dockerMissing:'미설치 (선택 사항) — 코드 실행 도구가 비활성화됩니다. 채팅·메모리·워크스페이스는 정상 작동합니다.',
+    dockerAutoInstall:'자동 설치', dockerManualInstall:'직접 설치',
+    dockerStatusFail:'상태 확인 실패 (백엔드 미응답)',
+    // 도구 그룹 행
+    toolGroupRow:(c,tok)=>`${c}개 도구 · ~${tok} 토큰`,
+    // 데이터 & 프라이버시 동적
+    dataNone:'데이터 없음', dataLoadFail:'조회 실패', dataTotal:'합계',
+    dataExporting:'내보내는 중…', dataExported:(b)=>`✓ 저장됨 (${b})`,
+    dataConfirmWipe:(inc)=>'로컬 데이터를 휴지통으로 보냅니다(복구 가능).' + (inc ? ' 토큰 포함.' : '') + '\n계속할까요?',
+    dataWiping:'삭제 중…', dataWiped:(n,note)=>`✓ ${n}개 삭제 (${note})`,
+    // 온보딩 초기화 동적
+    onbConfirmFull:'온보딩 + LLM 토큰·프로바이더 설정까지 모두 초기화합니다(휴지통, 복구 가능).\n완전한 첫 실행 상태로 돌아갑니다. 계속할까요?',
+    onbConfirmSoft:'온보딩 완료 표시를 지웁니다(휴지통, 복구 가능).\nDB·메모리·토큰은 유지됩니다. 다음 실행 시 설치 마법사로 시작합니다. 계속할까요?',
+    onbResetting:'초기화 중…', onbReset:(note)=>`✓ 초기화됨 — ${note}`, onbRestartWizard:'재시작 시 마법사',
+    // Agent .md 동적
+    agentMdMissing:(name)=>`(없음) 저장하면 생성됩니다 — ${name}.md`, agentMdFail:'조회 실패', saving:'저장 중…',
+    // Memory 동적
+    memSettingsFail:'설정 조회 실패', enterNumbers:'숫자를 입력하세요',
+    settingMem:'저장 중…', miSetting:'민감도 설정 중…',
+    miSensSet:(v)=>`✓ 민감도: ${v}`, miSensCleared:'✓ 민감도 해제',
+    miEdit:'편집', miSave:'저장', miDelete:'삭제', miDeleting:'삭제 중…', miDeleted:'✓ 삭제됨',
+    miNone:'없음', miEvent:(id)=>`이벤트 #${id}`, miEntity:(id)=>`엔티티 #${id}`, miInactive:'비활성',
+    miSensNone:'(민감도 없음)',
+    // Voice 동적
+    voiceSaved:'✓ 저장됨',
+    // Scheduler 동적
+    schedScheduled:'실행 예약됨', schedInstalledNotLoaded:'설치됨(미로드)', schedNotInstalled:'미설치',
+    schedRunning:'실행 중…', schedRunRequested:'✓ 실행 요청됨',
+    // Docker 설치 모달
+    dsTitle:'코드 실행 환경 설치',
+    dsDesc:'Homebrew → Docker Desktop → 샌드박스 이미지를 자동으로 설치합니다.',
+    dsClose:'닫기', dsStart:'자동 설치 시작', dsRetry:'다시 시도',
+    dsDone:'✓ 설치 완료! 코드 실행 환경이 준비됐습니다.',
+    dsFailPrefix:'실패: ', dsUnknownErr:'알 수 없는 오류', dsConnErr:'연결 오류',
+  },
 };
 
 const { invoke } = window.__TAURI__?.core ?? window.__TAURI__ ?? {};
@@ -478,17 +760,26 @@ const $ = (id) => document.getElementById(id);
 
 function applyLang(lang) {
   T = I18N[lang] || I18N.en;
-  $('t-title').textContent = T.title;
-  $('t-nav-model').textContent = T.navModel;
-  $('t-nav-mcp').textContent = T.navMcp; $('t-nav-app').textContent = T.navApp; $('t-nav-lang').textContent = T.navLang;
-  $('t-model-h').textContent = T.modelH; $('t-model-d').textContent = T.modelD;
-  $('t-mcp-h').textContent = T.mcpH; $('t-mcp-d').textContent = T.mcpD; $('t-mcp-add').textContent = T.mcpAdd;
-  $('t-app-h').textContent = T.appH; $('t-app-d').textContent = T.appD;
-  $('t-sec-conn').textContent = T.secConn; $('t-sec-app').textContent = T.secApp;
-  $('t-lang-h').textContent = T.langH; $('t-lang-d').textContent = T.langD;
-  $('t-url-lbl').textContent = T.secConn === '서버 연결' ? '서버 주소' : 'Server URL';
-  $('test-conn').textContent = T.test; $('cancel').textContent = T.close; $('save').textContent = T.save;
-  $('conn-hint').textContent = T.notChecked; $('lang-select').value = lang;
+  // data-i18n: textContent 교체 (해당 키가 사전에 있고 문자열일 때만)
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const key = el.dataset.i18n;
+    if (key in T && typeof T[key] === 'string') el.textContent = T[key];
+  });
+  // data-i18n-placeholder: placeholder 교체
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+    const key = el.dataset.i18nPlaceholder;
+    if (key in T && typeof T[key] === 'string') el.placeholder = T[key];
+  });
+  // data-i18n-title: title 속성 교체
+  document.querySelectorAll('[data-i18n-title]').forEach(el => {
+    const key = el.dataset.i18nTitle;
+    if (key in T && typeof T[key] === 'string') el.title = T[key];
+  });
+  // 미검증 상태(—)는 매 전환 시 초기화 — 테스트 결과가 떠 있지 않은 경우에만
+  if ($('conn-hint') && ($('conn-hint').textContent === '—' || $('conn-hint').textContent === '확인 안 됨')) {
+    $('conn-hint').textContent = T.notChecked;
+  }
+  $('lang-select').value = lang;
   document.documentElement.lang = lang;
 }
 
@@ -532,11 +823,13 @@ async function openExternalUrl(url) {
 }
 
 // ── Workspace 연결 패널 (Google/Slack/Superthread OAuth) ──
+// desc는 렌더 시점에 wsDesc()로 현재 언어 사전(T)에서 해석한다. google은 영문 고정.
 const WS_SERVICES = [
   { id: 'google',      label: 'Google Workspace', desc: 'Gmail · Calendar · Drive',  auth_path: '/google/auth' },
-  { id: 'slack',       label: 'Slack',            desc: '채널 · DM 읽기 및 검색',      auth_path: '/slack/auth' },
-  { id: 'superthread', label: 'Superthread',      desc: '보드 · 카드 읽기 및 관리',     auth_path: '/superthread/auth' },
+  { id: 'slack',       label: 'Slack',            descKey: 'wsDescSlack',            auth_path: '/slack/auth' },
+  { id: 'superthread', label: 'Superthread',      descKey: 'wsDescSuperthread',      auth_path: '/superthread/auth' },
 ];
+function wsDesc(s) { return s.descKey ? (T[s.descKey] || '') : (s.desc || ''); }
 let wsPoll = null;
 function stopWsPoll() { if (wsPoll) { clearInterval(wsPoll); wsPoll = null; } }
 
@@ -557,15 +850,16 @@ async function loadWorkspacePane() {
     if (s.id === 'google') { renderGoogleRows(list, s, st); continue; }
     const row = document.createElement('div'); row.className = 'row';
     const acct = st.email ? ` — ${st.email}` : st.team ? ` — ${st.team}` : '';
-    const stateTxt = !st.configured ? '구성 안 됨 (빌드에 OAuth client 없음)'
-      : st.authenticated ? `연결됨${acct}` : '연결 안 됨';
+    const stateTxt = !st.configured ? T.wsNotConfigured
+      : st.authenticated ? `${T.wsConnected}${acct}` : T.wsNotConnected;
+    const desc = wsDesc(s);
     row.innerHTML = `<div class="field"><label>${s.label}</label>
-      <div class="hint" id="ws-hint-${s.id}">${s.desc} · ${stateTxt}</div></div>`;
+      <div class="hint" id="ws-hint-${s.id}">${desc} · ${stateTxt}</div></div>`;
     const btns = document.createElement('div');
     if (st.configured && st.authenticated) {
-      const dis = document.createElement('button'); dis.className = 'btn'; dis.textContent = '해제';
+      const dis = document.createElement('button'); dis.className = 'btn'; dis.textContent = T.wsBtnDisconnect;
       dis.onclick = async () => {
-        dis.disabled = true; dis.textContent = '해제 중…';
+        dis.disabled = true; dis.textContent = T.wsBtnDisconnecting;
         try {
           const res = await fetch(provBase() + `/api/onboarding/${s.id}/disconnect`, { method: 'POST', signal: AbortSignal.timeout(10000) });
           const d = await res.json().catch(() => ({}));
@@ -573,23 +867,23 @@ async function loadWorkspacePane() {
           if (!res.ok || !d.ok) throw new Error(d.error || `HTTP ${res.status}`);
           loadWorkspacePane();
         } catch (e) {
-          dis.disabled = false; dis.textContent = '해제';
-          $('ws-hint-' + s.id).textContent = s.desc + ' · 해제 실패: ' + (e.message || e);
+          dis.disabled = false; dis.textContent = T.wsBtnDisconnect;
+          $('ws-hint-' + s.id).textContent = desc + ' · ' + T.wsDisconnectFail + (e.message || e);
         }
       };
       btns.appendChild(dis);
     } else if (st.configured) {
-      const con = document.createElement('button'); con.className = 'btn primary'; con.textContent = '연결';
+      const con = document.createElement('button'); con.className = 'btn primary'; con.textContent = T.wsBtnConnect;
       con.onclick = () => {
         openExternalUrl(provBase() + s.auth_path);
-        $('ws-hint-' + s.id).textContent = s.desc + ' · 브라우저에서 동의 화면을 완료해 주세요…';
+        $('ws-hint-' + s.id).textContent = desc + ' · ' + T.wsConsentPrompt;
         con.disabled = true;
         stopWsPoll();
         let ticks = 0;
         wsPoll = setInterval(async () => {
           ticks++;
           try { const st2 = await wsStatus(s.id); if (st2.authenticated) { stopWsPoll(); loadWorkspacePane(); return; } } catch {}
-          if (ticks >= 90) { stopWsPoll(); con.disabled = false; $('ws-hint-' + s.id).textContent = s.desc + ' · 시간 초과 — 다시 시도해 주세요.'; }
+          if (ticks >= 90) { stopWsPoll(); con.disabled = false; $('ws-hint-' + s.id).textContent = desc + ' · ' + T.wsTimeout; }
         }, 2000);
       };
       btns.appendChild(con);
@@ -603,16 +897,16 @@ async function loadWorkspacePane() {
 function renderGoogleRows(list, s, st) {
   const accounts = st.accounts || [];
   const src = st.client_source || 'none';
-  const srcLabel = src === 'byo' ? '내 GCP 앱' : src === 'builtin' ? '내장 VEGA 앱(미검증)' : 'OAuth 앱 없음';
+  const srcLabel = src === 'byo' ? T.gAppByo : src === 'builtin' ? T.gAppBuiltin : T.gAppNone;
   const head = document.createElement('div'); head.className = 'row';
-  const stateTxt = !st.configured ? '연결할 OAuth 앱이 없음 — 아래에서 내 GCP 앱을 등록하세요'
-    : accounts.length ? `${accounts.length}개 계정 연결됨 · ${srcLabel}` : `연결 안 됨 · ${srcLabel}`;
+  const stateTxt = !st.configured ? T.gNoApp
+    : accounts.length ? T.gAccountsConnected(accounts.length, srcLabel) : T.gNotConnectedSrc(srcLabel);
   head.innerHTML = `<div class="field"><label>${s.label}</label>
-    <div class="hint" id="ws-hint-google">${s.desc} · ${stateTxt}</div></div>`;
+    <div class="hint" id="ws-hint-google">${wsDesc(s)} · ${stateTxt}</div></div>`;
   const btns = document.createElement('div');
   if (st.configured) {
     const add = document.createElement('button'); add.className = 'btn primary';
-    add.textContent = accounts.length ? '계정 추가' : '연결';
+    add.textContent = accounts.length ? T.gBtnAddAccount : T.wsBtnConnect;
     add.onclick = () => wsGoogleAdd(add);
     btns.appendChild(add);
   }
@@ -626,9 +920,9 @@ function renderGoogleRows(list, s, st) {
     const field = document.createElement('div'); field.className = 'field'; field.style.paddingLeft = '14px';
     const label = document.createElement('label'); label.textContent = a.email;
     const hint = document.createElement('div'); hint.className = 'hint';
-    hint.textContent = a.is_default ? '기본 계정' : '';
+    hint.textContent = a.is_default ? T.gDefaultAccount : '';
     field.appendChild(label); field.appendChild(hint); row.appendChild(field);
-    const dis = document.createElement('button'); dis.className = 'btn'; dis.textContent = '해제';
+    const dis = document.createElement('button'); dis.className = 'btn'; dis.textContent = T.wsBtnDisconnect;
     dis.onclick = () => wsGoogleDisconnect(a.email, dis);
     row.appendChild(dis);
     list.appendChild(row);
@@ -646,23 +940,23 @@ function renderGoogleByo(list, src) {
   wrap.innerHTML = `
     <div style="display:flex;align-items:center;gap:8px;cursor:pointer" id="byo-toggle">
       <span id="byo-caret">${open ? '▾' : '▸'}</span>
-      <strong style="font-size:13px">내 Google 앱으로 연결 ${src === 'byo' ? '(사용 중 ✓)' : '(권장)'}</strong>
+      <strong style="font-size:13px">${src === 'byo' ? T.byoTitleUsing : T.byoTitleRec}</strong>
     </div>
     <div id="byo-body" style="${open ? '' : 'display:none'};font-size:12px;line-height:1.7;color:var(--text-secondary,#a6adc8)">
-      <div style="margin-bottom:8px">내장 VEGA 앱은 Google 미검증이라 "확인되지 않은 앱" 경고가 뜹니다. 본인 GCP 앱을 쓰면 경고가 없고 무료입니다(2~3분).</div>
+      <div style="margin-bottom:8px">${T.byoIntro}</div>
       <ol style="margin:0 0 8px 18px;padding:0">
-        <li><a href="#" data-ext="https://console.cloud.google.com/projectcreate">GCP 프로젝트 생성</a></li>
-        <li><a href="#" data-ext="https://console.cloud.google.com/apis/library/gmail.googleapis.com">Gmail API</a> · <a href="#" data-ext="https://console.cloud.google.com/apis/library/calendar-json.googleapis.com">Calendar API</a> · <a href="#" data-ext="https://console.cloud.google.com/apis/library/drive.googleapis.com">Drive API</a> 사용 설정</li>
-        <li><a href="#" data-ext="https://console.cloud.google.com/apis/credentials/consent">OAuth 동의 화면</a> → External → 본인 이메일을 테스트 사용자로 추가(또는 앱 게시)</li>
-        <li><a href="#" data-ext="https://console.cloud.google.com/apis/credentials/oauthclient">사용자 인증 정보 → OAuth 클라이언트 ID</a> → 유형 <b>데스크톱 앱</b> → 만들기 → JSON 다운로드</li>
-        <li>아래에 다운받은 <code>client_secret.json</code> 내용을 그대로 붙여넣기</li>
+        <li><a href="#" data-ext="https://console.cloud.google.com/projectcreate">${T.byoStep1}</a></li>
+        <li><a href="#" data-ext="https://console.cloud.google.com/apis/library/gmail.googleapis.com">Gmail API</a> · <a href="#" data-ext="https://console.cloud.google.com/apis/library/calendar-json.googleapis.com">Calendar API</a> · <a href="#" data-ext="https://console.cloud.google.com/apis/library/drive.googleapis.com">Drive API</a>${T.byoStep2Enable}</li>
+        <li><a href="#" data-ext="https://console.cloud.google.com/apis/credentials/consent">${T.byoStep3Link}</a>${T.byoStep3Rest}</li>
+        <li><a href="#" data-ext="https://console.cloud.google.com/apis/credentials/oauthclient">${T.byoStep4Link}</a>${T.byoStep4Rest}</li>
+        <li>${T.byoStep5pre}<code>client_secret.json</code>${T.byoStep5post}</li>
       </ol>
-      <div style="margin-bottom:6px">승인된 redirect URI(필요 시): <code id="byo-redir">${GOOGLE_REDIRECT_URI}</code>
-        <button class="btn" id="byo-copy" style="padding:2px 8px;font-size:11px">복사</button></div>
+      <div style="margin-bottom:6px">${T.byoRedirLabel}<code id="byo-redir">${GOOGLE_REDIRECT_URI}</code>
+        <button class="btn" id="byo-copy" style="padding:2px 8px;font-size:11px">${T.byoCopy}</button></div>
       <textarea id="byo-json" placeholder='{"installed":{"client_id":"...apps.googleusercontent.com","client_secret":"..."}}' style="width:100%;min-height:80px;font-family:monospace;font-size:11px;box-sizing:border-box"></textarea>
       <div style="display:flex;gap:8px;align-items:center;margin-top:6px">
-        <button class="btn primary" id="byo-save">내 앱 등록</button>
-        ${src === 'byo' ? '<button class="btn" id="byo-clear">내장 앱으로 되돌리기</button>' : ''}
+        <button class="btn primary" id="byo-save">${T.byoSaveBtn}</button>
+        ${src === 'byo' ? `<button class="btn" id="byo-clear">${T.byoRevertBtn}</button>` : ''}
         <span class="status" id="byo-status"></span>
       </div>
     </div>`;
@@ -679,7 +973,7 @@ function renderGoogleByo(list, src) {
   });
   wrap.querySelector('#byo-copy').onclick = () => {
     navigator.clipboard.writeText(GOOGLE_REDIRECT_URI).then(() => {
-      const c = wrap.querySelector('#byo-copy'); c.textContent = '복사됨'; setTimeout(() => c.textContent = '복사', 1500);
+      const c = wrap.querySelector('#byo-copy'); c.textContent = T.byoCopied; setTimeout(() => c.textContent = T.byoCopy, 1500);
     });
   };
   wrap.querySelector('#byo-save').onclick = () => wsGoogleByoSave(wrap);
@@ -689,8 +983,8 @@ function renderGoogleByo(list, src) {
 async function wsGoogleByoSave(wrap) {
   const json = wrap.querySelector('#byo-json').value.trim();
   const status = wrap.querySelector('#byo-status');
-  if (!json) { status.textContent = 'JSON을 붙여넣으세요'; return; }
-  status.textContent = '등록 중…';
+  if (!json) { status.textContent = T.byoPasteJson; return; }
+  status.textContent = T.byoRegistering;
   try {
     const res = await fetch(provBase() + '/api/onboarding/google/byo', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -699,30 +993,28 @@ async function wsGoogleByoSave(wrap) {
     const d = await res.json().catch(() => ({}));
     if (!res.ok || !d.ok) throw new Error(d.error || `HTTP ${res.status}`);
     // 클라이언트가 바뀌면 기존 토큰이 무효화됨(재인증 필요) — 명확히 안내.
-    status.textContent = d.reauth_required
-      ? '✓ 등록됨 — 클라이언트가 바뀌어 기존 연결이 해제됐습니다. "연결"을 눌러 다시 로그인하세요'
-      : '✓ 등록됨 — 이제 "연결"을 눌러 로그인하세요';
+    status.textContent = d.reauth_required ? T.byoSavedReauth : T.byoSavedOk;
     loadWorkspacePane();
-  } catch (e) { status.textContent = '실패: ' + (e.message || e); }
+  } catch (e) { status.textContent = T.byoFail + (e.message || e); }
 }
 
 async function wsGoogleByoClear(wrap) {
-  if (!confirm('내 GCP 앱 등록을 지우고 내장 VEGA 앱으로 되돌릴까요?\n(기존 Google 연결은 해제되어 다시 로그인이 필요합니다)')) return;
-  const status = wrap.querySelector('#byo-status'); status.textContent = '처리 중…';
+  if (!confirm(T.byoConfirmClear)) return;
+  const status = wrap.querySelector('#byo-status'); status.textContent = T.byoProcessing;
   try {
     const res = await fetch(provBase() + '/api/onboarding/google/byo/clear', {
       method: 'POST', signal: AbortSignal.timeout(10000),
     });
     const d = await res.json().catch(() => ({}));
     if (!res.ok || !d.ok) throw new Error(d.error || `HTTP ${res.status}`);
-    if (d.reauth_required) status.textContent = '내장 앱으로 되돌림 — 기존 연결 해제됨, "연결"로 다시 로그인하세요';
+    if (d.reauth_required) status.textContent = T.byoReverted;
     loadWorkspacePane();
-  } catch (e) { status.textContent = '실패: ' + (e.message || e); }
+  } catch (e) { status.textContent = T.byoFail + (e.message || e); }
 }
 
 async function wsGoogleDisconnect(email, btn) {
-  if (!confirm(`${email} 연결을 해제할까요?\nGmail·Calendar·Drive 도구가 이 계정에 접근할 수 없게 됩니다.`)) return;
-  btn.disabled = true; btn.textContent = '해제 중…';
+  if (!confirm(T.gConfirmDisconnect(email))) return;
+  btn.disabled = true; btn.textContent = T.wsBtnDisconnecting;
   try {
     const res = await fetch(provBase() + '/api/onboarding/google/disconnect', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -736,15 +1028,15 @@ async function wsGoogleDisconnect(email, btn) {
     if (!res.ok || !d.ok) throw new Error(d.error || `HTTP ${res.status}`);
     loadWorkspacePane();
   } catch (e) {
-    btn.disabled = false; btn.textContent = '해제';
-    const h = $('ws-hint-google'); if (h) h.textContent = '해제 실패: ' + (e.message || e);
+    btn.disabled = false; btn.textContent = T.wsBtnDisconnect;
+    const h = $('ws-hint-google'); if (h) h.textContent = T.wsDisconnectFail + (e.message || e);
   }
 }
 
 async function wsGoogleAdd(btn) {
   const hint = $('ws-hint-google');
   openExternalUrl(provBase() + '/google/auth');
-  if (hint) hint.textContent = '브라우저에서 로그인을 완료하세요… (계정 선택 화면이 표시됩니다)';
+  if (hint) hint.textContent = T.gLoginPrompt;
   btn.disabled = true;
 
   let before = 0;
@@ -766,12 +1058,12 @@ async function wsGoogleAdd(btn) {
       }
     } catch (e) {
       consecErr++;
-      if (consecErr >= 3 && hint) hint.textContent = `상태 확인 실패 (${e.message || e}) — 백엔드 연결을 확인하세요. 재시도 중…`;
+      if (consecErr >= 3 && hint) hint.textContent = T.gStatusFail(e.message || e);
     }
     if (ticks >= 90) {  // 3분 초과 — 폴링 중단
       stopWsPoll();
       btn.disabled = false;
-      if (hint) hint.textContent = '시간 초과 — 로그인을 완료했다면 패널을 다시 열어 확인하세요';
+      if (hint) hint.textContent = T.gTimeout;
     }
   }, 2000);
 }
@@ -795,7 +1087,7 @@ async function loadModelPane() {
     await loadModelCatalog();
     loadToolGroups();
   } catch (e) {
-    $('model-status').textContent = '백엔드에 연결할 수 없습니다'; $('model-status').style.color = 'var(--error)';
+    $('model-status').textContent = T.backendUnreachable; $('model-status').style.color = 'var(--error)';
   }
 }
 function _modelAuthKind(p) {
@@ -814,7 +1106,7 @@ function onModelProvChange() {
     authSec.style.display = 'none';
   } else {
     authSec.style.display = '';
-    $('model-auth-hint').textContent = '미인증 — 연결하면 이 프로바이더가 활성화됩니다';
+    $('model-auth-hint').textContent = T.modelUnauth;
     $('model-auth-hint').style.color = 'var(--muted)';
     $('model-key').value = '';
     if (kind === 'key') {
@@ -827,129 +1119,129 @@ function onModelProvChange() {
     } else {
       $('model-key-row').style.display = 'none'; $('model-url-row').style.display = 'none';
     }
-    $('model-auth-apply').textContent = kind === 'pkce' ? '브라우저로 로그인' : '연결';
+    $('model-auth-apply').textContent = kind === 'pkce' ? T.loginBrowser : T.connect;
   }
 }
 async function loadModelCatalog() {
   const base = provBase(); const prov = $('model-prov').value;
   const cur = MODEL_PROVIDERS.find(p => p.name === prov);
-  const sel = $('model-name'); sel.innerHTML = '<option>불러오는 중…</option>';
+  const sel = $('model-name'); sel.innerHTML = `<option>${T.catalogLoading}</option>`;
   try {
     const r = await fetch(base + `/api/llm/models?provider=${encodeURIComponent(prov)}`, { signal: AbortSignal.timeout(8000) }).then(r => r.json());
     sel.innerHTML = '';
     const models = r.models || [];
-    if (!models.length && cur) { const o = document.createElement('option'); o.value = cur.default_model; o.textContent = cur.default_model + ' (현재)'; sel.appendChild(o); }
+    if (!models.length && cur) { const o = document.createElement('option'); o.value = cur.default_model; o.textContent = cur.default_model + T.modelCurrent; sel.appendChild(o); }
     for (const m of models) {
       const id = typeof m === 'string' ? m : m.id;
       const o = document.createElement('option'); o.value = id; o.textContent = id;
       sel.appendChild(o);
     }
     if (cur && cur.default_model) sel.value = cur.default_model;
-    $('model-cat-hint').textContent = `${models.length}개 모델`;
+    $('model-cat-hint').textContent = T.modelCount(models.length);
   } catch (e) {
     sel.innerHTML = ''; const o = document.createElement('option');
-    o.value = cur ? cur.default_model : ''; o.textContent = (cur ? cur.default_model : '') + ' (카탈로그 조회 실패)';
-    sel.appendChild(o); $('model-cat-hint').textContent = '카탈로그 조회 실패 — 현재 모델 유지';
+    o.value = cur ? cur.default_model : ''; o.textContent = (cur ? cur.default_model : '') + T.catalogFail;
+    sel.appendChild(o); $('model-cat-hint').textContent = T.catalogFailKeep;
   }
 }
 async function loadToolGroups() {
   try {
     const r = await fetch(provBase() + '/api/llm/tool-groups', { signal: AbortSignal.timeout(5000) }).then(r => r.json());
-    $('model-tools-hint').textContent = `${r.active_tools}/${r.total_tools}개 도구 활성 · ~${r.active_tokens} 토큰`;
-  } catch { $('model-tools-hint').textContent = '도구 그룹 조회 실패'; }
+    $('model-tools-hint').textContent = T.activeToolsSummary(r.active_tools, r.total_tools, r.active_tokens);
+  } catch { $('model-tools-hint').textContent = T.toolGroupsFail; }
 }
 $('model-prov').addEventListener('change', () => { onModelProvChange(); loadModelCatalog(); });
 $('model-auth-apply').addEventListener('click', async () => {
   const p = MODEL_PROVIDERS.find(x => x.name === $('model-prov').value); if (!p) return;
   const base = provBase(); const hint = $('model-auth-hint'); const btn = $('model-auth-apply');
   const kind = _modelAuthKind(p);
-  btn.disabled = true; hint.textContent = '처리 중…'; hint.style.color = 'var(--muted)';
+  btn.disabled = true; hint.textContent = T.processing; hint.style.color = 'var(--muted)';
   try {
     if (kind === 'pkce') {
       const r = await fetch(base + '/api/llm/gpt-relogin', { method:'POST', signal: AbortSignal.timeout(130000) }).then(r => r.json());
       if (r.ok) {
         await fetch(base + '/api/llm/active', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:p.name})});
-        hint.textContent = '✓ 로그인 완료'; hint.style.color = 'var(--ok)'; await loadModelPane();
-      } else { hint.textContent = r.error || '실패'; hint.style.color = 'var(--error)'; }
+        hint.textContent = T.loginDone; hint.style.color = 'var(--ok)'; await loadModelPane();
+      } else { hint.textContent = r.error || T.fail; hint.style.color = 'var(--error)'; }
     } else if (kind === 'local') {
       const r = await fetch(base + '/api/llm/active', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name:p.name}) }).then(r => r.json());
-      if (r.ok) { hint.textContent = '✓ 활성화됨'; hint.style.color = 'var(--ok)'; await loadModelPane(); }
-      else { hint.textContent = r.error || '실패'; hint.style.color = 'var(--error)'; }
+      if (r.ok) { hint.textContent = T.activated; hint.style.color = 'var(--ok)'; await loadModelPane(); }
+      else { hint.textContent = r.error || T.fail; hint.style.color = 'var(--error)'; }
     } else {
       const key = $('model-key').value.trim();
-      if (!key) { hint.textContent = 'API 키를 입력하세요'; hint.style.color = 'var(--error)'; btn.disabled = false; return; }
+      if (!key) { hint.textContent = T.enterApiKey; hint.style.color = 'var(--error)'; btn.disabled = false; return; }
       const r = await fetch(base + '/api/onboarding/provider', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ provider: p.name, api_key: key }), signal: AbortSignal.timeout(15000) }).then(r => r.json());
       if (r.ok || r.error === undefined) {
         await fetch(base + '/api/llm/active', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:p.name})});
-        hint.textContent = '✓ 키 저장 · 활성화됨'; hint.style.color = 'var(--ok)'; await loadModelPane();
-      } else { hint.textContent = r.error || '실패'; hint.style.color = 'var(--error)'; }
+        hint.textContent = T.keySavedActivated; hint.style.color = 'var(--ok)'; await loadModelPane();
+      } else { hint.textContent = r.error || T.fail; hint.style.color = 'var(--error)'; }
     }
-  } catch (e) { hint.textContent = (e.name === 'TimeoutError') ? '시간 초과' : ('오류: ' + (e.message || e)); hint.style.color = 'var(--error)'; }
+  } catch (e) { hint.textContent = (e.name === 'TimeoutError') ? T.timedOut : (T.errPrefix + (e.message || e)); hint.style.color = 'var(--error)'; }
   finally { btn.disabled = false; }
 });
 $('model-apply').addEventListener('click', async () => {
   const base = provBase(); const name = $('model-prov').value; const model = $('model-name').value;
-  const st = $('model-status'); st.textContent = '적용 중…'; st.style.color = 'var(--muted)';
+  const st = $('model-status'); st.textContent = T.applying; st.style.color = 'var(--muted)';
   try {
     await fetch(base + '/api/llm/active', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name}) });
     const r = await fetch(base + '/api/llm/model', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name, model}) }).then(r => r.json());
-    if (r.ok || r.error === undefined) { st.textContent = `✓ 적용됨: ${name} / ${model}`; st.style.color = 'var(--ok)'; loadModelPane(); }
-    else { st.textContent = r.error || '실패'; st.style.color = 'var(--error)'; }
-  } catch (e) { st.textContent = '오류: ' + (e.message || e); st.style.color = 'var(--error)'; }
+    if (r.ok || r.error === undefined) { st.textContent = T.appliedModel(name, model); st.style.color = 'var(--ok)'; loadModelPane(); }
+    else { st.textContent = r.error || T.fail; st.style.color = 'var(--error)'; }
+  } catch (e) { st.textContent = T.errPrefix + (e.message || e); st.style.color = 'var(--error)'; }
 });
 
 // ── MCP 패널 ──
 async function loadMcp() {
   const base = provBase(); const box = $('mcp-list');
-  box.innerHTML = '<div class="empty">불러오는 중…</div>';
+  box.innerHTML = `<div class="empty">${T.loading}</div>`;
   try {
     const r = await fetch(base + '/api/mcp/servers', { signal: AbortSignal.timeout(5000) }).then(r => r.json());
     const servers = r.servers || [];
-    if (!servers.length) { box.innerHTML = '<div class="empty">등록된 MCP 서버가 없습니다.</div>'; return; }
+    if (!servers.length) { box.innerHTML = `<div class="empty">${T.mcpNone}</div>`; return; }
     box.innerHTML = '';
     for (const s of servers) {
       const card = document.createElement('div'); card.className = 'card';
       const transport = s.transport || (s.url ? 'sse' : 'stdio');
       const cmd = s.command ? `${s.command} ${(s.args||[]).join(' ')}` : (s.url || '');
       card.innerHTML = `<div class="ttl">${esc(s.name)}
-          <span class="pill ${s.auto?'':'ok'}">${s.auto?'auto':'설정됨'}</span>
+          <span class="pill ${s.auto?'':'ok'}">${s.auto?T.mcpAuto:T.mcpConfigured}</span>
           <span class="pill">${esc(transport)}</span>
           <span class="pill ${s.tool_count?'active':''}">${s.tool_count||0} tools</span></div>
         <div class="meta">${esc(cmd).slice(0,90)}</div>
-        ${s.auto ? '' : `<div class="ops"><button class="btn" data-test="${esc(s.name)}">테스트</button><button class="btn" data-del="${esc(s.name)}">삭제</button></div>`}`;
+        ${s.auto ? '' : `<div class="ops"><button class="btn" data-test="${esc(s.name)}">${T.mcpBtnTest}</button><button class="btn" data-del="${esc(s.name)}">${T.mcpBtnDelete}</button></div>`}`;
       box.appendChild(card);
     }
     box.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => delMcp(b.dataset.del)));
     box.querySelectorAll('[data-test]').forEach(b => b.addEventListener('click', () => testMcp(b.dataset.test, b)));
-  } catch (e) { box.innerHTML = '<div class="empty">MCP 서버 목록 조회 실패</div>'; }
+  } catch (e) { box.innerHTML = `<div class="empty">${T.mcpListFail}</div>`; }
 }
 async function delMcp(name) {
-  if (!confirm(`MCP 서버 '${name}'을 삭제할까요?`)) return;
+  if (!confirm(T.mcpConfirmDel(name))) return;
   try { await fetch(provBase() + `/api/mcp/servers/${encodeURIComponent(name)}`, { method:'DELETE' }); loadMcp(); } catch {}
 }
 async function testMcp(name, btn) {
-  btn.disabled = true; const orig = btn.textContent; btn.textContent = '테스트 중…';
+  btn.disabled = true; const orig = btn.textContent; btn.textContent = T.mcpTesting;
   try {
     const r = await fetch(provBase() + '/api/mcp/test', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name}) }).then(r => r.json());
-    btn.textContent = r.ok ? `✓ ${r.tool_count ?? ''} tools` : '✗ 실패';
-  } catch { btn.textContent = '✗ 오류'; }
+    btn.textContent = r.ok ? `✓ ${r.tool_count ?? ''} tools` : T.mcpTestFail;
+  } catch { btn.textContent = T.mcpTestErr; }
   setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 2500);
 }
 $('mcp-save').addEventListener('click', async () => {
   const name = $('mcp-name').value.trim(); const st = $('mcp-status');
-  if (!name) { st.textContent = '이름을 입력하세요'; st.style.color = 'var(--error)'; return; }
-  let entry; try { entry = JSON.parse($('mcp-json').value); } catch { st.textContent = 'JSON 파싱 오류'; st.style.color = 'var(--error)'; return; }
-  st.textContent = '저장 중…'; st.style.color = 'var(--muted)';
+  if (!name) { st.textContent = T.mcpEnterName; st.style.color = 'var(--error)'; return; }
+  let entry; try { entry = JSON.parse($('mcp-json').value); } catch { st.textContent = T.mcpJsonErr; st.style.color = 'var(--error)'; return; }
+  st.textContent = T.mcpSaving; st.style.color = 'var(--muted)';
   try {
     const r = await fetch(provBase() + '/api/mcp/servers', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name, entry}) }).then(r => r.json());
     if (r.error) { st.textContent = r.error; st.style.color = 'var(--error)'; }
-    else { st.textContent = '✓ 저장됨'; st.style.color = 'var(--ok)'; $('mcp-name').value = ''; loadMcp(); }
-  } catch (e) { st.textContent = '오류: ' + (e.message || e); st.style.color = 'var(--error)'; }
+    else { st.textContent = T.saved; st.style.color = 'var(--ok)'; $('mcp-name').value = ''; loadMcp(); }
+  } catch (e) { st.textContent = T.errPrefix + (e.message || e); st.style.color = 'var(--error)'; }
 });
 $('mcp-reload').addEventListener('click', async () => {
-  const st = $('mcp-status'); st.textContent = 'reload 중…'; st.style.color = 'var(--muted)';
+  const st = $('mcp-status'); st.textContent = T.mcpReloading; st.style.color = 'var(--muted)';
   try { await fetch(provBase() + '/api/mcp/reload', { method:'POST' }); st.textContent = '✓ reloaded'; st.style.color = 'var(--ok)'; loadMcp(); }
-  catch { st.textContent = 'reload 실패'; st.style.color = 'var(--error)'; }
+  catch { st.textContent = T.mcpReloadFail; st.style.color = 'var(--error)'; }
 });
 
 
@@ -973,58 +1265,56 @@ function _fmtBytes(n) {
 async function loadDataBoundary() {
   const box = $('data-asset-list');
   if (!box) return;
-  box.innerHTML = '<div class="empty">불러오는 중…</div>';
+  box.innerHTML = `<div class="empty">${T.loading}</div>`;
   try {
     const r = await fetch(provBase() + '/api/data/summary', { signal: AbortSignal.timeout(6000) }).then(r => r.json());
     $('data-dir-path').textContent = r.data_dir || '';
     const assets = r.assets || [];
-    if (!assets.length) { box.innerHTML = '<div class="empty">데이터 없음</div>'; return; }
+    if (!assets.length) { box.innerHTML = `<div class="empty">${T.dataNone}</div>`; return; }
     box.innerHTML = assets.map(a =>
       `<div class="row"><div class="field"><label>${esc(a.name)}${a.kind==='token'?' 🔑':''}</label></div><span class="pill">${_fmtBytes(a.bytes)}</span></div>`
-    ).join('') + `<div class="row"><div class="field"><label><b>합계</b></label></div><span class="pill active">${_fmtBytes(r.total_bytes||0)}</span></div>`;
-  } catch (e) { box.innerHTML = '<div class="empty">조회 실패</div>'; }
+    ).join('') + `<div class="row"><div class="field"><label><b>${T.dataTotal}</b></label></div><span class="pill active">${_fmtBytes(r.total_bytes||0)}</span></div>`;
+  } catch (e) { box.innerHTML = `<div class="empty">${T.dataLoadFail}</div>`; }
 }
 $('data-include-tokens')?.addEventListener('click', e => e.currentTarget.classList.toggle('on'));
 $('data-export')?.addEventListener('click', async () => {
-  const st = $('data-status'); st.textContent = '내보내는 중…'; st.style.color = 'var(--muted)';
+  const st = $('data-status'); st.textContent = T.dataExporting; st.style.color = 'var(--muted)';
   const inc = $('data-include-tokens').classList.contains('on');
   try {
     const r = await fetch(provBase() + '/api/data/export', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({include_tokens: inc}) }).then(r => r.json());
-    if (r.ok) { st.textContent = `✓ 저장됨 (${_fmtBytes(r.bytes)})`; st.style.color = 'var(--ok)'; }
-    else { st.textContent = r.error || '실패'; st.style.color = 'var(--error)'; }
-  } catch (e) { st.textContent = '오류: ' + (e.message || e); st.style.color = 'var(--error)'; }
+    if (r.ok) { st.textContent = T.dataExported(_fmtBytes(r.bytes)); st.style.color = 'var(--ok)'; }
+    else { st.textContent = r.error || T.fail; st.style.color = 'var(--error)'; }
+  } catch (e) { st.textContent = T.errPrefix + (e.message || e); st.style.color = 'var(--error)'; }
 });
 $('data-wipe')?.addEventListener('click', async () => {
   const inc = $('data-include-tokens').classList.contains('on');
-  if (!confirm('로컬 데이터를 휴지통으로 보냅니다(복구 가능).' + (inc ? ' 토큰 포함.' : '') + '\n계속할까요?')) return;
-  const st = $('data-status'); st.textContent = '삭제 중…'; st.style.color = 'var(--muted)';
+  if (!confirm(T.dataConfirmWipe(inc))) return;
+  const st = $('data-status'); st.textContent = T.dataWiping; st.style.color = 'var(--muted)';
   try {
     const r = await fetch(provBase() + '/api/data/wipe', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({confirm: true, include_tokens: inc}) }).then(r => r.json());
-    if (r.ok) { st.textContent = `✓ ${(r.removed||[]).length}개 삭제 (${r.note||''})`; st.style.color = 'var(--ok)'; loadDataBoundary(); }
-    else { st.textContent = r.error || '실패'; st.style.color = 'var(--error)'; }
-  } catch (e) { st.textContent = '오류: ' + (e.message || e); st.style.color = 'var(--error)'; }
+    if (r.ok) { st.textContent = T.dataWiped((r.removed||[]).length, r.note||''); st.style.color = 'var(--ok)'; loadDataBoundary(); }
+    else { st.textContent = r.error || T.fail; st.style.color = 'var(--error)'; }
+  } catch (e) { st.textContent = T.errPrefix + (e.message || e); st.style.color = 'var(--error)'; }
 });
 
 // ── 온보딩 초기화 (빌드 디버깅용) ──
 async function resetOnboarding(mode) {
   const st = $('onb-reset-status');
   const full = mode === 'full';
-  const msg = full
-    ? '온보딩 + LLM 토큰·프로바이더 설정까지 모두 초기화합니다(휴지통, 복구 가능).\n완전한 첫 실행 상태로 돌아갑니다. 계속할까요?'
-    : '온보딩 완료 표시를 지웁니다(휴지통, 복구 가능).\nDB·메모리·토큰은 유지됩니다. 다음 실행 시 설치 마법사로 시작합니다. 계속할까요?';
+  const msg = full ? T.onbConfirmFull : T.onbConfirmSoft;
   if (!confirm(msg)) return;
-  st.textContent = '초기화 중…'; st.style.color = 'var(--muted)';
+  st.textContent = T.onbResetting; st.style.color = 'var(--muted)';
   try {
     const r = await fetch(provBase() + '/api/onboarding/reset', {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ confirm: true, mode })
     }).then(r => r.json());
     if (r.ok) {
-      st.textContent = `✓ 초기화됨 — ${r.note || '재시작 시 마법사'}`; st.style.color = 'var(--ok)';
+      st.textContent = T.onbReset(r.note || T.onbRestartWizard); st.style.color = 'var(--ok)';
     } else {
-      st.textContent = r.error || r.note || '실패'; st.style.color = 'var(--error)';
+      st.textContent = r.error || r.note || T.fail; st.style.color = 'var(--error)';
     }
-  } catch (e) { st.textContent = '오류: ' + (e.message || e); st.style.color = 'var(--error)'; }
+  } catch (e) { st.textContent = T.errPrefix + (e.message || e); st.style.color = 'var(--error)'; }
 }
 $('onb-reset-soft')?.addEventListener('click', () => resetOnboarding('soft'));
 $('onb-reset-full')?.addEventListener('click', () => resetOnboarding('full'));
@@ -1043,21 +1333,21 @@ function esc(s) { return String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','
 let TOOL_GROUPS = [];
 async function loadToolsPane() {
   const base = provBase(); const box = $('tools-list');
-  box.innerHTML = '<div class="empty">불러오는 중…</div>';
+  box.innerHTML = `<div class="empty">${T.loading}</div>`;
   try {
     const r = await fetch(base + '/api/llm/tool-groups', { signal: AbortSignal.timeout(5000) }).then(r => r.json());
     TOOL_GROUPS = r.groups || [];
-    $('tools-summary').textContent = `${r.active_tools}/${r.total_tools}개 활성 · ~${r.active_tokens} 토큰`;
+    $('tools-summary').textContent = T.toolsSummary(r.active_tools, r.total_tools, r.active_tokens);
     box.innerHTML = '';
     for (const g of TOOL_GROUPS) {
       const name = g.group || g.name;
       const row = document.createElement('div'); row.className = 'row';
-      row.innerHTML = `<div class="field"><label>${esc(name)}</label><div class="hint">${g.count}개 도구 · ~${g.tokens||0} 토큰</div></div>`;
+      row.innerHTML = `<div class="field"><label>${esc(name)}</label><div class="hint">${T.toolGroupRow(g.count, g.tokens||0)}</div></div>`;
       const tg = document.createElement('div'); tg.className = 'toggle' + (g.enabled ? ' on' : ''); tg.dataset.group = name;
       tg.addEventListener('click', () => tg.classList.toggle('on'));
       row.appendChild(tg); box.appendChild(row);
     }
-  } catch (e) { box.innerHTML = '<div class="empty">도구 그룹 조회 실패</div>'; }
+  } catch (e) { box.innerHTML = `<div class="empty">${T.toolGroupsFail}</div>`; }
   loadSearchEndpoint();
   loadSystemCheck();
 }
@@ -1070,19 +1360,19 @@ async function loadSystemCheck() {
     const r = await fetch(provBase() + '/api/onboarding/system-check', { signal: AbortSignal.timeout(8000) }).then(r => r.json());
     const d = r.docker || {};
     if (d.available) {
-      hint.textContent = '✓ 설치됨 — 코드 실행(bash/python) 도구 활성';
+      hint.textContent = T.dockerInstalled;
       action.innerHTML = '';
     } else {
-      hint.textContent = '미설치 (선택 사항) — 코드 실행 도구가 비활성화됩니다. 채팅·메모리·워크스페이스는 정상 작동합니다.';
+      hint.textContent = T.dockerMissing;
       action.innerHTML = '';
-      const autoBtn = document.createElement('button'); autoBtn.className = 'btn'; autoBtn.textContent = '자동 설치';
+      const autoBtn = document.createElement('button'); autoBtn.className = 'btn'; autoBtn.textContent = T.dockerAutoInstall;
       autoBtn.onclick = () => showDockerSetupModal();
       action.appendChild(autoBtn);
-      const manualBtn = document.createElement('button'); manualBtn.className = 'btn ghost'; manualBtn.style.marginLeft = '8px'; manualBtn.textContent = '직접 설치';
+      const manualBtn = document.createElement('button'); manualBtn.className = 'btn ghost'; manualBtn.style.marginLeft = '8px'; manualBtn.textContent = T.dockerManualInstall;
       manualBtn.onclick = () => openExternalUrl(d.install_url || 'https://www.docker.com/products/docker-desktop/');
       action.appendChild(manualBtn);
     }
-  } catch (e) { hint.textContent = '상태 확인 실패 (백엔드 미응답)'; }
+  } catch (e) { hint.textContent = T.dockerStatusFail; }
 }
 
 // ── 검색 엔드포인트 (SearXNG) ──
@@ -1092,7 +1382,7 @@ async function loadSearchEndpoint() {
     $('search-url').value = r.is_default ? '' : (r.url || '');
     $('search-url').placeholder = r.url || 'http://localhost:18888';
     const st = $('search-status');
-    if (r.has_key) { st.textContent = '키 저장됨'; st.style.color = 'var(--muted)'; }
+    if (r.has_key) { st.textContent = T.searchKeySaved; st.style.color = 'var(--muted)'; }
     else { st.textContent = ''; }
     $('search-key').value = '';
   } catch (e) { /* 백엔드 미지원 시 조용히 무시 */ }
@@ -1100,42 +1390,42 @@ async function loadSearchEndpoint() {
 $('search-save')?.addEventListener('click', async () => {
   const url = $('search-url').value.trim() || $('search-url').placeholder.trim();
   const key = $('search-key').value.trim();
-  const st = $('search-status'); st.textContent = '연결 테스트 중…'; st.style.color = 'var(--muted)';
+  const st = $('search-status'); st.textContent = T.searchTesting; st.style.color = 'var(--muted)';
   try {
     const r = await fetch(provBase() + '/api/onboarding/search', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({url, key}), signal: AbortSignal.timeout(15000) }).then(r => r.json());
-    if (r.ok) { st.textContent = '✓ 저장 · ' + (r.detail || '연결 성공'); st.style.color = 'var(--ok)'; $('search-key').value=''; }
-    else { st.textContent = r.error || '실패'; st.style.color = 'var(--error)'; }
-  } catch (e) { st.textContent = '오류: ' + (e.message || e); st.style.color = 'var(--error)'; }
+    if (r.ok) { st.textContent = '✓ ' + T.save + ' · ' + (r.detail || T.searchConnOk); st.style.color = 'var(--ok)'; $('search-key').value=''; }
+    else { st.textContent = r.error || T.fail; st.style.color = 'var(--error)'; }
+  } catch (e) { st.textContent = T.errPrefix + (e.message || e); st.style.color = 'var(--error)'; }
 });
 $('tools-save').addEventListener('click', async () => {
   const enabled = Array.from(document.querySelectorAll('#tools-list .toggle.on')).map(t => t.dataset.group);
-  const st = $('tools-status'); st.textContent = '적용 중…'; st.style.color = 'var(--muted)';
+  const st = $('tools-status'); st.textContent = T.applying; st.style.color = 'var(--muted)';
   try {
     const r = await fetch(provBase() + '/api/llm/tool-groups', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({enabled}) }).then(r => r.json());
-    if (r.ok) { st.textContent = '✓ 적용됨'; st.style.color = 'var(--ok)'; loadToolsPane(); }
-    else { st.textContent = r.error || '실패'; st.style.color = 'var(--error)'; }
-  } catch (e) { st.textContent = '오류: ' + (e.message || e); st.style.color = 'var(--error)'; }
+    if (r.ok) { st.textContent = '✓ ' + T.apply; st.style.color = 'var(--ok)'; loadToolsPane(); }
+    else { st.textContent = r.error || T.fail; st.style.color = 'var(--error)'; }
+  } catch (e) { st.textContent = T.errPrefix + (e.message || e); st.style.color = 'var(--error)'; }
 });
 
 // ── Agent 지침 (.md) 패널 ──
 async function loadAgentMd() {
   const base = provBase(); const name = $('agent-md-select').value;
-  $('agent-md-text').value = '불러오는 중…';
+  $('agent-md-text').value = T.loading;
   try {
     const r = await fetch(base + `/api/llm/agent-md?name=${encodeURIComponent(name)}`, { signal: AbortSignal.timeout(5000) }).then(r => r.json());
     $('agent-md-text').value = r.text || '';
-    $('agent-md-hint').textContent = r.exists ? `data/agents/${name}.md` : `(없음) 저장하면 생성됩니다 — ${name}.md`;
-  } catch (e) { $('agent-md-text').value = ''; $('agent-md-hint').textContent = '조회 실패'; }
+    $('agent-md-hint').textContent = r.exists ? `data/agents/${name}.md` : T.agentMdMissing(name);
+  } catch (e) { $('agent-md-text').value = ''; $('agent-md-hint').textContent = T.agentMdFail; }
 }
 $('agent-md-select').addEventListener('change', loadAgentMd);
 $('agent-md-save').addEventListener('click', async () => {
   const base = provBase(); const name = $('agent-md-select').value; const text = $('agent-md-text').value;
-  const st = $('agent-md-status'); st.textContent = '저장 중…'; st.style.color = 'var(--muted)';
+  const st = $('agent-md-status'); st.textContent = T.saving; st.style.color = 'var(--muted)';
   try {
     const r = await fetch(base + '/api/llm/agent-md', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name, text}) }).then(r => r.json());
-    if (r.ok || r.error === undefined) { st.textContent = '✓ 저장됨'; st.style.color = 'var(--ok)'; }
-    else { st.textContent = r.error || '실패'; st.style.color = 'var(--error)'; }
-  } catch (e) { st.textContent = '오류: ' + (e.message || e); st.style.color = 'var(--error)'; }
+    if (r.ok || r.error === undefined) { st.textContent = T.saved; st.style.color = 'var(--ok)'; }
+    else { st.textContent = r.error || T.fail; st.style.color = 'var(--error)'; }
+  } catch (e) { st.textContent = T.errPrefix + (e.message || e); st.style.color = 'var(--error)'; }
 });
 
 // ── Memory & Context 패널 ──
@@ -1147,7 +1437,7 @@ async function loadMemoryPane() {
     $('mem-threshold').value = s.compact_threshold ?? '';
     $('mem-keep').value = s.keep_recent ?? '';
     $('mem-auto-toggle').classList.toggle('on', s.auto_memory_update !== false);
-  } catch { $('mem-status').textContent = '설정 조회 실패'; $('mem-status').style.color = 'var(--error)'; }
+  } catch { $('mem-status').textContent = T.memSettingsFail; $('mem-status').style.color = 'var(--error)'; }
   // 저장된 기억 현황 (조회)
   try {
     const m = await fetch(base + '/api/memory/summary', { signal: AbortSignal.timeout(5000) }).then(r => r.json());
@@ -1171,16 +1461,16 @@ async function loadMemInspector() {
   const box = $('mem-insp-list');
   if (!box) return;
   const q = ($('mem-insp-q')?.value || '').trim();
-  box.innerHTML = '<div class="empty">불러오는 중…</div>';
+  box.innerHTML = `<div class="empty">${T.loading}</div>`;
   try {
     const ep = { persona: '/api/memory/persona', events: '/api/memory/events', entities: '/api/memory/entities' }[_miTab];
     const url = ep + (q ? `?search=${encodeURIComponent(q)}` : '');
     const r = await fetch(provBase() + url, { signal: AbortSignal.timeout(6000) }).then(r => r.json());
     const rows = r.rows || [];
-    if (!rows.length) { box.innerHTML = '<div class="empty">없음</div>'; return; }
+    if (!rows.length) { box.innerHTML = `<div class="empty">${T.miNone}</div>`; return; }
     box.innerHTML = '';
     for (const row of rows) box.appendChild(_miRow(row));
-  } catch (e) { box.innerHTML = '<div class="empty">조회 실패</div>'; }
+  } catch (e) { box.innerHTML = `<div class="empty">${T.dataLoadFail}</div>`; }
 }
 function _miRow(row) {
   const el = document.createElement('div');
@@ -1188,9 +1478,9 @@ function _miRow(row) {
   const id = row.id;
   // 탭별 표시 필드
   let key, val, meta;
-  if (_miTab === 'persona') { key = row.section_key || `#${id}`; val = row.content || ''; meta = row.is_active ? '' : '비활성'; }
-  else if (_miTab === 'events') { key = row.title || `이벤트 #${id}`; val = row.body || ''; meta = row.event_date || ''; }
-  else { key = row.name || `엔티티 #${id}`; val = row.notes || ''; meta = row.kind || ''; }
+  if (_miTab === 'persona') { key = row.section_key || `#${id}`; val = row.content || ''; meta = row.is_active ? '' : T.miInactive; }
+  else if (_miTab === 'events') { key = row.title || T.miEvent(id); val = row.body || ''; meta = row.event_date || ''; }
+  else { key = row.name || T.miEntity(id); val = row.notes || ''; meta = row.kind || ''; }
   const sens = row.sensitivity || '';
   el.innerHTML = `
     <div class="mi-item-head"><span class="mi-key"></span>${sens ? `<span class="mi-sens">${esc(sens)}</span>` : ''}<span class="mi-meta"></span></div>
@@ -1203,11 +1493,11 @@ function _miRow(row) {
   const acts = el.querySelector('.mi-actions');
   // persona는 편집 가능, events/entities는 삭제
   if (_miTab === 'persona') {
-    const edit = document.createElement('button'); edit.className = 'mi-btn'; edit.textContent = '편집';
+    const edit = document.createElement('button'); edit.className = 'mi-btn'; edit.textContent = T.miEdit;
     edit.addEventListener('click', () => _miEditPersona(id, valEl, edit, el));
     acts.appendChild(edit);
   } else {
-    const del = document.createElement('button'); del.className = 'mi-btn danger'; del.textContent = '삭제';
+    const del = document.createElement('button'); del.className = 'mi-btn danger'; del.textContent = T.miDelete;
     del.addEventListener('click', () => _miDelete(_miTab, id, el));
     acts.appendChild(del);
   }
@@ -1215,7 +1505,7 @@ function _miRow(row) {
   if (_miTab === 'persona' || _miTab === 'entities') {
     const sel = document.createElement('select'); sel.className = 'mi-sens-sel';
     for (const opt of ['', 'family', 'finance', 'dispute', 'health', 'private']) {
-      const o = document.createElement('option'); o.value = opt; o.textContent = opt || '(민감도 없음)';
+      const o = document.createElement('option'); o.value = opt; o.textContent = opt || T.miSensNone;
       if (opt === sens) o.selected = true;
       sel.appendChild(o);
     }
@@ -1225,7 +1515,7 @@ function _miRow(row) {
   return el;
 }
 async function _miSetSensitivity(tab, id, value, el) {
-  const st = $('mem-insp-status'); st.textContent = '민감도 설정 중…'; st.style.color = 'var(--muted)';
+  const st = $('mem-insp-status'); st.textContent = T.miSetting; st.style.color = 'var(--muted)';
   const ep = tab === 'persona' ? `/api/memory/persona/${id}` : `/api/memory/entities/${id}`;
   try {
     const r = await fetch(provBase() + ep, {
@@ -1233,40 +1523,40 @@ async function _miSetSensitivity(tab, id, value, el) {
       body: JSON.stringify({ sensitivity: value }),
     }).then(r => r.json());
     if (r.ok || r.error === undefined) {
-      st.textContent = value ? `✓ 민감도: ${value}` : '✓ 민감도 해제'; st.style.color = 'var(--ok)';
+      st.textContent = value ? T.miSensSet(value) : T.miSensCleared; st.style.color = 'var(--ok)';
       const head = el.querySelector('.mi-item-head');
       let badge = head.querySelector('.mi-sens');
       if (value) {
         if (!badge) { badge = document.createElement('span'); badge.className = 'mi-sens'; head.querySelector('.mi-meta').before(badge); }
         badge.textContent = value;
       } else if (badge) { badge.remove(); }
-    } else { st.textContent = r.error || '실패'; st.style.color = 'var(--error)'; }
-  } catch (e) { st.textContent = '오류: ' + (e.message || e); st.style.color = 'var(--error)'; }
+    } else { st.textContent = r.error || T.fail; st.style.color = 'var(--error)'; }
+  } catch (e) { st.textContent = T.errPrefix + (e.message || e); st.style.color = 'var(--error)'; }
 }
 async function _miEditPersona(id, valEl, btn, el) {
-  if (btn.textContent === '편집') {
-    valEl.contentEditable = 'true'; valEl.focus(); btn.textContent = '저장';
+  if (btn.textContent === T.miEdit) {
+    valEl.contentEditable = 'true'; valEl.focus(); btn.textContent = T.miSave;
     return;
   }
-  valEl.contentEditable = 'false'; btn.textContent = '편집';
-  const st = $('mem-insp-status'); st.textContent = '저장 중…'; st.style.color = 'var(--muted)';
+  valEl.contentEditable = 'false'; btn.textContent = T.miEdit;
+  const st = $('mem-insp-status'); st.textContent = T.saving; st.style.color = 'var(--muted)';
   try {
     const r = await fetch(provBase() + `/api/memory/persona/${id}`, {
       method: 'PATCH', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ content: valEl.textContent }),
     }).then(r => r.json());
-    st.textContent = (r.ok || r.error === undefined) ? '✓ 저장됨' : (r.error || '실패');
+    st.textContent = (r.ok || r.error === undefined) ? T.saved : (r.error || T.fail);
     st.style.color = (r.ok || r.error === undefined) ? 'var(--ok)' : 'var(--error)';
-  } catch (e) { st.textContent = '오류: ' + (e.message || e); st.style.color = 'var(--error)'; }
+  } catch (e) { st.textContent = T.errPrefix + (e.message || e); st.style.color = 'var(--error)'; }
 }
 async function _miDelete(tab, id, el) {
-  const st = $('mem-insp-status'); st.textContent = '삭제 중…'; st.style.color = 'var(--muted)';
+  const st = $('mem-insp-status'); st.textContent = T.miDeleting; st.style.color = 'var(--muted)';
   try {
     const ep = tab === 'events' ? `/api/memory/events/${id}` : `/api/memory/entities/${id}`;
     const r = await fetch(provBase() + ep, { method: 'DELETE' }).then(r => r.json());
-    if (r.ok || r.error === undefined) { el.remove(); st.textContent = '✓ 삭제됨'; st.style.color = 'var(--ok)'; }
-    else { st.textContent = r.error || '실패'; st.style.color = 'var(--error)'; }
-  } catch (e) { st.textContent = '오류: ' + (e.message || e); st.style.color = 'var(--error)'; }
+    if (r.ok || r.error === undefined) { el.remove(); st.textContent = T.miDeleted; st.style.color = 'var(--ok)'; }
+    else { st.textContent = r.error || T.fail; st.style.color = 'var(--error)'; }
+  } catch (e) { st.textContent = T.errPrefix + (e.message || e); st.style.color = 'var(--error)'; }
 }
 document.querySelectorAll('#mem-insp-tabs .side-tab').forEach(b =>
   b.addEventListener('click', () => _miSetTab(b.dataset.mtab)));
@@ -1277,9 +1567,9 @@ $('mem-insp-q')?.addEventListener('input', () => {
 
 $('mem-auto-toggle').addEventListener('click', e => e.currentTarget.classList.toggle('on'));
 $('mem-save').addEventListener('click', async () => {
-  const st = $('mem-status'); st.textContent = '저장 중…'; st.style.color = 'var(--muted)';
+  const st = $('mem-status'); st.textContent = T.saving; st.style.color = 'var(--muted)';
   const th = parseInt($('mem-threshold').value, 10), kr = parseInt($('mem-keep').value, 10);
-  if (isNaN(th) || isNaN(kr)) { st.textContent = '숫자를 입력하세요'; st.style.color = 'var(--error)'; return; }
+  if (isNaN(th) || isNaN(kr)) { st.textContent = T.enterNumbers; st.style.color = 'var(--error)'; return; }
   const body = { compact_threshold: th, keep_recent: kr, auto_memory_update: $('mem-auto-toggle').classList.contains('on') };
   try {
     const r = await fetch(provBase() + '/api/memory/settings', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) }).then(r => r.json());
@@ -1288,9 +1578,9 @@ $('mem-save').addEventListener('click', async () => {
       // 서버 검증·보정 결과를 다시 반영(keep<threshold 보정 등)
       $('mem-threshold').value = s.compact_threshold; $('mem-keep').value = s.keep_recent;
       $('mem-auto-toggle').classList.toggle('on', s.auto_memory_update !== false);
-      st.textContent = '✓ 저장됨'; st.style.color = 'var(--ok)';
-    } else { st.textContent = r.error || '실패'; st.style.color = 'var(--error)'; }
-  } catch (e) { st.textContent = '오류: ' + (e.message || e); st.style.color = 'var(--error)'; }
+      st.textContent = T.saved; st.style.color = 'var(--ok)';
+    } else { st.textContent = r.error || T.fail; st.style.color = 'var(--error)'; }
+  } catch (e) { st.textContent = T.errPrefix + (e.message || e); st.style.color = 'var(--error)'; }
 });
 
 // ── Voice (STT) 패널 ──
@@ -1303,13 +1593,13 @@ async function loadVoice() {
   } catch {}
 }
 $('stt-save').addEventListener('click', async () => {
-  const st = $('stt-status'); st.textContent = '저장 중…'; st.style.color = 'var(--muted)';
+  const st = $('stt-status'); st.textContent = T.saving; st.style.color = 'var(--muted)';
   const body = { provider: $('stt-provider').value, model: $('stt-model').value.trim(), language: $('stt-language').value.trim() || null };
   try {
     const r = await fetch(provBase() + '/api/stt/config', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) }).then(r => r.json());
-    if (r.ok || r.error === undefined) { st.textContent = '✓ 저장됨'; st.style.color = 'var(--ok)'; }
-    else { st.textContent = r.error || '실패'; st.style.color = 'var(--error)'; }
-  } catch (e) { st.textContent = '오류: ' + (e.message || e); st.style.color = 'var(--error)'; }
+    if (r.ok || r.error === undefined) { st.textContent = T.saved; st.style.color = 'var(--ok)'; }
+    else { st.textContent = r.error || T.fail; st.style.color = 'var(--error)'; }
+  } catch (e) { st.textContent = T.errPrefix + (e.message || e); st.style.color = 'var(--error)'; }
 });
 
 // ── Advanced (Scheduler) 패널 ──
@@ -1322,19 +1612,19 @@ async function loadScheduler() {
     $('sched-evening-toggle').classList.toggle('on', !!e.loaded);
     $('sched-morning-time').value = fmtTime(m.schedule);
     $('sched-evening-time').value = fmtTime(e.schedule);
-    $('sched-morning-hint').textContent = m.plist_exists ? (m.loaded ? '실행 예약됨' : '설치됨(미로드)') : '미설치';
-    $('sched-evening-hint').textContent = e.plist_exists ? (e.loaded ? '실행 예약됨' : '설치됨(미로드)') : '미설치';
+    $('sched-morning-hint').textContent = m.plist_exists ? (m.loaded ? T.schedScheduled : T.schedInstalledNotLoaded) : T.schedNotInstalled;
+    $('sched-evening-hint').textContent = e.plist_exists ? (e.loaded ? T.schedScheduled : T.schedInstalledNotLoaded) : T.schedNotInstalled;
   } catch {}
 }
 $('sched-morning-toggle').addEventListener('click', e => e.currentTarget.classList.toggle('on'));
 $('sched-evening-toggle').addEventListener('click', e => e.currentTarget.classList.toggle('on'));
 $('sched-runnow').addEventListener('click', async () => {
-  const st = $('sched-status'); st.textContent = '실행 중…'; st.style.color = 'var(--muted)';
-  try { await fetch(provBase() + '/api/scheduler/run-now', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({job:'morning_brief', enable:true}) }); st.textContent = '✓ 실행 요청됨'; st.style.color = 'var(--ok)'; }
-  catch (e) { st.textContent = '오류: ' + (e.message || e); st.style.color = 'var(--error)'; }
+  const st = $('sched-status'); st.textContent = T.schedRunning; st.style.color = 'var(--muted)';
+  try { await fetch(provBase() + '/api/scheduler/run-now', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({job:'morning_brief', enable:true}) }); st.textContent = T.schedRunRequested; st.style.color = 'var(--ok)'; }
+  catch (e) { st.textContent = T.errPrefix + (e.message || e); st.style.color = 'var(--error)'; }
 });
 $('sched-save').addEventListener('click', async () => {
-  const st = $('sched-status'); st.textContent = '저장 중…'; st.style.color = 'var(--muted)'; const base = provBase();
+  const st = $('sched-status'); st.textContent = T.saving; st.style.color = 'var(--muted)'; const base = provBase();
   const parse = (v) => { const m = (v||'').match(/^(\d{1,2}):(\d{2})$/); return m ? {hour:+m[1], minute:+m[2]} : null; };
   try {
     for (const [job, toggleId, timeId] of [['morning_brief','sched-morning-toggle','sched-morning-time'],['evening_review','sched-evening-toggle','sched-evening-time']]) {
@@ -1343,8 +1633,8 @@ $('sched-save').addEventListener('click', async () => {
       await fetch(base + '/api/scheduler/toggle', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({job, enable:on}) });
       if (t) await fetch(base + '/api/scheduler/set-time', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({job, ...t}) });
     }
-    st.textContent = '✓ 저장됨'; st.style.color = 'var(--ok)'; loadScheduler();
-  } catch (e) { st.textContent = '오류: ' + (e.message || e); st.style.color = 'var(--error)'; }
+    st.textContent = T.saved; st.style.color = 'var(--ok)'; loadScheduler();
+  } catch (e) { st.textContent = T.errPrefix + (e.message || e); st.style.color = 'var(--error)'; }
 });
 
 // ── 초기화 ──
@@ -1370,16 +1660,16 @@ function showDockerSetupModal() {
 
   overlay.innerHTML = `
     <div style="background:var(--card);border-radius:12px;padding:28px;width:480px;max-width:90vw;box-shadow:0 8px 32px rgba(0,0,0,.4)">
-      <h2 style="margin:0 0 8px;font-size:16px">코드 실행 환경 설치</h2>
-      <div style="font-size:13px;color:var(--muted);margin-bottom:16px">Homebrew → Docker Desktop → 샌드박스 이미지를 자동으로 설치합니다.</div>
+      <h2 style="margin:0 0 8px;font-size:16px">${T.dsTitle}</h2>
+      <div style="font-size:13px;color:var(--muted);margin-bottom:16px">${T.dsDesc}</div>
       <div id="dsLog" style="font-family:monospace;font-size:12px;color:var(--muted);background:var(--bg);border-radius:6px;padding:10px;min-height:80px;max-height:180px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;margin-bottom:12px"></div>
       <div id="dsBar" style="height:4px;border-radius:2px;background:var(--border);margin-bottom:12px;overflow:hidden">
         <div id="dsBarInner" style="height:100%;width:0%;background:var(--accent);transition:width .3s"></div>
       </div>
       <div id="dsMsg" style="font-size:13px;min-height:20px;margin-bottom:16px"></div>
       <div style="display:flex;gap:8px;justify-content:flex-end">
-        <button class="btn ghost" id="dsSkip">닫기</button>
-        <button class="btn" id="dsStart">자동 설치 시작</button>
+        <button class="btn ghost" id="dsSkip">${T.dsClose}</button>
+        <button class="btn" id="dsStart">${T.dsStart}</button>
       </div>
     </div>`;
 
@@ -1414,18 +1704,18 @@ function showDockerSetupModal() {
       es.close();
       bar.style.width = '100%';
       msg.style.color = 'var(--ok)';
-      msg.textContent = '✓ 설치 완료! 코드 실행 환경이 준비됐습니다.';
+      msg.textContent = T.dsDone;
       document.getElementById('dsSkip').disabled = false;
-      document.getElementById('dsSkip').textContent = '닫기';
+      document.getElementById('dsSkip').textContent = T.dsClose;
       loadSystemCheck(); // Docker 상태 갱신
     });
 
     es.addEventListener('error', (e) => {
       es.close();
       msg.style.color = 'var(--error, #f85149)';
-      msg.textContent = '실패: ' + (e.data || '알 수 없는 오류');
+      msg.textContent = T.dsFailPrefix + (e.data || T.dsUnknownErr);
       document.getElementById('dsStart').disabled = false;
-      document.getElementById('dsStart').textContent = '다시 시도';
+      document.getElementById('dsStart').textContent = T.dsRetry;
       document.getElementById('dsSkip').disabled = false;
       running = false;
     });
@@ -1434,7 +1724,7 @@ function showDockerSetupModal() {
       if (es.readyState === EventSource.CLOSED) return;
       es.close();
       msg.style.color = 'var(--error, #f85149)';
-      msg.textContent = '연결 오류';
+      msg.textContent = T.dsConnErr;
       document.getElementById('dsStart').disabled = false;
       document.getElementById('dsSkip').disabled = false;
       running = false;
