@@ -366,7 +366,28 @@ async fn run_update_check(app: &tauri::AppHandle) {
             vlog!("[VEGA] 새 버전 발견: {version} — 백그라운드 다운로드 시작");
             // download + install 만 수행하고 restart 는 호출하지 않는다.
             // macOS 에선 .app 이 교체되어 재시작 때 새 버전이 적용된다.
-            match update.download_and_install(|_chunk, _total| {}, || {}).await {
+            // Windows: download_and_install 이 NSIS installer 를 실행하는데, 실행 중인
+            // vega-backend.exe(spawn_backend_directly 로 직접 띄운 detached child — 트레이
+            // quit 후에도 생존)를 교체하지 못해 설치가 조용히 실패하던 문제(INT-1580).
+            // on_download_finish(다운로드 완료 후 install 직전 콜백)에서 sidecar 를 종료해
+            // 파일 잠금을 푼다 — 다운로드 중엔 backend 유지, 새 버전 실행 시 재기동된다.
+            match update
+                .download_and_install(
+                    |_chunk, _total| {},
+                    || {
+                        #[cfg(target_os = "windows")]
+                        {
+                            use std::os::windows::process::CommandExt;
+                            let _ = std::process::Command::new("taskkill")
+                                .args(["/F", "/IM", "vega-backend.exe"])
+                                .creation_flags(0x0800_0000)
+                                .status();
+                            vlog!("[VEGA] 업데이트 설치 직전 backend 종료(파일 잠금 해제)");
+                        }
+                    },
+                )
+                .await
+            {
                 Ok(_) => {
                     *UPDATE_INSTALLED_VER.lock().unwrap_or_else(|e| e.into_inner()) =
                         Some(version.clone());
