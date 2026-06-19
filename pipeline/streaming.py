@@ -240,14 +240,6 @@ def build_dynamic_preamble() -> str:
     return "\n".join(parts)
 
 
-def _agent_dir() -> Path:
-    try:
-        from pipeline.data_paths import data_dir
-        return data_dir() / "agents"
-    except Exception:
-        return Path(__file__).parent.parent / "data" / "agents"
-
-
 def _load_agent_md() -> str:
     """Merge data/agents/_default.md + RULES.md + data/agents/{active_provider}.md.
 
@@ -257,15 +249,16 @@ def _load_agent_md() -> str:
       3. {provider}.md — provider-specific hints
 
     Returns empty string if file is missing or read fails (safe fallback)."""
+    from pipeline.data_paths import agent_md_path
     parts: list[str] = []
-    default_path = _agent_dir() / "_default.md"
+    default_path = agent_md_path("_default")
     if default_path.exists():
         try:
             parts.append(default_path.read_text(encoding="utf-8").strip())
         except Exception:
             pass
     # Mutable rules layer — the rule_save tool writes to this file
-    rules_path = _agent_dir() / "RULES.md"
+    rules_path = agent_md_path("RULES")
     if rules_path.exists():
         try:
             rules_text = rules_path.read_text(encoding="utf-8").strip()
@@ -276,7 +269,7 @@ def _load_agent_md() -> str:
     try:
         from pipeline.llm_gateway import get_active_name
         prov_name = get_active_name()
-        prov_path = _agent_dir() / f"{prov_name}.md"
+        prov_path = agent_md_path(prov_name)
         if prov_path.exists():
             text = prov_path.read_text(encoding="utf-8").strip()
             # Strip the first H1 heading (for human identification only, unnecessary for the model)

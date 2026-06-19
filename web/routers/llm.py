@@ -386,7 +386,8 @@ async def llm_agent_md_get(name: str):
     """Return data/agents/{name}.md. name='_default' is also valid. Returns empty string if file is absent."""
     if "/" in name or ".." in name:
         return JSONResponse({"error": "invalid name"}, status_code=400)
-    p = _agent_md_dir() / f"{name}.md"
+    from pipeline.data_paths import agent_md_path
+    p = agent_md_path(name)
     if not p.exists():
         return JSONResponse({"name": name, "exists": False, "text": ""})
     try:
