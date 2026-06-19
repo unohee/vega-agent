@@ -28,7 +28,7 @@ cd "$REPO_ROOT"
 # 버전의 단일 출처 = tauri.conf.json. CI(release-dmg.yml)가 이 줄을 sed 로
 # tauri.conf 값과 맞춰 주입한다(^VERSION="..." 패턴 의존). 로컬 수동 빌드 시엔
 # 이 값을 tauri.conf.json 과 손으로 맞춰야 한다 (INT-1432).
-VERSION="0.1.37"
+VERSION="0.1.38"
 APP_NAME="VEGA"
 SIGN_APP="Developer ID Application: Heewon Oh (635QK74RYK)"
 BUILD_DIR="$REPO_ROOT/build_output"

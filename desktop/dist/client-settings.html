@@ -84,20 +84,20 @@
     <div class="sep"></div>
 
     <div class="section">
-      <h2>AI 프로바이더</h2>
-      <div class="field-label">프로바이더</div>
+      <h2 id="t-sec-prov">AI 프로바이더</h2>
+      <div class="field-label" id="t-prov-label">프로바이더</div>
       <div class="row">
         <select id="prov-select" style="flex:1"></select>
       </div>
       <div id="prov-key-row" style="margin-top:8px">
-        <div class="field-label">API 키</div>
+        <div class="field-label" id="t-apikey-label">API 키</div>
         <div class="row">
           <input type="text" id="prov-key" placeholder="sk-..." autocomplete="off" />
         </div>
         <div class="field-hint" id="key-source-hint">—</div>
       </div>
       <div id="prov-url-row" style="margin-top:8px; display:none">
-        <div class="field-label">서버 URL</div>
+        <div class="field-label" id="t-provurl-label">서버 URL</div>
         <div class="row">
           <input type="text" id="prov-url" placeholder="http://localhost:1234/v1" />
         </div>
@@ -158,6 +158,13 @@ const I18N = {
     connErr:    (msg) => `Connection failed: ${msg}`,
     saved:      '✓ Saved — navigating…',
     saveErr:    (msg) => `Save failed: ${msg}`,
+    secProvider:'AI Provider', providerLabel:'Provider', apiKeyLabel:'API Key', provUrlLabel:'Server URL', apply:'Apply',
+    enterUrlFirst:'Enter the server URL first', backendUnreachable:'Cannot reach backend',
+    configured:'Configured', notConfigured:'Not set',
+    keyCurrent:(m,s)=>`Current: ${m} (source: ${s})`, noKeyStored:'No saved key — enter a new one',
+    reLogin:'Re-login', browserLogin:'Log in via browser', processing:'Processing…',
+    enterApiKey:'Enter the API key', appliedActive:(a)=>`✓ Applied (active: ${a})`, failed:'Failed',
+    loginTimeout:'Timed out (login incomplete?)', errPrefix:(m)=>`Error: ${m}`,
   },
   ko: {
     title:      'VEGA 설정',
@@ -178,6 +185,13 @@ const I18N = {
     connErr:    (msg) => `연결 실패: ${msg}`,
     saved:      '✓ 저장됨 — 서버로 이동합니다…',
     saveErr:    (msg) => `저장 실패: ${msg}`,
+    secProvider:'AI 프로바이더', providerLabel:'프로바이더', apiKeyLabel:'API 키', provUrlLabel:'서버 URL', apply:'적용',
+    enterUrlFirst:'먼저 서버 URL을 입력하세요', backendUnreachable:'백엔드에 연결할 수 없습니다',
+    configured:'설정됨', notConfigured:'미설정',
+    keyCurrent:(m,s)=>`현재: ${m} (출처: ${s})`, noKeyStored:'저장된 키 없음 — 새 키를 입력하세요',
+    reLogin:'다시 로그인', browserLogin:'브라우저로 로그인', processing:'처리 중…',
+    enterApiKey:'API 키를 입력하세요', appliedActive:(a)=>`✓ 적용됨 (활성: ${a})`, failed:'실패',
+    loginTimeout:'시간 초과(로그인 미완료?)', errPrefix:(m)=>`오류: ${m}`,
   },
 };
 
@@ -205,7 +219,12 @@ function applyLang(lang) {
   document.getElementById('t-sec-lang').textContent   = T.secLang;
   document.getElementById('cancel-btn').textContent   = T.close;
   document.getElementById('save-btn').innerHTML       = T.save;
-  document.getElementById('lang-select').value        = lang;
+  document.getElementById('t-sec-prov').textContent     = T.secProvider;
+  document.getElementById('t-prov-label').textContent   = T.providerLabel;
+  document.getElementById('t-apikey-label').textContent = T.apiKeyLabel;
+  document.getElementById('t-provurl-label').textContent = T.provUrlLabel;
+  document.getElementById('prov-apply').textContent     = T.apply;
+  document.getElementById('lang-select').value          = lang;
   document.documentElement.lang = lang;
 }
 
@@ -237,7 +256,7 @@ let KEY_SOURCE = {};
 async function loadProviders() {
   const base = provBase();
   const status = document.getElementById('prov-status');
-  if (!base) { status.textContent = '먼저 서버 URL을 입력하세요'; return; }
+  if (!base) { status.textContent = T.enterUrlFirst; return; }
   try {
     const [ob, ks] = await Promise.all([
       fetch(base + '/api/onboarding', { signal: AbortSignal.timeout(6000) }).then(r => r.json()),
@@ -256,7 +275,7 @@ async function loadProviders() {
     sel.value = ob.active_provider || (PROVIDERS[0] && PROVIDERS[0].id) || '';
     onProvChange();
   } catch (e) {
-    status.textContent = '백엔드에 연결할 수 없습니다';
+    status.textContent = T.backendUnreachable;
     status.style.color = 'var(--error)';
   }
 }
@@ -271,7 +290,7 @@ function onProvChange() {
   const keyInput = document.getElementById('prov-key');
   const srcHint = document.getElementById('key-source-hint');
   const status = document.getElementById('prov-status');
-  status.textContent = p.configured ? '설정됨' : '미설정';
+  status.textContent = p.configured ? T.configured : T.notConfigured;
   status.style.color = p.configured ? 'var(--ok)' : 'var(--muted)';
   keyInput.value = '';
   if (p.auth === 'key') {
@@ -279,8 +298,8 @@ function onProvChange() {
     keyInput.placeholder = p.key_hint || 'sk-...';
     const ks = KEY_SOURCE[p.id];
     srcHint.textContent = ks && ks.source !== 'none'
-      ? `현재: ${ks.masked} (출처: ${ks.source})`
-      : '저장된 키 없음 — 새 키를 입력하세요';
+      ? T.keyCurrent(ks.masked, ks.source)
+      : T.noKeyStored;
   } else if (p.auth === 'local') {
     keyRow.style.display = 'none'; urlRow.style.display = '';
     document.getElementById('prov-url').value = p.default_url || '';
@@ -288,8 +307,8 @@ function onProvChange() {
     keyRow.style.display = 'none'; urlRow.style.display = 'none';
   }
   document.getElementById('prov-apply').textContent = p.auth === 'pkce'
-    ? (p.configured ? '다시 로그인' : '브라우저로 로그인')
-    : '적용';
+    ? (p.configured ? T.reLogin : T.browserLogin)
+    : T.apply;
 }
 document.getElementById('prov-select').addEventListener('change', onProvChange);
 
@@ -300,7 +319,7 @@ document.getElementById('prov-apply').addEventListener('click', async () => {
   const status = document.getElementById('prov-status');
   const btn = document.getElementById('prov-apply');
   btn.disabled = true;
-  status.textContent = '처리 중…'; status.style.color = 'var(--muted)';
+  status.textContent = T.processing; status.style.color = 'var(--muted)';
   try {
     let endpoint, body;
     if (p.auth === 'pkce') {
@@ -310,7 +329,7 @@ document.getElementById('prov-apply').addEventListener('click', async () => {
       body = { provider: p.id, base_url: document.getElementById('prov-url').value.trim() };
     } else {
       const key = document.getElementById('prov-key').value.trim();
-      if (!key) { status.textContent = 'API 키를 입력하세요'; status.style.color = 'var(--error)'; btn.disabled = false; return; }
+      if (!key) { status.textContent = T.enterApiKey; status.style.color = 'var(--error)'; btn.disabled = false; return; }
       endpoint = '/api/onboarding/provider'; body = { provider: p.id, api_key: key };
     }
     const r = await fetch(base + endpoint, {
@@ -319,17 +338,17 @@ document.getElementById('prov-apply').addEventListener('click', async () => {
     });
     const d = await r.json();
     if (d.ok) {
-      status.textContent = '✓ 적용됨 (활성: ' + (d.active || p.id) + ')';
+      status.textContent = T.appliedActive(d.active || p.id);
       status.style.color = 'var(--ok)';
       await loadProviders();
       document.getElementById('prov-select').value = d.active || p.id;
       onProvChange();
     } else {
-      status.textContent = d.error || '실패';
+      status.textContent = d.error || T.failed;
       status.style.color = 'var(--error)';
     }
   } catch (e) {
-    status.textContent = (e.name === 'TimeoutError') ? '시간 초과(로그인 미완료?)' : ('오류: ' + (e.message || e));
+    status.textContent = (e.name === 'TimeoutError') ? T.loginTimeout : T.errPrefix(e.message || e);
     status.style.color = 'var(--error)';
   } finally {
     btn.disabled = false;
