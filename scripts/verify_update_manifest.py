@@ -23,9 +23,11 @@ DEFAULT_BASE = "https://download.intrect.io/vega/updates"
 # 표준 urllib 은 download.intrect.io(Cloudflare 봇 보호)에 403 으로 막힌다(urllib 의 TLS
 # fingerprint 를 봇으로 판정 — 2026-06-19 실측: urllib 403 / curl·requests·reqwest 200).
 # 실제 updater(reqwest)와 같은 "정상 클라이언트" 조건으로 검증하기 위해 requests 를 쓴다.
-def _get(url: str, timeout: float = 20.0, retries: int = 10, head: bool = False):
+def _get(url: str, timeout: float = 20.0, retries: int = 6, head: bool = False):
     """공개 GET/HEAD — R2/CF 전파 지연 대비 재시도(자산 HEAD 가 막 업로드돼 늦을 수 있음).
-    HTTP 4xx/5xx 도 전파 지연일 수 있으니 200/3xx 가 아니면 재시도. (status, body) 반환."""
+    HTTP 4xx/5xx 도 전파 지연일 수 있으니 200/3xx 가 아니면 재시도. (status, body) 반환.
+    NOTE: 지속적 403(GitHub Actions datacenter IP 가 CF Bot Fight Mode 에 차단, INT-1582)은
+    retry 로 못 뚫는다 — 이 스크립트는 self-hosted darwin(집 IP, CF 통과)에서만 실행한다."""
     last = None
     for i in range(retries):
         try:
@@ -42,7 +44,7 @@ def _get(url: str, timeout: float = 20.0, retries: int = 10, head: bool = False)
         except Exception as e:  # noqa: BLE001 — 네트워크 전부 재시도 대상
             last = e
         if i < retries - 1:
-            time.sleep(12)
+            time.sleep(8)
     # 마지막 시도 결과(상태 코드)를 그대로 반환 — 호출부가 4xx/5xx 를 에러로 기록.
     if isinstance(last, str) and last.startswith("HTTP "):
         return int(last.split()[1]), None
