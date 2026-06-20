@@ -76,6 +76,77 @@ async def test_events_list_shape():
         assert "id" in r and "event_date" in r and "title" in r
 
 
+@pytest.mark.asyncio
+async def test_entity_resolution_report_metrics(tmp_path, monkeypatch):
+    db_path = tmp_path / "agent.db"
+    monkeypatch.setattr(mi, "_db", lambda: db_path)
+
+    with mi._conn() as conn:
+        entities = [
+            ("Acme", "org", "canon:acme"),
+            ("ACME", "org", "canon:acme"),
+            ("Solo", "person", " canon:solo "),
+            ("Noisy", "topic", None),
+            ("Blank Canon", "topic", "   "),
+            ("Rare", "topic", None),
+        ]
+        conn.executemany(
+            "INSERT INTO entities(name, kind, canonical_id) VALUES (?, ?, ?)",
+            entities,
+        )
+        conn.executemany(
+            "INSERT INTO events(event_date, title, body) VALUES (?, ?, '')",
+            [("2026-01-01", "e1"), ("2026-01-02", "e2"), ("2026-01-03", "e3")],
+        )
+        conn.executemany(
+            "INSERT INTO event_entities(event_id, entity_id, match_text) VALUES (?, ?, ?)",
+            [
+                (1, 4, "Noisy"),
+                (1, 4, "Noisy"),
+                (2, 4, "Noisy"),
+                (3, 4, "Noisy"),
+                (1, 5, "Blank Canon"),
+                (2, 5, "Blank Canon"),
+                (3, 6, "Rare"),
+            ],
+        )
+        conn.commit()
+
+    report = _body(await mi.entity_resolution_report())
+    assert report["baseline_coverage_percent"] == 3.4
+    assert report["current_coverage_percent"] == 50.0
+    assert report["post_run_coverage_percent"] == 50.0
+    assert report["total_entities"] == 6
+    assert report["canonicalized_entities"] == 3
+
+    duplicates = report["duplicate_canonical_clusters"]
+    assert duplicates["total"] == 1
+    assert duplicates["clusters"] == [
+        {
+            "canonical_id": "canon:acme",
+            "count": 2,
+            "entities": [
+                {"id": 2, "name": "ACME", "kind": "org"},
+                {"id": 1, "name": "Acme", "kind": "org"},
+            ],
+        }
+    ]
+
+    unresolved = report["unresolved_high_frequency_entities"]
+    assert unresolved[0] == {
+        "id": 4,
+        "name": "Noisy",
+        "kind": "topic",
+        "event_count": 3,
+        "mention_count": 4,
+    }
+    assert [row["name"] for row in unresolved] == ["Noisy", "Blank Canon", "Rare"]
+
+    summary = _body(await mi.memory_summary())
+    assert summary["entity_resolution"]["baseline_coverage_percent"] == 3.4
+    assert summary["entities"]["entity_resolution"]["current_coverage_percent"] == 50.0
+
+
 # ── persona: 페르소나 탭 ──────────────────────────────────────────
 @pytest.mark.asyncio
 async def test_persona_active_only():
@@ -97,11 +168,11 @@ class TestMemorySettingsAPI:
             "pipeline.data_paths.memory_settings_path",
             lambda: tmp_path / "memory_settings.json",
         )
-        from fastapi import FastAPI
-        from fastapi.testclient import TestClient
-        app = FastAPI()
+        fastapi = pytest.importorskip("fastapi")
+        testclient = pytest.importorskip("fastapi.testclient")
+        app = fastapi.FastAPI()
         app.include_router(mi.router)
-        return TestClient(app)
+        return testclient.TestClient(app)
 
     def test_get_returns_settings_and_defaults(self, client):
         r = client.get("/api/memory/settings")
