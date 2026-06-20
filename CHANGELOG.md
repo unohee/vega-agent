@@ -1,77 +1,77 @@
 # Changelog
 
-이 프로젝트의 모든 주요 변경사항은 이 파일에 기록된다.
-포맷은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/)를 따르며,
-버저닝은 [Semantic Versioning](https://semver.org/lang/ko/)을 따른다.
+All notable changes to this project are documented in this file.
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
 ## [0.1.14] - 2026-06-11
 
-### Added (Windows 빌드 — INT-1438)
-- **Windows NSIS 빌드 파이프라인** (`.github/workflows/build-windows.yml`) — windows-latest 러너에서 PyInstaller 백엔드 빌드 → `/api/health` smoke test → Tauri NSIS 인스톨러 빌드 → Release 첨부. Windows 코드사이닝 인증서 없음(unsigned, SmartScreen 경고 감수).
-- **`desktop/tauri.windows.conf.json`** — Windows 전용 번들 타겟(nsis, currentUser 설치).
-- **Rust 셸 Windows 지원** (`desktop/src/lib.rs`) — LaunchAgent/libc 등 macOS 전용 코드를 `cfg(target_os = "macos")`로 게이팅, Windows/Linux는 백엔드 직접 spawn(CREATE_NO_WINDOW), 로그 디렉터리 플랫폼 분기(%LOCALAPPDATA%\VEGA\logs), 트레이 "백엔드 재시작"은 taskkill+재spawn. 오버레이 타이틀바는 macOS 전용 유지.
-- **Python 백엔드 Windows 가드** — `pipeline/keychain.py`(`security` CLI 부재 시 .env/환경변수 폴백), `pipeline/data_paths.py`(Windows %LOCALAPPDATA%\VEGA), `web/server.py`(pty/fcntl/termios import 가드 — 내장 터미널만 비활성).
+### Added (Windows build — INT-1438)
+- **Windows NSIS build pipeline** (`.github/workflows/build-windows.yml`) — on the windows-latest runner: PyInstaller backend build → `/api/health` smoke test → Tauri NSIS installer build → attach to Release. No Windows code-signing certificate (unsigned, accepting the SmartScreen warning).
+- **`desktop/tauri.windows.conf.json`** — Windows-only bundle target (nsis, currentUser install).
+- **Rust shell Windows support** (`desktop/src/lib.rs`) — macOS-only code such as LaunchAgent/libc is gated behind `cfg(target_os = "macos")`; Windows/Linux spawn the backend directly (CREATE_NO_WINDOW), with a platform-specific log directory (%LOCALAPPDATA%\VEGA\logs), and the tray "restart backend" action does taskkill+respawn. The overlay title bar remains macOS-only.
+- **Python backend Windows guards** — `pipeline/keychain.py` (.env/environment-variable fallback when the `security` CLI is absent), `pipeline/data_paths.py` (Windows %LOCALAPPDATA%\VEGA), `web/server.py` (pty/fcntl/termios import guards — only the built-in terminal is disabled).
 
 ### Fixed
-- **포트 8100 split-brain** (`bin/vega_backend_launcher.py`, INT-1439) — 다른 백엔드(예: 개인 VEGA 데브 데몬의 `*:8100` 와일드카드 바인드)가 이미 서빙 중이면 `127.0.0.1:8100`을 겹쳐 잡지 않고 해제될 때까지 양보 대기. 두 백엔드가 트래픽을 나눠 받아 "세션 컨텍스트 증발"로 체감되던 사고 재발 방지. `/api/health`에 `app`/`db` 정체성 필드 추가.
-- **pytest 수집 차단 해소** — `tests/test_channel_kyte_e2e.py`(import 시 LLM 호출+sys.exit 하는 수동 스크립트)를 `testing/channel_kyte_e2e_260611.py`로 이동.
+- **Port 8100 split-brain** (`bin/vega_backend_launcher.py`, INT-1439) — if another backend (e.g. the personal VEGA dev daemon's `*:8100` wildcard bind) is already serving, do not grab `127.0.0.1:8100` on top of it; instead yield and wait until it is released. Prevents a recurrence of the incident that felt like "session context vanishing" when two backends split incoming traffic. Added `app`/`db` identity fields to `/api/health`.
+- **Unblocked pytest collection** — moved `tests/test_channel_kyte_e2e.py` (a manual script that calls the LLM and runs sys.exit on import) to `testing/channel_kyte_e2e_260611.py`.
 
 ## [0.1.7] - 2026-06-04
 
-### Added (VEGA 백포트 — 채팅/대시보드 UX)
-- **재방문 인터리빙 복원** (`web/server.py`, `pipeline/session_store.py`, `chat.html`) — 어시스턴트 메시지에 텍스트↔도구 실행을 시간순으로 기록하는 `events` 구조 도입. `messages` 테이블에 `events TEXT` 컬럼 추가(마이그레이션), 도구가 쓰인 응답은 events를 영속화해 세션 재방문 시 라이브와 동일한 순서로 복원. 순수 텍스트 응답은 텍스트 폴백.
-- **도구별 완료 요약 + 명령어 중심 배지** (`web/server.py`) — `_exec_summary`로 host_exec/bash_exec 결과를 '무엇을 했는지'(명령어+rc) 한 줄로 요약, `_tool_summary`가 call_id별 실행 명령어를 배지에 반영. 출력은 터미널 블럭에서 분리 표시.
-- **중단 응답 영속화** (`web/server.py`) — `_build_aborted_message`로 응답이 중단돼도 도구 실행 흔적을 보존, 재방문 시 사라지지 않음.
-- **메시지 편집** (`chat.html`) — 사용자 메시지를 편집해 재전송.
-- **작업 과정 투명성 (Claude Code 스타일)** (`data/agents/_default.md`) — 도구를 쓰며 진행 과정을 본문 텍스트로 자연스럽게 보여주는 에이전트 지침 추가.
-- **대시보드 메모리 생태계 뷰** (`dashboard.html`, `web/routers/memory_inspector.py`) — 홈을 히어로(VEGA가 기억하는 것) + 탭(최근 기억·인물/엔티티·타임라인·페르소나·규칙/스킬·오늘) 구조로 전면 재설계.
-- **파일 뷰어 드래그 인용 + 외부 에디터로 열기** (`web/routers/fs.py`, `chat.html`) — 파일 뷰어에서 텍스트를 드래그해 채팅에 인용, 외부 에디터로 바로 열기.
+### Added (VEGA backport — chat/dashboard UX)
+- **Revisit interleaving restoration** (`web/server.py`, `pipeline/session_store.py`, `chat.html`) — introduced an `events` structure that records text↔tool-execution chronologically within an assistant message. Added an `events TEXT` column to the `messages` table (migration); responses that used tools persist their events so that, on session revisit, they are restored in the same order as live. Pure-text responses fall back to text.
+- **Per-tool completion summary + command-centric badges** (`web/server.py`) — `_exec_summary` summarizes host_exec/bash_exec results in a single line of "what was done" (command+rc), and `_tool_summary` reflects the executed command per call_id in the badge. Output is shown separately in the terminal block.
+- **Aborted-response persistence** (`web/server.py`) — `_build_aborted_message` preserves traces of tool execution even when a response is aborted, so they do not disappear on revisit.
+- **Message editing** (`chat.html`) — edit and resend a user message.
+- **Work-process transparency (Claude Code style)** (`data/agents/_default.md`) — added an agent directive to naturally show the work-in-progress as body text while using tools.
+- **Dashboard memory ecosystem view** (`dashboard.html`, `web/routers/memory_inspector.py`) — fully redesigned the home into a hero (what VEGA remembers) + tabs (recent memories · people/entities · timeline · persona · rules/skills · today) structure.
+- **File viewer drag-quote + open in external editor** (`web/routers/fs.py`, `chat.html`) — drag text in the file viewer to quote it into the chat, or open it directly in an external editor.
 
 ### Added
-- **STT(음성→텍스트) 지원** (`pipeline/stt_gateway.py`) — OpenAI Whisper API 호환 엔드포인트 공통 게이트웨이. 지원 프로바이더: OpenAI (`whisper-1`), Groq, 로컬 faster-whisper-server, LM Studio. `LocalSTTUnavailable` 예외로 사이드카 미실행 시 503 조용히 반환. `data/llm_providers.json`에 `stt` 섹션 추가 (`provider`, `model`, `language`, `response_format`). `/api/stt`, `/api/stt/config` 엔드포인트 추가.
-- **채팅 UI 마이크 버튼** (`chat.html`) — 입력창에 🎙 버튼 추가. MediaRecorder로 브라우저 내 녹음 → `/api/stt` 전송 → 텍스트를 커서 위치에 삽입. `+` 팝오버 메뉴에도 "음성 입력" 항목 추가. 로컬 STT 미실행 시 "로컬 STT 미실행" 토스트 표시.
-- **UI 언어 선택 (한국어/English)** (`chat.html`, `dashboard.html`) — 헤더에 `KO`/`EN` 토글 버튼 추가. `VEGA_STRINGS` i18n 객체 + `applyLang()` + `data-i18n` 속성 패턴으로 정적 UI 텍스트 교체. `localStorage['vega_lang']`으로 선택 언어 지속화.
-- **다국어 지원 로드맵** (`docs/I18N_ROADMAP.md`) — Phase 1(문자열 완전 번역) → Phase 2(외부 JSON 외부화) → Phase 3(일본어·중국어 추가) → Phase 4(에이전트 응답 언어 연동) 4단계 로드맵 문서화.
-- **비전공자용 사용자 설명서** (`README.md`) — 전면 재작성. 설치부터 음성 입력·파일 첨부·슬래시 명령어·MCP까지 스크린샷 없이도 따라할 수 있는 위키 수준 설명서.
+- **STT (speech-to-text) support** (`pipeline/stt_gateway.py`) — a common gateway for OpenAI Whisper API-compatible endpoints. Supported providers: OpenAI (`whisper-1`), Groq, local faster-whisper-server, LM Studio. A `LocalSTTUnavailable` exception silently returns 503 when the sidecar is not running. Added an `stt` section to `data/llm_providers.json` (`provider`, `model`, `language`, `response_format`). Added `/api/stt` and `/api/stt/config` endpoints.
+- **Chat UI microphone button** (`chat.html`) — added a 🎙 button to the input box. Records in-browser via MediaRecorder → sends to `/api/stt` → inserts the text at the cursor position. Also added a "Voice input" item to the `+` popover menu. Shows a "local STT not running" toast when local STT is not running.
+- **UI language selection (Korean/English)** (`chat.html`, `dashboard.html`) — added a `KO`/`EN` toggle button to the header. Static UI text is swapped using a `VEGA_STRINGS` i18n object + `applyLang()` + `data-i18n` attribute pattern. The selected language is persisted via `localStorage['vega_lang']`.
+- **Multilingual support roadmap** (`docs/I18N_ROADMAP.md`) — documented a 4-stage roadmap: Phase 1 (full string translation) → Phase 2 (externalize to JSON) → Phase 3 (add Japanese/Chinese) → Phase 4 (agent response language linkage).
+- **User manual for non-developers** (`README.md`) — fully rewritten. A wiki-level manual you can follow without screenshots, from installation to voice input, file attachment, slash commands, and MCP.
 
-### Added (이전 미기록)
-- **멀티 프로바이더 설치 마법사 + Anthropic 네이티브 어댑터** — 설치 마법사가 OpenRouter 전용에서 프로바이더 목록(Anthropic·OpenAI·OpenRouter API 키 / ChatGPT PKCE 로그인 / 로컬·온프레미스 URL) → 선택 → 해당 인증 흐름으로 확장. 키는 라이브 검증(`/models` 200) 후 Keychain 저장 + `llm_providers.json`에 `upsert_provider`로 등록 후 활성화. 추론 백엔드도 동일하게 멀티 프로바이더 지원:
-  - **Anthropic 네이티브 어댑터** (`llm_gateway` `kind=anthropic`) — OpenAI 호환이 아닌 `/v1/messages`를 직접 호출. `x-api-key`+`anthropic-version` 헤더, system을 cache_control 블록으로, Responses↔Anthropic 메시지/tool 스키마(`input_schema`) 변환, `max_tokens` 필수. `streaming._stream_sse`에 Anthropic SSE 파싱(`message_start`/`content_block_delta` text_delta·input_json_delta/`message_delta` usage/`message_stop`) 추가. `auth_type`: `anthropic_key`(콘솔 키) / `claude_oauth`(보류 — client_id 비공개, import 가드).
-  - **OpenAI 직접 API** 프로바이더(`api.openai.com`, bearer) 추가.
-  - 로컬·온프레미스는 OpenAI 호환 URL만 입력해 등록(서버 미응답이어도 등록 허용).
-- **데스크톱 앱(Tauri v2) + 배포용 DMG** (`desktop/`) — 메인 VEGA 레포의 Tauri 셸을 vega-agent로 이식. daemon 모드(기본)는 첫 실행 시 `com.unohee.vega-backend` LaunchAgent를 등록해 PyInstaller 백엔드를 상시 실행하고, 트레이 아이콘·창 토글을 제공. `scripts/build_dmg.sh`가 PyInstaller 백엔드(`bin/vega-backend.spec`) → `cargo tauri build` → DMG 패키징을 수행. Developer ID 인증서가 없으면 자동으로 무서명 빌드.
-- **코드 샌드박스 자동 확보** (`pipeline/sandbox.ensure_sandbox_ready` + 서버 lifespan 워밍업) — 서버 기동 시 백그라운드로 Docker `vega-sandbox` 컨테이너를 확보(이미 있으면 재사용, 이미지 없을 때만 빌드)해 첫 `bash_exec`/`python_exec` 지연을 없앤다. Docker 미설치/미기동이면 조용히 skip(에이전트는 계속 동작, 코드 실행만 보류). `docker_available()` 추가. compose 경로는 `${VEGA_HOST_HOME}`/`${VEGA_DATA_DIR}` 환경변수로 파라미터화(메인 레포 하드코딩 제거)하고 `_compose_env()`가 주입 — 배포본·다른 사용자 환경에서도 동작. 영속 볼륨(`sandbox_lib`/`packages`/`history`)은 보존되어 에이전트가 만든 모듈·pip 패키지가 재시작에도 유지. DMG 번들에 `sandbox/{Dockerfile,docker-compose.yml}` 포함.
-- **설치 마법사 — 연결된 LLM이 진행** (`web/static/install_wizard.html` + `web/routers/onboarding.py`) — 데몬 첫 실행 시 `/entry`가 온보딩 여부를 보고 `/install`로 보낸다. 마법사는 (1) OpenRouter 키 입력+라이브 검증→Keychain 저장, (2) **연결된 LLM이 대화형으로** 이름·역할·소속을 수집(LLM 응답의 ```vega``` directive를 파싱해 user_profile에 즉시 반영), (3) Google Cloud OAuth(Client ID/Secret 저장→브라우저 동의→refresh token 발급) 단계로 구성. 완료 시 `onboarded=true` 마킹 후 `/chat`으로 전환.
-- **PyInstaller 백엔드 번들** (`bin/vega_backend_launcher.py`, `bin/vega-backend.spec`) — `web.server:app`을 uvicorn으로 띄우는 단일 바이너리. `web/static`·`data/{agents,commands}` 기본값을 번들에 포함.
-- **2단 의도 라우터** (`pipeline/tier_router.py` + `llm_gateway.get_provider_for_tier`) — 요청을 도메인 지식 질의/갱신(→ 로컬 SLM, 결정론적·비용 0)과 즉각 업무지원(→ 클라우드 deepseek-v4-flash, 생성·추론·검색)으로 분류. 로컬 SLM 다운 시 클라우드 자동 폴백. `llm_providers.json`에 `tiers`{local:lmstudio, cloud:openrouter} 매핑. 채널 봇이 `route_tier`로 tier 결정 → `stream_gpt(tier=)`로 전달.
-- **채널 봇 어댑터** (`pipeline/channels/`) — 텔레그램·슬랙에서 VEGA를 구동. 익숙한 메신저 UX로 사내 AI 경험을 일반 채팅 앱과 일치시키는 것이 목적.
-  - `core.py` — 공통 코어 `run_agent_turn(channel, conv_id, text, on_delta, ce_mode)`. 채널 대화 ID↔VEGA 세션 매핑(`data/channel_sessions.json`), 히스토리 복원, `stream_gpt` 호출, 토큰 점진 델타 콜백, 세션 영속을 한 함수로 묶음.
-  - `telegram_bot.py` — python-telegram-bot 폴링. DM은 항상, 그룹은 @멘션 시 처리. `edit_message_text`로 점진 스트리밍, 4096자 분할, `/start`·`/reset`.
-  - `slack_bot.py` — slack_bolt Socket Mode. `app_mention`·DM 트리거, `thread_ts` 기준 세션 격리, `chat_update`로 점진 스트리밍.
-- **KYTE 도구 통합** — kyte-portal의 업무 도구(Airtable/Gmail/Superthread/Calendar/Drive 조회 10종)를 stdio MCP 서버(`kyte_cli/mcp_server.py`)로 받아 자동 등록. `kyte__find_work` 등으로 호출. deepseek-v4-flash(OpenRouter)로 E2E 검증 통과.
-- **CHANGELOG.md** — 이 파일 신규 도입.
-- `requirements.txt`에 `python-telegram-bot>=22`, `slack_bolt>=1.21` 추가.
-- `.env.example`에 `TELEGRAM_BOT_TOKEN`, `SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN` 항목 추가.
+### Added (previously unrecorded)
+- **Multi-provider install wizard + Anthropic native adapter** — the install wizard expanded from OpenRouter-only to a provider list (Anthropic·OpenAI·OpenRouter API keys / ChatGPT PKCE login / local·on-premise URL) → selection → the corresponding authentication flow. Keys are saved to Keychain after live validation (`/models` 200), then registered into `llm_providers.json` via `upsert_provider` and activated. The inference backend likewise supports multiple providers:
+  - **Anthropic native adapter** (`llm_gateway` `kind=anthropic`) — calls `/v1/messages` directly instead of being OpenAI-compatible. `x-api-key`+`anthropic-version` headers, system as a cache_control block, Responses↔Anthropic message/tool schema (`input_schema`) conversion, `max_tokens` required. Added Anthropic SSE parsing to `streaming._stream_sse` (`message_start`/`content_block_delta` text_delta·input_json_delta/`message_delta` usage/`message_stop`). `auth_type`: `anthropic_key` (console key) / `claude_oauth` (on hold — client_id is private, import-guarded).
+  - Added an **OpenAI direct API** provider (`api.openai.com`, bearer).
+  - Local/on-premise is registered by entering just an OpenAI-compatible URL (registration allowed even if the server does not respond).
+- **Desktop app (Tauri v2) + distribution DMG** (`desktop/`) — ported the main VEGA repo's Tauri shell to vega-agent. Daemon mode (default) registers a `com.unohee.vega-backend` LaunchAgent on first run to keep the PyInstaller backend running persistently, and provides a tray icon and window toggle. `scripts/build_dmg.sh` performs PyInstaller backend (`bin/vega-backend.spec`) → `cargo tauri build` → DMG packaging. Automatically falls back to an unsigned build if there is no Developer ID certificate.
+- **Automatic code sandbox provisioning** (`pipeline/sandbox.ensure_sandbox_ready` + server lifespan warm-up) — at server startup, provisions the Docker `vega-sandbox` container in the background (reused if it already exists, built only when the image is missing) to eliminate the first `bash_exec`/`python_exec` delay. Silently skips if Docker is not installed/running (the agent keeps working, only code execution is deferred). Added `docker_available()`. The compose paths are parameterized via `${VEGA_HOST_HOME}`/`${VEGA_DATA_DIR}` environment variables (removing the main repo's hardcoding), injected by `_compose_env()` — so it works in the distribution build and on other users' environments too. Persistent volumes (`sandbox_lib`/`packages`/`history`) are preserved so modules and pip packages created by the agent survive restarts. The DMG bundle includes `sandbox/{Dockerfile,docker-compose.yml}`.
+- **Install wizard — driven by the connected LLM** (`web/static/install_wizard.html` + `web/routers/onboarding.py`) — on the daemon's first run, `/entry` checks the onboarding status and routes to `/install`. The wizard consists of (1) OpenRouter key input + live validation → save to Keychain, (2) **the connected LLM conversationally** collects name·role·affiliation (parsing the ```vega``` directive from the LLM response and reflecting it into user_profile immediately), (3) Google Cloud OAuth (save Client ID/Secret → browser consent → issue refresh token). On completion it marks `onboarded=true` and switches to `/chat`.
+- **PyInstaller backend bundle** (`bin/vega_backend_launcher.py`, `bin/vega-backend.spec`) — a single binary that runs `web.server:app` with uvicorn. Includes the defaults for `web/static`·`data/{agents,commands}` in the bundle.
+- **Two-tier intent router** (`pipeline/tier_router.py` + `llm_gateway.get_provider_for_tier`) — classifies requests into domain-knowledge queries/updates (→ local SLM, deterministic, zero cost) and immediate task assistance (→ cloud deepseek-v4-flash, generation·reasoning·search). Automatic cloud fallback when the local SLM is down. A `tiers`{local:lmstudio, cloud:openrouter} mapping in `llm_providers.json`. The channel bot determines the tier via `route_tier` → passes it to `stream_gpt(tier=)`.
+- **Channel bot adapters** (`pipeline/channels/`) — run VEGA from Telegram·Slack. The goal is to match the in-house AI experience with familiar messenger UX, the same as ordinary chat apps.
+  - `core.py` — the common core `run_agent_turn(channel, conv_id, text, on_delta, ce_mode)`. Bundles channel conversation ID↔VEGA session mapping (`data/channel_sessions.json`), history restoration, `stream_gpt` call, incremental token delta callbacks, and session persistence into one function.
+  - `telegram_bot.py` — python-telegram-bot polling. DMs always, groups when @mentioned. Incremental streaming via `edit_message_text`, 4096-character splitting, `/start`·`/reset`.
+  - `slack_bot.py` — slack_bolt Socket Mode. Triggered on `app_mention`·DM, session isolation by `thread_ts`, incremental streaming via `chat_update`.
+- **KYTE tool integration** — kyte-portal's work tools (Airtable/Gmail/Superthread/Calendar/Drive — 10 read tools) are received via a stdio MCP server (`kyte_cli/mcp_server.py`) and auto-registered. Invoked with `kyte__find_work` and the like. Passed E2E validation with deepseek-v4-flash (OpenRouter).
+- **CHANGELOG.md** — newly introduced this file.
+- Added `python-telegram-bot>=22`, `slack_bolt>=1.21` to `requirements.txt`.
+- Added `TELEGRAM_BOT_TOKEN`, `SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN` entries to `.env.example`.
 
 ### Changed
-- **CE 모드 게이트 비활성화 (당분간)** — 개인용이라 모든 진입점(데스크톱 앱·채널 봇)에서 로컬 파일/exec 도구를 포함한 전체 도구를 노출·실행하도록 변경. `get_schemas_for_mode`는 `ce_mode` 무관 전체 스키마 반환, `dispatch_tool`의 CE 차단 제거. `ce_mode` 인자와 `_CE_ALLOWED_TOOLS`/`_CE_MODE_VAR`는 호환·재활성화용으로 보존. **plan_mode 차단은 그대로 유지**. (원격 노출 시 화이트리스트 복원 필요 — 채널 봇 토큰 유출 시 로컬 머신 노출 위험.)
-- **DB 파일 분리** — vega-agent는 자체 `agent.db`를 쓴다 (`data_paths.db_path()` `vega.db`→`agent.db`). 같은 user data dir를 메인(개인) VEGA의 `vega.db`와 공유하더라도 파일을 분리해 messages 테이블 스키마 충돌(구 `session_uuid/role/content` ↔ 신 `conv_uuid/sender/text`)을 회피. `run_log.py`·`memory_inspector.py`의 하드코딩 폴백 경로도 `agent.db`로 통일. `scripts/init_user_db.py`는 부재 모듈(`pipeline.heartbeat`) 의존 제거 + persona/events/entities 스키마 명시 생성.
-- 기본 LLM 프로바이더를 OpenRouter `deepseek/deepseek-v4-flash`로 설정 (`data/llm_providers.json` active=openrouter).
-- CE(원격 클라이언트) 모드에서 `kyte__*` 도구를 허용 — 스키마 노출(`get_schemas_for_mode`)과 실행 방어 차단(`dispatch_tool`) **양쪽**에 `kyte__` prefix 통과 추가. kyte 도구는 모두 read-only envelope라 안전하며, 채널 봇의 핵심 목적이 회사 데이터 조회임.
-- `.env.example`의 OpenRouter 키 변수명을 `OPENROUTER_API`로 정정 (`data/llm_providers.json`의 `api_key_env`와 일치).
+- **CE mode gate disabled (for now)** — since it is personal use, changed all entry points (desktop app·channel bots) to expose and execute the full tool set, including local file/exec tools. `get_schemas_for_mode` returns the full schema regardless of `ce_mode`, and the CE block in `dispatch_tool` is removed. The `ce_mode` argument and `_CE_ALLOWED_TOOLS`/`_CE_MODE_VAR` are preserved for compatibility/reactivation. **plan_mode blocking remains as-is**. (Whitelist restoration is needed if exposed remotely — a leaked channel bot token risks exposing the local machine.)
+- **DB file separation** — vega-agent uses its own `agent.db` (`data_paths.db_path()` `vega.db`→`agent.db`). Even if it shares the same user data dir as the main (personal) VEGA's `vega.db`, the files are separated to avoid a messages-table schema conflict (old `session_uuid/role/content` ↔ new `conv_uuid/sender/text`). The hardcoded fallback paths in `run_log.py`·`memory_inspector.py` are also unified to `agent.db`. `scripts/init_user_db.py` removes its dependency on the absent module (`pipeline.heartbeat`) + explicitly creates the persona/events/entities schema.
+- Set the default LLM provider to OpenRouter `deepseek/deepseek-v4-flash` (`data/llm_providers.json` active=openrouter).
+- Allow `kyte__*` tools in CE (remote client) mode — added `kyte__` prefix pass-through to **both** schema exposure (`get_schemas_for_mode`) and execution-defense blocking (`dispatch_tool`). The kyte tools are all read-only envelopes so they are safe, and the channel bot's core purpose is querying company data.
+- Corrected the OpenRouter key variable name in `.env.example` to `OPENROUTER_API` (matching `api_key_env` in `data/llm_providers.json`).
 
 ### Fixed
-- **새 환경(빈 DB) 부팅 실패** 다수 수정 — 코드가 한 번도 새 `VEGA_DATA_DIR`로 검증된 적 없어 깨져 있었음:
-  - `session_store._ensure_schema()`가 만드는 `messages` 테이블 컬럼(`session_uuid/role/content`)과 CRUD(`append_message`/`load_history`)가 실제 사용하는 컬럼(`conv_uuid/sender/text/char_len/updated_at`)이 불일치 → CREATE TABLE을 CRUD에 맞춤. (`no such column: sender` 해소)
-  - `vega_query.py`에 `persona_sections`/`events`/`entities`/`event_entities` 테이블 생성 코드 부재 → `_ensure_schema()` 추가, 모듈 로드 시 자동 호출. (`no such table: persona_sections` 해소)
-- 네이티브 `linear_*` 도구가 부재 모듈(`pipeline.linear_client`)을 import해 호출마다 실패 + self_improve 폭주 → import 실패 시 `linear_*` 스키마를 TOOL_SCHEMAS에서 제외. (Linear가 필요하면 `LINEAR_API_KEY`로 MCP `linear__*` 자동 등록되어 동작.)
+- **Multiple fixes for boot failure in a new environment (empty DB)** — the code had never been validated against a fresh `VEGA_DATA_DIR` and was broken:
+  - The `messages` table columns created by `session_store._ensure_schema()` (`session_uuid/role/content`) did not match the columns the CRUD (`append_message`/`load_history`) actually uses (`conv_uuid/sender/text/char_len/updated_at`) → aligned CREATE TABLE with the CRUD. (Resolved `no such column: sender`.)
+  - `vega_query.py` was missing the code to create the `persona_sections`/`events`/`entities`/`event_entities` tables → added `_ensure_schema()`, called automatically on module load. (Resolved `no such table: persona_sections`.)
+- The native `linear_*` tools imported the absent module (`pipeline.linear_client`), failing on every call + causing a self_improve storm → exclude the `linear_*` schema from TOOL_SCHEMAS when the import fails. (If Linear is needed, the MCP `linear__*` is auto-registered and works via `LINEAR_API_KEY`.)
 
 ### Removed
-- (해당 없음)
+- (None)
 
 ### Notes
-- **배포 주의**: VEGA는 `mcp.json`을 user data dir(macOS `~/Library/Application Support/VEGA/mcp.json`, 또는 `$VEGA_DATA_DIR/mcp.json`)에서만 읽는다. repo의 `data/mcp.json`은 무시되므로, kyte MCP 등록은 user data dir에 배치해야 한다.
-- Discord 브리지는 vega-agent에서 no-op 스텁(`pipeline/discord_bridge.py`) — 채널은 텔레그램/슬랙을 사용.
-- 회귀 테스트: `tests/test_channel_kyte_e2e.py` (라이브 OpenRouter, `OPENROUTER_API` 미설정 시 skip).
+- **Distribution note**: VEGA reads `mcp.json` only from the user data dir (macOS `~/Library/Application Support/VEGA/mcp.json`, or `$VEGA_DATA_DIR/mcp.json`). The repo's `data/mcp.json` is ignored, so kyte MCP registration must be placed in the user data dir.
+- The Discord bridge is a no-op stub in vega-agent (`pipeline/discord_bridge.py`) — channels use Telegram/Slack.
+- Regression test: `tests/test_channel_kyte_e2e.py` (live OpenRouter, skipped when `OPENROUTER_API` is not set).

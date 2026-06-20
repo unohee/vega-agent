@@ -1,31 +1,31 @@
 ---
 name: skill
-description: 새 슬래시 커맨드(skill)를 대화형 마법사로 생성. 인자로 만들 작업을 바로 설명해도 됨.
-argument-hint: "[만들 작업 설명]"
+description: Create a new slash command (skill) via an interactive wizard. You can also describe the task to build directly as an argument.
+argument-hint: "[description of the task to build]"
 ---
 
-# Skill 생성 마법사
+# Skill Creation Wizard
 
-새 슬래시 커맨드(skill)를 만든다. 완성되면 `skill_save` 도구로 `data/commands/`에 저장하면, 그때부터 사용자가 `/이름`으로 호출할 수 있다.
+Create a new slash command (skill). Once it's complete, save it to `data/commands/` with the `skill_save` tool, and from then on the user can invoke it with `/name`.
 
-## 진행 방식
-인자로 작업 설명이 주어졌으면 그걸 출발점으로, 없으면 "어떤 작업을 자동화하는 skill을 만들까?"로 시작한다.
+## How to proceed
+If a task description is given as an argument, use it as the starting point; otherwise start with "What task should this skill automate?"
 
-다음을 **대화로 합의**한다 (이미 명확한 건 다시 묻지 말 것):
-1. **이름** — 소문자/숫자/하이픈만. 짧고 동사형 권장 (예: `deploy`, `daily-report`, `clean-logs`).
-2. **설명** — 한 줄. 자동완성·목록에 표시됨.
-3. **인자** — 인자를 받는다면 힌트 (예: `[브랜치명]`, `[--dry-run]`). 없으면 생략.
-4. **본문(지시문)** — VEGA가 `/이름` 호출 시 실제로 따를 단계별 지시. 가장 중요.
+**Agree through conversation** on the following (don't ask again about what's already clear):
+1. **Name** — lowercase/digits/hyphens only. Short and verb-form recommended (e.g., `deploy`, `daily-report`, `clean-logs`).
+2. **Description** — one line. Shown in autocomplete and lists.
+3. **Argument** — if it takes an argument, a hint (e.g., `[branch-name]`, `[--dry-run]`). Omit if none.
+4. **Body (instructions)** — the step-by-step instructions VEGA actually follows when `/name` is invoked. The most important part.
 
-## 본문 작성 원칙
-- VEGA가 가진 도구(`bash_exec`, `file_read`, `host_exec`, `web_search`, gmail/calendar/drive 등)로 **실제 수행 가능한 단계**로 쓴다.
-- 각 단계에 "무엇을, 어떤 도구로" 명시. 모호한 표현 금지.
-- 인자를 쓰면 본문에 `$ARGUMENTS`로 참조 (호출 시 사용자 인자로 치환됨).
-- 위험한 작업(삭제·푸시·전송)은 본문에 "사용자 확인 후 실행" 명시.
+## Body writing principles
+- Write it as **steps that are actually executable** with the tools VEGA has (`bash_exec`, `file_read`, `host_exec`, `web_search`, gmail/calendar/drive, etc.).
+- For each step, specify "what, with which tool". No vague phrasing.
+- If you use an argument, reference it in the body as `$ARGUMENTS` (it's substituted with the user argument at invocation time).
+- For dangerous operations (delete/push/send), state "execute after user confirmation" in the body.
 
-## 마무리
-1. 합의된 이름/설명/인자/본문을 사용자에게 **미리보기**로 보여주고 확인받는다.
-2. 확인되면 `skill_save(name, description, body, argument_hint)`를 호출한다.
-3. 저장 성공하면 "이제 `/이름` 으로 쓸 수 있어"라고 알리고, 호출 예시 한 줄을 보여준다.
+## Wrap-up
+1. Show the user the agreed name/description/argument/body as a **preview** and get confirmation.
+2. Once confirmed, call `skill_save(name, description, body, argument_hint)`.
+3. On successful save, announce "You can now use it with `/name`" and show one example invocation.
 
-기존 skill을 수정하려면 `skill_save(..., overwrite=true)`, 삭제하려면 `skill_delete(name)`을 쓴다.
+To edit an existing skill, use `skill_save(..., overwrite=true)`; to delete one, use `skill_delete(name)`.
