@@ -44,6 +44,21 @@ def _ensure_tables(conn: sqlite3.Connection) -> None:
             canonical_id TEXT, aliases_json TEXT, notes TEXT, first_seen TEXT, last_seen TEXT,
             sensitivity TEXT
         );
+        CREATE TABLE IF NOT EXISTS entity_edges (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source_entity_id INTEGER NOT NULL,
+            target_entity_id INTEGER NOT NULL,
+            relation_type TEXT NOT NULL,
+            evidence TEXT,
+            source_message_id TEXT,
+            confidence REAL NOT NULL DEFAULT 1.0,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (source_entity_id) REFERENCES entities(id) ON DELETE CASCADE,
+            FOREIGN KEY (target_entity_id) REFERENCES entities(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_entity_edges_source ON entity_edges(source_entity_id);
+        CREATE INDEX IF NOT EXISTS idx_entity_edges_target ON entity_edges(target_entity_id);
     """)
     # 민감도 태그 마이그레이션 (INT-1404)
     for tbl in ("persona_sections", "events", "entities"):
@@ -58,6 +73,7 @@ def _ensure_tables(conn: sqlite3.Connection) -> None:
 def _conn() -> sqlite3.Connection:
     conn = sqlite3.connect(str(_db()))
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys=ON")
     _ensure_tables(conn)
     return conn
 

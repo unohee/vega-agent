@@ -13,6 +13,7 @@ DB_PATH = _db_path()
 def _conn() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys=ON")
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
@@ -72,6 +73,27 @@ def _ensure_schema() -> None:
                 match_text TEXT
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS entity_edges (
+                id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                source_entity_id INTEGER NOT NULL,
+                target_entity_id INTEGER NOT NULL,
+                relation_type    TEXT NOT NULL,
+                evidence         TEXT,
+                source_message_id TEXT,
+                confidence       REAL NOT NULL DEFAULT 1.0,
+                created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at       TEXT NOT NULL DEFAULT (datetime('now')),
+                FOREIGN KEY (source_entity_id) REFERENCES entities(id) ON DELETE CASCADE,
+                FOREIGN KEY (target_entity_id) REFERENCES entities(id) ON DELETE CASCADE
+            )
+        """)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_entity_edges_source ON entity_edges(source_entity_id)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_entity_edges_target ON entity_edges(target_entity_id)"
+        )
         # Migration: add columns to existing tables as schema evolves (idempotent)
         ps_cols = {r[1] for r in conn.execute("PRAGMA table_info(persona_sections)").fetchall()}
         if "user_edited" not in ps_cols:
@@ -167,6 +189,63 @@ def get_entity(name: str) -> dict | None:
             (name, name)
         ).fetchone()
         return dict(row) if row else None
+
+
+def entity_neighbors(entity_id: int) -> list[dict]:
+    """List incoming and outgoing entity-edge neighbors for an entity id."""
+    with _conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                edge.id AS edge_id,
+                'outgoing' AS direction,
+                edge.source_entity_id,
+                edge.target_entity_id,
+                edge.relation_type,
+                edge.evidence,
+                edge.source_message_id,
+                edge.confidence,
+                edge.created_at,
+                edge.updated_at,
+                neighbor.id AS neighbor_id,
+                neighbor.name AS neighbor_name,
+                neighbor.kind AS neighbor_kind,
+                neighbor.canonical_id AS neighbor_canonical_id,
+                neighbor.aliases_json AS neighbor_aliases_json,
+                neighbor.notes AS neighbor_notes,
+                neighbor.first_seen AS neighbor_first_seen,
+                neighbor.last_seen AS neighbor_last_seen
+            FROM entity_edges edge
+            JOIN entities neighbor ON neighbor.id = edge.target_entity_id
+            WHERE edge.source_entity_id = ?
+            UNION ALL
+            SELECT
+                edge.id AS edge_id,
+                'incoming' AS direction,
+                edge.source_entity_id,
+                edge.target_entity_id,
+                edge.relation_type,
+                edge.evidence,
+                edge.source_message_id,
+                edge.confidence,
+                edge.created_at,
+                edge.updated_at,
+                neighbor.id AS neighbor_id,
+                neighbor.name AS neighbor_name,
+                neighbor.kind AS neighbor_kind,
+                neighbor.canonical_id AS neighbor_canonical_id,
+                neighbor.aliases_json AS neighbor_aliases_json,
+                neighbor.notes AS neighbor_notes,
+                neighbor.first_seen AS neighbor_first_seen,
+                neighbor.last_seen AS neighbor_last_seen
+            FROM entity_edges edge
+            JOIN entities neighbor ON neighbor.id = edge.source_entity_id
+            WHERE edge.target_entity_id = ?
+            ORDER BY updated_at DESC, edge_id DESC
+            """,
+            (entity_id, entity_id),
+        ).fetchall()
+        return [dict(r) for r in rows]
 
 
 def entity_timeline(name: str) -> list[dict]:
