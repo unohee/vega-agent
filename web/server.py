@@ -35,7 +35,7 @@ except ImportError:  # Windows
     fcntl = pty = termios = None  # type: ignore[assignment]
     _HAS_PTY = False
 
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
