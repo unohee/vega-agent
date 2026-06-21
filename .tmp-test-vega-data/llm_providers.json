@@ -1,0 +1,38 @@
+{
+  "_comment": "VEGA LLM 프로바이더 설정. providers의 각 항목은 OpenAI 호환 endpoint를 가정한다. 환경변수 ${VAR} 치환 지원.",
+  "_examples": {
+    "chatgpt": "ChatGPT OAuth (현재 디폴트). auth_type=chatgpt_oauth → auth/chatgpt.py 토큰 사용",
+    "openrouter": "OpenAI 호환. API 키 한 개로 Claude/GPT/Gemini/DeepSeek/Llama 모두 접근",
+    "lmstudio": "로컬. 인증 불필요. 사용자가 mlx-server/LM Studio를 1234에 띄워둠",
+    "ollama": "로컬. http://localhost:11434/v1"
+  },
+  "active": "openrouter",
+  "_tiers_comment": "2단 라우터: local=도메인 지식 질의/갱신(결정론적, SLM 충분), cloud=즉각 업무지원(생성·추론·검색). local 다운 시 cloud 자동 폴백.",
+  "tiers": {
+    "cloud": "chatgpt"
+  },
+  "_stt_comment": "STT(음성→텍스트) 설정. OpenAI Whisper API 호환 엔드포인트를 사용한다. provider: openai|groq|local|lmstudio 또는 임의 이름. endpoint를 직접 지정하면 provider 무시.",
+  "stt": {
+    "provider": "openai",
+    "model": "whisper-1",
+    "language": null,
+    "response_format": "text",
+    "_note": "language: null=자동감지, 'ko'=한국어 강제, 'en'=영어 강제. provider=local 시 endpoint를 직접 지정 가능."
+  },
+  "providers": {
+    "chatgpt": {
+      "auth_type": "chatgpt_oauth",
+      "base_url": "https://chatgpt.com/x",
+      "kind": "responses"
+    },
+    "openrouter": {
+      "auth_type": "bearer",
+      "base_url": "https://openrouter.ai/api/v1",
+      "api_key_env": "OPENROUTER_API"
+    },
+    "lmstudio": {
+      "auth_type": "none",
+      "base_url": "http://localhost:1234/v1"
+    }
+  }
+}
