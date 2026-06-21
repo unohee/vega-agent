@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -15,16 +16,33 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-_EMBED_MODEL = "BAAI/bge-m3"
+_DEFAULT_EMBED_MODEL = "BAAI/bge-m3"
 _EMBED_DIM_BY_MODEL = {
     "BAAI/bge-m3": 1024,
 }
-_EMBED_DIM = _EMBED_DIM_BY_MODEL[_EMBED_MODEL]
 _TABLE_NAME = "memories"
+
+
+class EmbeddingConfigurationError(RuntimeError):
+    """Raised when memory embedding configuration is unsupported or inconsistent."""
 
 
 class EmbeddingModelUnavailableError(RuntimeError):
     """Raised when the configured real embedding model cannot be used."""
+
+
+def _configured_embed_model() -> str:
+    model = os.getenv("VEGA_MEMORY_EMBED_MODEL", _DEFAULT_EMBED_MODEL).strip()
+    if model not in _EMBED_DIM_BY_MODEL:
+        supported = ", ".join(sorted(_EMBED_DIM_BY_MODEL))
+        raise EmbeddingConfigurationError(
+            f"Unsupported VEGA_MEMORY_EMBED_MODEL={model!r}. Supported models with known dimensions: {supported}."
+        )
+    return model
+
+
+_EMBED_MODEL = _configured_embed_model()
+_EMBED_DIM = _EMBED_DIM_BY_MODEL[_EMBED_MODEL]
 
 
 def _lance_dir() -> Path:
