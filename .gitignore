@@ -74,8 +74,18 @@ bin/vega-backend-*
 # Testing artifacts
 testing/
 coverage.json
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
 pytest_output.log
 .deepeval/
+
+# OpenSwarm orchestrator metadata (regenerated each run — must never be committed)
+.openswarm/
 
 # Editor
 .vscode/
