@@ -64,8 +64,8 @@ def log_dir() -> Path:
 
 
 def db_path() -> Path:
-    # Canonical VEGA DB path.
-    # 절대경로면 그대로, 파일명만 주면 data_dir() 하위로 해석.
+    # Canonical VEGA database path. VEGA_DB_FILE may point at an alternate DB;
+    # absolute paths are used as-is, bare filenames resolve under data_dir().
     override = os.environ.get("VEGA_DB_FILE", "").strip()
     if override:
         p = Path(override).expanduser()

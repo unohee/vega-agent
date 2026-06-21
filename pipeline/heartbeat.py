@@ -7,6 +7,9 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import threading
+from dataclasses import dataclass
+from typing import Any, Callable
 
 
 _TITLE_SYSTEM = """You are a session-title generator. Given a conversation, return ONLY a JSON object with these fields:
@@ -18,6 +21,62 @@ Rules:
 - Match the language the user spoke in (Korean conversation → Korean title/summary/narrative)
 - title must be concise — it appears in a sidebar list
 - Return ONLY valid JSON, no markdown fences, no extra text"""
+
+
+@dataclass(frozen=True)
+class GoogleFreshnessSource:
+    """One Google incremental source owned by heartbeat orchestration."""
+
+    name: str
+    ingest: Callable[[str, Any], Any]
+    load_cursor: Callable[[], Any] | None = None
+    advance_cursor: Callable[[Any], None] | None = None
+
+
+_GOOGLE_FRESHNESS_LOCK = threading.Lock()
+_GOOGLE_FRESHNESS_SOURCES: tuple[GoogleFreshnessSource, ...] = ()
+
+
+def _google_access_token() -> str | None:
+    from pipeline.auth.google import ensure_valid_token
+
+    return ensure_valid_token()
+
+
+def run_google_freshness_sync(
+    sources: list[GoogleFreshnessSource] | tuple[GoogleFreshnessSource, ...] | None = None,
+    token_getter: Callable[[], str | None] | None = None,
+) -> dict:
+    """Run heartbeat-owned Google incremental freshness sync.
+
+    No credentials/network are required when auth is absent: missing auth is a clean skip.
+    Each source owns its cursor callbacks; heartbeat advances a cursor only after that
+    source's ingest returns successfully.
+    """
+    if not _GOOGLE_FRESHNESS_LOCK.acquire(blocking=False):
+        return {"ok": True, "skipped": "lock_held", "sources": []}
+
+    try:
+        get_token = token_getter or _google_access_token
+        access_token = get_token()
+        if not access_token:
+            return {"ok": True, "skipped": "auth_missing", "sources": []}
+
+        results = []
+        ok = True
+        for source in sources if sources is not None else _GOOGLE_FRESHNESS_SOURCES:
+            cursor = source.load_cursor() if source.load_cursor else None
+            try:
+                ingest_result = source.ingest(access_token, cursor)
+                if source.advance_cursor:
+                    source.advance_cursor(ingest_result)
+                results.append({"source": source.name, "ok": True})
+            except Exception as e:
+                ok = False
+                results.append({"source": source.name, "ok": False, "error": str(e)})
+        return {"ok": ok, "sources": results}
+    finally:
+        _GOOGLE_FRESHNESS_LOCK.release()
 
 
 def _lms_title_session(messages: list[dict]) -> dict | None:
@@ -198,3 +257,172 @@ def suggest_todos(_unused=None) -> list[dict]:
                 "reason": str(s.get("reason", "")).strip(),
             })
     return out[:6]
+
+# --- Google freshness heartbeat sync (incremental orchestration) ---
+import contextlib
+import fcntl
+import os
+import threading
+import time
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Callable, Any
+
+
+_GOOGLE_SYNC_THREAD_LOCK = threading.Lock()
+_GOOGLE_SYNC_DELAY_SEC = float(os.environ.get("VEGA_GOOGLE_HEARTBEAT_DELAY_SEC", "2.0"))
+_GOOGLE_SYNC_MIN_INTERVAL_SEC = float(os.environ.get("VEGA_GOOGLE_HEARTBEAT_MIN_INTERVAL_SEC", "300"))
+_GOOGLE_SYNC_LAST_RUN = 0.0
+
+
+@dataclass(frozen=True)
+class _GoogleSource:
+    name: str
+    read_cursor: Callable[[str], dict[str, Any] | None]
+    write_cursor: Callable[[str, dict[str, Any]], None]
+    ingest: Callable[[dict[str, Any] | None], dict[str, Any] | None]
+
+
+def _google_sync_lock_path() -> Path:
+    try:
+        from pipeline.data_paths import data_dir
+
+        base = Path(data_dir())
+    except Exception:
+        base = Path(os.environ.get("VEGA_DATA_DIR", ".vega"))
+    base.mkdir(parents=True, exist_ok=True)
+    return base / "google_heartbeat_sync.lock"
+
+
+@contextlib.contextmanager
+def _google_sync_nonblocking_lock():
+    if not _GOOGLE_SYNC_THREAD_LOCK.acquire(blocking=False):
+        print("[heartbeat][google] skip: incremental sync already running in this process")
+        yield False
+        return
+
+    lock_file = None
+    try:
+        lock_file = open(_google_sync_lock_path(), "a+", encoding="utf-8")
+        try:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            print("[heartbeat][google] skip: incremental sync already running in another process")
+            yield False
+            return
+        yield True
+    finally:
+        if lock_file is not None:
+            try:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+            finally:
+                lock_file.close()
+        _GOOGLE_SYNC_THREAD_LOCK.release()
+
+
+def _google_auth_error(exc: BaseException) -> bool:
+    text = str(exc).lower()
+    return (
+        "invalid_grant" in text
+        or "reauth" in text
+        or "re-auth" in text
+        or "refresh_token expired" in text
+        or "refresh token expired" in text
+        or "google oauth access token unavailable" in text
+        or "설정" in text and "google" in text
+    )
+
+
+def _check_google_auth_for_heartbeat() -> bool:
+    try:
+        from pipeline.auth import google as google_auth
+
+        if not google_auth.stored_refresh_token():
+            print("[heartbeat][google] skip: no stored Google refresh token; connect Google first")
+            return False
+        token = google_auth.get_access_token()
+        if not token:
+            print("[heartbeat][google] skip: Google auth unavailable or OAuth client not configured")
+            return False
+        return True
+    except Exception as exc:
+        if _google_auth_error(exc):
+            print(f"[heartbeat][google] skip: Google auth requires reauth ({exc})")
+            return False
+        print(f"[heartbeat][google] skip: Google auth check failed ({exc})")
+        return False
+
+
+def _google_sources() -> list[_GoogleSource]:
+    from pipeline.google_freshness import (
+        ingest_calendar_incremental,
+        ingest_drive_incremental,
+        ingest_gmail_incremental,
+        read_google_freshness_cursor,
+        write_google_freshness_cursor,
+    )
+
+    return [
+        _GoogleSource("gmail", read_google_freshness_cursor, write_google_freshness_cursor, ingest_gmail_incremental),
+        _GoogleSource("calendar", read_google_freshness_cursor, write_google_freshness_cursor, ingest_calendar_incremental),
+        _GoogleSource("drive", read_google_freshness_cursor, write_google_freshness_cursor, ingest_drive_incremental),
+    ]
+
+
+def _valid_next_google_cursor(next_cursor: object) -> bool:
+    return isinstance(next_cursor, dict) and bool(next_cursor.get("syncedAt"))
+
+
+def heartbeat_google_incremental_sync(*, force: bool = False) -> None:
+    """Heartbeat-owned Google incremental sync orchestration.
+
+    Auth is checked before work. Each source reads its cursor immediately before ingest,
+    and the cursor is advanced only after a successful ingest returns a valid next cursor.
+    """
+    global _GOOGLE_SYNC_LAST_RUN
+
+    now = time.monotonic()
+    if not force and now - _GOOGLE_SYNC_LAST_RUN < _GOOGLE_SYNC_MIN_INTERVAL_SEC:
+        return
+
+    with _google_sync_nonblocking_lock() as acquired:
+        if not acquired:
+            return
+        if not force and time.monotonic() - _GOOGLE_SYNC_LAST_RUN < _GOOGLE_SYNC_MIN_INTERVAL_SEC:
+            return
+        if not _check_google_auth_for_heartbeat():
+            _GOOGLE_SYNC_LAST_RUN = time.monotonic()
+            return
+
+        try:
+            sources = _google_sources()
+        except Exception as exc:
+            print(f"[heartbeat][google] skip: Google freshness helpers unavailable ({exc})")
+            return
+
+        print("[heartbeat][google] incremental sync start")
+        for index, source in enumerate(sources):
+            if index:
+                time.sleep(_GOOGLE_SYNC_DELAY_SEC)
+            try:
+                cursor = source.read_cursor(source.name)
+                print(f"[heartbeat][google] {source.name}: incremental sync start")
+                next_cursor = source.ingest(cursor)
+                if not _valid_next_google_cursor(next_cursor):
+                    print(f"[heartbeat][google] {source.name}: ingest succeeded but returned no valid next cursor; cursor not advanced")
+                    continue
+                source.write_cursor(source.name, next_cursor)
+                print(f"[heartbeat][google] {source.name}: cursor advanced")
+            except Exception as exc:
+                if _google_auth_error(exc):
+                    print(f"[heartbeat][google] {source.name}: auth invalid/reauth required; stopping Google sync ({exc})")
+                    _GOOGLE_SYNC_LAST_RUN = time.monotonic()
+                    return
+                print(f"[heartbeat][google] {source.name}: incremental sync failed ({exc})")
+        _GOOGLE_SYNC_LAST_RUN = time.monotonic()
+
+
+def run_heartbeat_periodic_work() -> None:
+    """Periodic heartbeat hook for non-session background work."""
+    heartbeat_google_incremental_sync()
+

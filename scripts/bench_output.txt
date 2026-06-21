@@ -1,0 +1,2552 @@
+/Users/unohee/dev/mlx_env/lib/python3.12/site-packages/pydantic/_internal/_fields.py:149: UserWarning: Field "model_name" has conflict with protected namespace "model_".
+
+You may be able to resolve this warning by setting `model_config['protected_namespaces'] = ()`.
+  warnings.warn(
+/Users/unohee/dev/vega-agent/worktree/775f57ae-55d9-4b0b-9ad6-f5c5590732e2/scripts/bench_fts5_vs_bge_m3.py:245: DeprecationWarning: table_names() is deprecated, use list_tables() instead
+  tables = list(db.table_names())
+{
+  "backend_notes": {
+    "fastembed": {
+      "available": false
+    },
+    "mlx": {
+      "available": true,
+      "note": "detected only; no MLX BGE-M3 path is executed by this script"
+    },
+    "sentence_transformers": {
+      "available": true
+    },
+    "torch": {
+      "available": true,
+      "cuda_available": false,
+      "mps_available": true
+    }
+  },
+  "benchmark": "fts5_prefix_vs_bge_m3_top5",
+  "corpus": {
+    "lancedb": {
+      "available": true,
+      "loaded_text_rows": 1,
+      "memories_table": {
+        "count": 1,
+        "present": true
+      },
+      "path": "/Users/unohee/Library/Application Support/VEGA/lancedb",
+      "tables": [
+        "memories"
+      ]
+    },
+    "row_count": 40266,
+    "sources": {
+      "lancedb_text_rows": 1,
+      "sqlite_rows": 45807
+    },
+    "sqlite": {
+      "row_count": 45807,
+      "tables_considered": [
+        {
+          "id_column": "uuid",
+          "metadata_columns": [
+            "source",
+            "created_at",
+            "updated_at"
+          ],
+          "table": "messages",
+          "text_columns": [
+            "text"
+          ]
+        },
+        {
+          "id_column": "uuid",
+          "metadata_columns": [],
+          "table": "accounts",
+          "text_columns": [
+            "uuid",
+            "source",
+            "full_name"
+          ]
+        },
+        {
+          "id_column": "id",
+          "metadata_columns": [],
+          "table": "calendar_events",
+          "text_columns": [
+            "title",
+            "description"
+          ]
+        },
+        {
+          "id_column": "uuid",
+          "metadata_columns": [
+            "source",
+            "created_at",
+            "updated_at"
+          ],
+          "table": "conversations",
+          "text_columns": [
+            "summary",
+            "name"
+          ]
+        },
+        {
+          "id_column": "date",
+          "metadata_columns": [
+            "created_at"
+          ],
+          "table": "daily_briefs",
+          "text_columns": [
+            "date",
+            "kind",
+            "body_md"
+          ]
+        },
+        {
+          "id_column": "id",
+          "metadata_columns": [
+            "created_at"
+          ],
+          "table": "drive_files",
+          "text_columns": [
+            "content",
+            "name"
+          ]
+        },
+        {
+          "id_column": "id",
+          "metadata_columns": [],
+          "table": "email_digest",
+          "text_columns": [
+            "scanned_at",
+            "message_id",
+            "subject"
+          ]
+        },
+        {
+          "id_column": "id",
+          "metadata_columns": [
+            "kind"
+          ],
+          "table": "entities",
+          "text_columns": [
+            "name"
+          ]
+        },
+        {
+          "id_column": "id",
+          "metadata_columns": [
+            "created_at",
+            "updated_at"
+          ],
+          "table": "entity_edges",
+          "text_columns": [
+            "relation_type",
+            "evidence",
+            "source_message_id"
+          ]
+        },
+        {
+          "id_column": "event_id",
+          "metadata_columns": [],
+          "table": "event_entities",
+          "text_columns": [
+            "match_text"
+          ]
+        },
+        {
+          "id_column": "id",
+          "metadata_columns": [],
+          "table": "events",
+          "text_columns": [
+            "body",
+            "title"
+          ]
+        },
+        {
+          "id_column": "extractor",
+          "metadata_columns": [
+            "updated_at"
+          ],
+          "table": "extraction_checkpoints",
+          "text_columns": [
+            "extractor",
+            "source",
+            "last_msg_uuid"
+          ]
+        },
+        {
+          "id_column": "id",
+          "metadata_columns": [],
+          "table": "gmail_messages",
+          "text_columns": [
+            "id",
+            "account",
+            "thread_id"
+          ]
+        },
+        {
+          "id_column": "account",
+          "metadata_columns": [],
+          "table": "google_sync_cursors",
+          "text_columns": [
+            "account",
+            "source",
+            "cursor"
+          ]
+        },
+        {
+          "id_column": "id",
+          "metadata_columns": [],
+          "table": "message_entities",
+          "text_columns": [
+            "msg_uuid",
+            "msg_source",
+            "extractor"
+          ]
+        },
+        {
+          "id_column": "session_id",
+          "metadata_columns": [
+            "session_id"
+          ],
+          "table": "notified_sessions",
+          "text_columns": [
+            "summary"
+          ]
+        },
+        {
+          "id_column": "key",
+          "metadata_columns": [],
+          "table": "obsidian_export_state",
+          "text_columns": [
+            "key",
+            "content_hash",
+            "exported_at"
+          ]
+        },
+        {
+          "id_column": "id",
+          "metadata_columns": [
+            "source"
+          ],
+          "table": "persona_sections",
+          "text_columns": [
+            "content"
+          ]
+        },
+        {
+          "id_column": "uuid",
+          "metadata_columns": [
+            "source",
+            "created_at",
+            "kind"
+          ],
+          "table": "project_docs",
+          "text_columns": [
+            "content"
+          ]
+        },
+        {
+          "id_column": "name",
+          "metadata_columns": [
+            "updated_at"
+          ],
+          "table": "project_state",
+          "text_columns": [
+            "name"
+          ]
+        },
+        {
+          "id_column": "uuid",
+          "metadata_columns": [
+            "source",
+            "created_at",
+            "updated_at"
+          ],
+          "table": "projects",
+          "text_columns": [
+            "name",
+            "description"
+          ]
+        },
+        {
+          "id_column": "id",
+          "metadata_columns": [],
+          "table": "run_log",
+          "text_columns": [
+            "session_uuid",
+            "call_id",
+            "tool_name"
+          ]
+        },
+        {
+          "id_column": "session_uuid",
+          "metadata_columns": [],
+          "table": "session_digest",
+          "text_columns": [
+            "summary",
+            "title"
+          ]
+        },
+        {
+          "id_column": "id",
+          "metadata_columns": [],
+          "table": "sources",
+          "text_columns": [
+            "id",
+            "label",
+            "ingested_at"
+          ]
+        },
+        {
+          "id_column": "date",
+          "metadata_columns": [
+            "created_at"
+          ],
+          "table": "suggest_cache",
+          "text_columns": [
+            "date",
+            "ctx_hash",
+            "result"
+          ]
+        }
+      ],
+      "tables_used": [
+        {
+          "row_count": 24910,
+          "table": "messages"
+        },
+        {
+          "row_count": 1,
+          "table": "accounts"
+        },
+        {
+          "row_count": 559,
+          "table": "calendar_events"
+        },
+        {
+          "row_count": 2718,
+          "table": "conversations"
+        },
+        {
+          "row_count": 20,
+          "table": "daily_briefs"
+        },
+        {
+          "row_count": 2011,
+          "table": "drive_files"
+        },
+        {
+          "row_count": 136,
+          "table": "email_digest"
+        },
+        {
+          "row_count": 3455,
+          "table": "entities"
+        },
+        {
+          "row_count": 249,
+          "table": "event_entities"
+        },
+        {
+          "row_count": 492,
+          "table": "events"
+        },
+        {
+          "row_count": 3,
+          "table": "extraction_checkpoints"
+        },
+        {
+          "row_count": 3581,
+          "table": "gmail_messages"
+        },
+        {
+          "row_count": 2,
+          "table": "google_sync_cursors"
+        },
+        {
+          "row_count": 6890,
+          "table": "message_entities"
+        },
+        {
+          "row_count": 33,
+          "table": "notified_sessions"
+        },
+        {
+          "row_count": 2,
+          "table": "obsidian_export_state"
+        },
+        {
+          "row_count": 103,
+          "table": "persona_sections"
+        },
+        {
+          "row_count": 483,
+          "table": "project_docs"
+        },
+        {
+          "row_count": 5,
+          "table": "project_state"
+        },
+        {
+          "row_count": 7,
+          "table": "projects"
+        },
+        {
+          "row_count": 1,
+          "table": "run_log"
+        },
+        {
+          "row_count": 114,
+          "table": "session_digest"
+        },
+        {
+          "row_count": 4,
+          "table": "sources"
+        },
+        {
+          "row_count": 28,
+          "table": "suggest_cache"
+        }
+      ]
+    }
+  },
+  "created_at": "2026-06-21T09:52:51+00:00",
+  "errors": [
+    {
+      "error": {
+        "message": "Could not import module 'TrainerCallback'. Are this object's requirements defined correctly?",
+        "type": "ModuleNotFoundError"
+      },
+      "stage": "bge_m3_index_build"
+    }
+  ],
+  "model_notes": {
+    "requested_device": "auto",
+    "selected_device": "mps",
+    "semantic_model": "trollathon/bge-m3-safetensors"
+  },
+  "paths": {
+    "data_dir": "/Users/unohee/Library/Application Support/VEGA",
+    "lancedb_dir": "/Users/unohee/Library/Application Support/VEGA/lancedb",
+    "sqlite_db": "/Users/unohee/Library/Application Support/VEGA/vega.db"
+  },
+  "queries": [
+    "user preferences and personal background",
+    "current project goals and deadlines",
+    "recent bugs errors failures to fix",
+    "database schema migrations sqlite tables",
+    "authentication oauth login token issues",
+    "email calendar meeting follow up reminders",
+    "finance automation reconciliation reports",
+    "agent tools sandbox shell execution",
+    "frontend dashboard ui layout problems",
+    "vector memory retrieval embeddings search",
+    "deployment release signing notarization update",
+    "contacts people organizations relationship notes",
+    "daily brief status progress blockers",
+    "todo task priority next action",
+    "API integration webhook request response"
+  ],
+  "query_count": 15,
+  "repo_root": "/Users/unohee/dev/vega-agent/worktree/775f57ae-55d9-4b0b-9ad6-f5c5590732e2",
+  "results": [
+    {
+      "bge_m3": {
+        "candidates": [],
+        "error": {
+          "message": "Could not import module 'TrainerCallback'. Are this object's requirements defined correctly?",
+          "type": "ModuleNotFoundError"
+        },
+        "latency_ms": null,
+        "method": "bge_m3_sentence_transformers_in_process_cosine",
+        "scoring_inputs": {
+          "device": "mps",
+          "model": "trollathon/bge-m3-safetensors",
+          "top_k": 5
+        }
+      },
+      "fts5": {
+        "candidates": [
+          {
+            "id": "sqlite:conversations:905bd081-7cf8-4510-8f37-f5c317179ad4",
+            "metadata": {
+              "created_at": "2026-02-19T16:54:54+09:00",
+              "source": "claude",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "905bd081-7cf8-4510-8f37-f5c317179ad4",
+              "sqlite_rowid": 106,
+              "sqlite_table": "conversations",
+              "text_columns": [
+                "summary",
+                "name"
+              ],
+              "updated_at": "2026-02-19T16:56:32+09:00"
+            },
+            "rank": 1,
+            "score": {
+              "bm25": -19.2049908990878,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "**Conversation Overview** The user engaged in a deeply personal conversation conducted in Korean, sharing a significant self-realization about their communication patterns. They identified what they consider their primary weakness: being e…"
+          },
+          {
+            "id": "sqlite:conversations:0217557f-dbcc-4e04-b6f2-0095154a20fe",
+            "metadata": {
+              "created_at": "2026-03-06T16:29:38+09:00",
+              "source": "claude",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "0217557f-dbcc-4e04-b6f2-0095154a20fe",
+              "sqlite_rowid": 67,
+              "sqlite_table": "conversations",
+              "text_columns": [
+                "summary",
+                "name"
+              ],
+              "updated_at": "2026-03-06T16:30:14+09:00"
+            },
+            "rank": 2,
+            "score": {
+              "bm25": -18.222342997597664,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "**Conversation Overview** The person asked Claude whether it could communicate in Korean. Claude responded by stating it could only reply in English, while indicating the person was welcome to write in Korean if they preferred. The exchang…"
+          },
+          {
+            "id": "sqlite:messages:d2e2110f-95c1-4bcd-ada5-82a6df7998e8",
+            "metadata": {
+              "created_at": "2025-04-03T17:43:37+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "d2e2110f-95c1-4bcd-ada5-82a6df7998e8",
+              "sqlite_rowid": 17031,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": null
+            },
+            "rank": 3,
+            "score": {
+              "bm25": -17.209775095167082,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "The user is writing a custom GPT system prompt and wants it to reflect their real identity, technical background, values, and communication style."
+          },
+          {
+            "id": "sqlite:conversations:87e8f05f-9c12-4bbd-9b42-5a7c954b776b",
+            "metadata": {
+              "created_at": "2026-03-01T22:14:41+09:00",
+              "source": "claude",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "87e8f05f-9c12-4bbd-9b42-5a7c954b776b",
+              "sqlite_rowid": 76,
+              "sqlite_table": "conversations",
+              "text_columns": [
+                "summary",
+                "name"
+              ],
+              "updated_at": "2026-03-02T14:14:01+09:00"
+            },
+            "rank": 4,
+            "score": {
+              "bm25": -16.52383899151262,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "**Conversation Overview** The user is a Seoul-based founder and AI engineer who previously worked professionally as sound designer and music producer Kim Kate, with educational background from Goldsmiths University of London (BSc Music Com…"
+          },
+          {
+            "id": "sqlite:messages:397825e3-4202-412b-8dd6-78466b5d2032",
+            "metadata": {
+              "created_at": "2025-02-28T22:27:19+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "397825e3-4202-412b-8dd6-78466b5d2032",
+              "sqlite_rowid": 14054,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": null
+            },
+            "rank": 5,
+            "score": {
+              "bm25": -15.800103372239832,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "**Evaluating personal trade-offs** The user wants an evaluation of the efficacy value for a composer who must produce four demos without guaranteed payment, where energy might be wasted. They are looking to compare the trade-offs between u…"
+          }
+        ],
+        "latency_ms": 4.021166998427361,
+        "method": "sqlite_fts5_prefix_bm25",
+        "scoring_inputs": {
+          "match_expression": "\"user\"* OR \"preferences\"* OR \"and\"* OR \"personal\"* OR \"background\"*",
+          "tokens": [
+            "user",
+            "preferences",
+            "and",
+            "personal",
+            "background"
+          ],
+          "top_k": 5
+        }
+      },
+      "query": "user preferences and personal background"
+    },
+    {
+      "bge_m3": {
+        "candidates": [],
+        "error": {
+          "message": "Could not import module 'TrainerCallback'. Are this object's requirements defined correctly?",
+          "type": "ModuleNotFoundError"
+        },
+        "latency_ms": null,
+        "method": "bge_m3_sentence_transformers_in_process_cosine",
+        "scoring_inputs": {
+          "device": "mps",
+          "model": "trollathon/bge-m3-safetensors",
+          "top_k": 5
+        }
+      },
+      "fts5": {
+        "candidates": [
+          {
+            "id": "sqlite:messages:b38a6a01-0b18-4e72-befa-e20453177cb6",
+            "metadata": {
+              "created_at": "2024-09-09T20:08:25+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "b38a6a01-0b18-4e72-befa-e20453177cb6",
+              "sqlite_rowid": 7409,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": null
+            },
+            "rank": 1,
+            "score": {
+              "bm25": -14.134581887190466,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "The difference between a *job* and a *career* mainly lies in their scope and long-term impact: 1. **Job**: - Typically refers to a specific position or role where you work to earn money. - Often short-term or temporary. - Focused more on t…"
+          },
+          {
+            "id": "sqlite:project_docs:27caa622-1238-4e61-bbc1-58044bc29b9a",
+            "metadata": {
+              "created_at": "2026-05-17T12:29:00+09:00",
+              "kind": "command",
+              "source": "claude_memory",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "27caa622-1238-4e61-bbc1-58044bc29b9a",
+              "sqlite_rowid": 217,
+              "sqlite_table": "project_docs",
+              "text_columns": [
+                "content"
+              ]
+            },
+            "rank": 2,
+            "score": {
+              "bm25": -13.788430547704644,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "# Create Onboarding Guide Create developer onboarding guide ## Instructions 1. **Onboarding Requirements Analysis** - Analyze current team structure and skill requirements - Identify key knowledge areas and learning objectives - Assess cur…"
+          },
+          {
+            "id": "sqlite:messages:c0d5a109-5f53-4055-b51d-a31a164cd72f",
+            "metadata": {
+              "created_at": "2025-04-17T00:18:41+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "c0d5a109-5f53-4055-b51d-a31a164cd72f",
+              "sqlite_rowid": 24427,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": null
+            },
+            "rank": 3,
+            "score": {
+              "bm25": -13.60316947197237,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "- Copy the file `src/parsers/parser.py` from the current project directory to the ext4 image workspace path (assumed to be something like `/mnt/ext4_workspace/fnguide-parse_backup/parser.py`). - Ensure that file permissions and timestamps …"
+          },
+          {
+            "id": "sqlite:messages:c77b6ad1-62f9-42e8-bd9b-535b09d9ddce",
+            "metadata": {
+              "created_at": "2025-02-17T22:45:49+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "c77b6ad1-62f9-42e8-bd9b-535b09d9ddce",
+              "sqlite_rowid": 13310,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": null
+            },
+            "rank": 4,
+            "score": {
+              "bm25": -12.604143768780272,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "**Analyzing user's goals** The user is showing monthly returns and has highlighted the goal of minimizing drawdown percentage and its duration. Their returns, however, seem small (e.g., 2% or -3%). From the earlier question, they seem inte…"
+          },
+          {
+            "id": "sqlite:conversations:3f6fd96b-b294-4b31-9cf8-a978f35fa913",
+            "metadata": {
+              "created_at": "2026-03-17T16:05:39+09:00",
+              "source": "claude",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "3f6fd96b-b294-4b31-9cf8-a978f35fa913",
+              "sqlite_rowid": 14,
+              "sqlite_table": "conversations",
+              "text_columns": [
+                "summary",
+                "name"
+              ],
+              "updated_at": "2026-03-17T16:08:36+09:00"
+            },
+            "rank": 5,
+            "score": {
+              "bm25": -12.341632868585547,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "**Conversation Overview** The person had a brief reflective conversation with Claude about their current life transition. They are a composer, professor, and producer by background who has shifted into a new professional domain (referencin…"
+          }
+        ],
+        "latency_ms": 3.6455000008572824,
+        "method": "sqlite_fts5_prefix_bm25",
+        "scoring_inputs": {
+          "match_expression": "\"current\"* OR \"project\"* OR \"goals\"* OR \"and\"* OR \"deadlines\"*",
+          "tokens": [
+            "current",
+            "project",
+            "goals",
+            "and",
+            "deadlines"
+          ],
+          "top_k": 5
+        }
+      },
+      "query": "current project goals and deadlines"
+    },
+    {
+      "bge_m3": {
+        "candidates": [],
+        "error": {
+          "message": "Could not import module 'TrainerCallback'. Are this object's requirements defined correctly?",
+          "type": "ModuleNotFoundError"
+        },
+        "latency_ms": null,
+        "method": "bge_m3_sentence_transformers_in_process_cosine",
+        "scoring_inputs": {
+          "device": "mps",
+          "model": "trollathon/bge-m3-safetensors",
+          "top_k": 5
+        }
+      },
+      "fts5": {
+        "candidates": [
+          {
+            "id": "sqlite:messages:aaa2d5be-3b8a-4419-9da4-d7410b35a979",
+            "metadata": {
+              "created_at": "2024-12-16T22:51:23+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "aaa2d5be-3b8a-4419-9da4-d7410b35a979",
+              "sqlite_rowid": 10578,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": null
+            },
+            "rank": 1,
+            "score": {
+              "bm25": -18.463389729534878,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "1분봉 차트 전체를 받아서 주가의 트렌드를 확인하는 프로그램이야, 종가가 시가에서 우상향하는지를 알아보고 싶은건데, 가끔 하방으로 내려가는 차트를 필터링 못하는거 같아. 검토 후 고쳐줘: def check_stock_trend(self, data): # Create DataFrame from data df = pd.DataFrame(data) # Convert necessary columns to numeric df['stc…"
+          },
+          {
+            "id": "sqlite:messages:2d8c9705-378c-4fd1-90d6-237587d2b3c3",
+            "metadata": {
+              "created_at": "2024-12-16T22:52:36+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "2d8c9705-378c-4fd1-90d6-237587d2b3c3",
+              "sqlite_rowid": 10579,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": null
+            },
+            "rank": 2,
+            "score": {
+              "bm25": -16.854386274306776,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "코드에서 하방으로 내려가는 차트를 필터링하지 못하는 이유는, 단순히 최근 1시간 동안의 상승 연속성(`uptrend_streak`)과 거래량 증가 연속성(`uptrend_streak_vol`)만 확인하고, 전체적인 종가가 시가보다 상승하는지에 대한 확인이 부족하기 때문입니다. 전체적인 트렌드를 확인하려면 종가와 시가의 비교 및 중간 구간의 트렌드 확인이 포함되어야 합니다. 아래는 개선된 코드입니다: ### 개선 사항 1. *…"
+          },
+          {
+            "id": "sqlite:messages:019c8ae0-d936-709d-9a68-9e82bbc49dfc",
+            "metadata": {
+              "created_at": "2026-02-23T23:22:48+09:00",
+              "source": "claude",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "019c8ae0-d936-709d-9a68-9e82bbc49dfc",
+              "sqlite_rowid": 2205,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": "2026-02-23T23:22:48+09:00"
+            },
+            "rank": 3,
+            "score": {
+              "bm25": -14.515863794794825,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "논문이 길어서 체계적으로 빌드할게. Pandoc validation errors. Let me fix via unpack/repack approach: 594 paragraphs, validation PASSED. pandoc 변환 → unpack/repack auto-repair로 깔끔하게 나왔어. 마크다운 원본의 heading, 테이블, 코드블록, 수식 전부 보존됨."
+          },
+          {
+            "id": "sqlite:messages:681d8985-12cd-4317-9935-7d6d5efdab26",
+            "metadata": {
+              "created_at": "2024-11-14T23:24:19+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "681d8985-12cd-4317-9935-7d6d5efdab26",
+              "sqlite_rowid": 9381,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": null
+            },
+            "rank": 4,
+            "score": {
+              "bm25": -14.202295732895099,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "{\"name\": \"fix_candle_chart_xaxis\", \"type\": \"code/python\", \"content\": \"def drawCandleChart(self, title, data):\\n df = pd.DataFrame(data)\\n\\n # Sort values and reset index based on time\\n df = df.sort_values(by='stck_cntg_hour', ascending=Tr…"
+          },
+          {
+            "id": "sqlite:messages:019d6d6d-84e1-7d9d-8274-1c835bc5666a",
+            "metadata": {
+              "created_at": "2026-04-08T23:09:48+09:00",
+              "source": "claude",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "019d6d6d-84e1-7d9d-8274-1c835bc5666a",
+              "sqlite_rowid": 4089,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": "2026-04-08T23:09:48+09:00"
+            },
+            "rank": 5,
+            "score": {
+              "bm25": -13.860514046184203,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "뭐. 크게 개의치는 않아. aigleeson은 이렇게 썻네\"A developer just open-sourced a full autonomous AI dev team that runs 24/7 without a single human. It's called OpenSwarm. You give it a Linear issue. It writes the code, reviews it, fixes CI failures, resol…"
+          }
+        ],
+        "latency_ms": 7.493375000194646,
+        "method": "sqlite_fts5_prefix_bm25",
+        "scoring_inputs": {
+          "match_expression": "\"recent\"* OR \"bugs\"* OR \"errors\"* OR \"failures\"* OR \"to\"* OR \"fix\"*",
+          "tokens": [
+            "recent",
+            "bugs",
+            "errors",
+            "failures",
+            "to",
+            "fix"
+          ],
+          "top_k": 5
+        }
+      },
+      "query": "recent bugs errors failures to fix"
+    },
+    {
+      "bge_m3": {
+        "candidates": [],
+        "error": {
+          "message": "Could not import module 'TrainerCallback'. Are this object's requirements defined correctly?",
+          "type": "ModuleNotFoundError"
+        },
+        "latency_ms": null,
+        "method": "bge_m3_sentence_transformers_in_process_cosine",
+        "scoring_inputs": {
+          "device": "mps",
+          "model": "trollathon/bge-m3-safetensors",
+          "top_k": 5
+        }
+      },
+      "fts5": {
+        "candidates": [
+          {
+            "id": "sqlite:messages:76d29c11-70a4-41e4-bfc5-e92320a10a65",
+            "metadata": {
+              "created_at": "2025-04-13T15:35:13+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "76d29c11-70a4-41e4-bfc5-e92320a10a65",
+              "sqlite_rowid": 21880,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": null
+            },
+            "rank": 1,
+            "score": {
+              "bm25": -19.79857625567787,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "좋아 형, SQLite 구조 보려면 WSL이나 맥북 터미널에서 아래 커맨드 치면 돼: --- ## ✅ 테이블 목록 보기 ```bash sqlite3 news_with_weighted_similarity.db \".tables\" ``` → 결과 예시: ``` news_similarity ``` --- ## ✅ 특정 테이블의 컬럼/스키마 구조 보기 ```bash sqlite3 news_with_weighted_similarity.…"
+          },
+          {
+            "id": "sqlite:messages:79a81982-febe-41d9-9041-02afeab64e35",
+            "metadata": {
+              "created_at": "2025-04-16T21:11:22+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "79a81982-febe-41d9-9041-02afeab64e35",
+              "sqlite_rowid": 24173,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": null
+            },
+            "rank": 2,
+            "score": {
+              "bm25": -19.60451081504385,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "ㅇㅋ 형, SQL 명령어로 바로 확인하려면 아래 순서대로 하면 돼. --- ## ✅ 1. `sqlite3 fn_guide.db` 진입 후 ```bash sqlite3 fn_guide.db ``` --- ## ✅ 2. 테이블 목록 보기 ```sql .tables ``` → 예: `company_info`, `company_summary` --- ## ✅ 3. 테이블 구조 확인 ```sql .schema company_info …"
+          },
+          {
+            "id": "sqlite:messages:d3df4ddd-9d70-4fcc-8912-ce6247418c66",
+            "metadata": {
+              "created_at": "2025-04-13T18:08:00+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "d3df4ddd-9d70-4fcc-8912-ce6247418c66",
+              "sqlite_rowid": 22031,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": null
+            },
+            "rank": 3,
+            "score": {
+              "bm25": -19.206411871146756,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "ㅇㅋ 형, 여기서 바로 코드 짜줄게. `analyze_news_and_candles.py`로 시작해서 **DB 구조 확인 + 스코어 필터링 준비**까지 포함된 버전이야: --- ### ✅ `analyze_news_and_candles.py` ```python import sqlite3 import pandas as pd from pathlib import Path # DB 파일 경로 news_db_path = \"news_si…"
+          },
+          {
+            "id": "sqlite:messages:a82ea06c-2408-48fd-b8ff-6e5f943919ff",
+            "metadata": {
+              "created_at": "2025-04-16T21:11:42+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "a82ea06c-2408-48fd-b8ff-6e5f943919ff",
+              "sqlite_rowid": 24174,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": null
+            },
+            "rank": 4,
+            "score": {
+              "bm25": -18.340089758702224,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "오케이 형, 바로 SQLite CLI에서 **연속적으로 실행 가능한 SQL 명령어 시퀀스** 정리해서 줄게. 지금처럼 `sqlite3 fn_guide.db`로 들어간 뒤, 아래 명령을 그대로 복붙하면 돼. --- ## ✅ SQLite 연속 명령어 예시 ```sql -- 테이블 목록 확인 .tables -- company_info 테이블 구조 확인 .schema company_info -- company_summary 테이블 …"
+          },
+          {
+            "id": "sqlite:messages:98817392-4899-4811-baf4-13e4b080cc05",
+            "metadata": {
+              "created_at": "2025-04-12T00:42:27+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "98817392-4899-4811-baf4-13e4b080cc05",
+              "sqlite_rowid": 20768,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": null
+            },
+            "rank": 5,
+            "score": {
+              "bm25": -17.700174057404904,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "오케이. 이건 DB에 `기업정보`라는 테이블이 **없거나**, 혹은 테이블 이름이 **다르게 저장되어 있어서** 생긴 오류야. 형이 직접 확인하려면 아래 코드로 현재 DB에 존재하는 테이블 리스트 확인 가능해: --- ### 🔍 SQLite 테이블 리스트 확인 유틸 ```python import sqlite3 def list_tables(db_path): conn = sqlite3.connect(db_path) cursor …"
+          }
+        ],
+        "latency_ms": 3.338957998494152,
+        "method": "sqlite_fts5_prefix_bm25",
+        "scoring_inputs": {
+          "match_expression": "\"database\"* OR \"schema\"* OR \"migrations\"* OR \"sqlite\"* OR \"tables\"*",
+          "tokens": [
+            "database",
+            "schema",
+            "migrations",
+            "sqlite",
+            "tables"
+          ],
+          "top_k": 5
+        }
+      },
+      "query": "database schema migrations sqlite tables"
+    },
+    {
+      "bge_m3": {
+        "candidates": [],
+        "error": {
+          "message": "Could not import module 'TrainerCallback'. Are this object's requirements defined correctly?",
+          "type": "ModuleNotFoundError"
+        },
+        "latency_ms": null,
+        "method": "bge_m3_sentence_transformers_in_process_cosine",
+        "scoring_inputs": {
+          "device": "mps",
+          "model": "trollathon/bge-m3-safetensors",
+          "top_k": 5
+        }
+      },
+      "fts5": {
+        "candidates": [
+          {
+            "id": "sqlite:project_docs:2147dfa6-33e0-420d-95cd-cb5cb54d825c",
+            "metadata": {
+              "created_at": "2026-05-17T12:29:00+09:00",
+              "kind": "memory",
+              "source": "claude_memory",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "2147dfa6-33e0-420d-95cd-cb5cb54d825c",
+              "sqlite_rowid": 390,
+              "sqlite_table": "project_docs",
+              "text_columns": [
+                "content"
+              ]
+            },
+            "rank": 1,
+            "score": {
+              "bm25": -21.66348906451121,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "# Google OAuth SPA flow (2026-04-18 구현) ## 흐름 ``` 1. Browser: dash.intrect.io/login 2. SPA: window.location.href = API_BASE + \"/auth/google?return_to=\" + encodeURIComponent(origin + \"/auth/callback\") 3. api.intrect.io/auth/google: - valida…"
+          },
+          {
+            "id": "sqlite:messages:99afafa9-3117-4988-9456-546d0571766e",
+            "metadata": {
+              "created_at": "2024-11-19T23:06:01+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "99afafa9-3117-4988-9456-546d0571766e",
+              "sqlite_rowid": 9514,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": null
+            },
+            "rank": 2,
+            "score": {
+              "bm25": -15.409849338181072,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "**예, 가능합니다.** 발급된 **OAuth2 토큰**(Bearer Token)을 WebSocket 인증에 사용하는 방식도 지원됩니다. 한국투자증권의 WebSocket API에서 `approval_key`와 함께 **Bearer Token**을 헤더에 포함하여 인증할 수 있습니다. 아래는 `appkey`와 `secretkey` 대신 **발급된 토큰**을 사용하는 코드 예제입니다. --- ### 수정된 WebSocket 클래…"
+          },
+          {
+            "id": "sqlite:messages:e2821d08-59ec-427d-962e-dfabb0715fa9",
+            "metadata": {
+              "created_at": "2025-04-07T20:23:25+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "e2821d08-59ec-427d-962e-dfabb0715fa9",
+              "sqlite_rowid": 18515,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": null
+            },
+            "rank": 3,
+            "score": {
+              "bm25": -15.400272266056033,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "AzureAD 계정인건 확인이 되는데 내가 이거 비밀번호를 어떻게 바꾸지? +----------------------------------------------------------------------+ | Device State | +----------------------------------------------------------------------+ AzureAdJoined : YES EnterpriseJoin…"
+          },
+          {
+            "id": "sqlite:messages:0838a662-47c0-4a6f-b87a-972ca028408d",
+            "metadata": {
+              "created_at": "2024-09-11T23:38:19+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "0838a662-47c0-4a6f-b87a-972ca028408d",
+              "sqlite_rowid": 7420,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": null
+            },
+            "rank": 4,
+            "score": {
+              "bm25": -15.126960860123503,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "The user is creating a custom Python API library and prefers to find efficient ways to handle authentication without passing REST tokens as parameters repeatedly. They are leaning toward using a class-based approach for better maintainabil…"
+          },
+          {
+            "id": "sqlite:project_docs:d75df4d0-61f7-4fea-9bbc-e69f5b0da4ad",
+            "metadata": {
+              "created_at": "2026-05-17T12:29:00+09:00",
+              "kind": "memory",
+              "source": "claude_memory",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "d75df4d0-61f7-4fea-9bbc-e69f5b0da4ad",
+              "sqlite_rowid": 272,
+              "sqlite_table": "project_docs",
+              "text_columns": [
+                "content"
+              ]
+            },
+            "rank": 5,
+            "score": {
+              "bm25": -15.0214425484035,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "VEGA repo의 자격증명 관리. ### 위치 - `.env`: `/Users/unohee/dev/VEGA/.env` (gitignore됨) - `GOOGLE_INTRECT_OAUTH_CLIENT_ID` — Intrect 계정 Google OAuth client ID (Desktop/Installed app 추정) - `GOOGLE_INTRECT_OAUTH_CLIENT_PW` — 위 client의 secret - 추가 예정…"
+          }
+        ],
+        "latency_ms": 1.80200000613695,
+        "method": "sqlite_fts5_prefix_bm25",
+        "scoring_inputs": {
+          "match_expression": "\"authentication\"* OR \"oauth\"* OR \"login\"* OR \"token\"* OR \"issues\"*",
+          "tokens": [
+            "authentication",
+            "oauth",
+            "login",
+            "token",
+            "issues"
+          ],
+          "top_k": 5
+        }
+      },
+      "query": "authentication oauth login token issues"
+    },
+    {
+      "bge_m3": {
+        "candidates": [],
+        "error": {
+          "message": "Could not import module 'TrainerCallback'. Are this object's requirements defined correctly?",
+          "type": "ModuleNotFoundError"
+        },
+        "latency_ms": null,
+        "method": "bge_m3_sentence_transformers_in_process_cosine",
+        "scoring_inputs": {
+          "device": "mps",
+          "model": "trollathon/bge-m3-safetensors",
+          "top_k": 5
+        }
+      },
+      "fts5": {
+        "candidates": [
+          {
+            "id": "sqlite:calendar_events:5irvcdp83n5a2u10hjdihjmuoo",
+            "metadata": {
+              "source": "sqlite",
+              "sqlite_id_column": "id",
+              "sqlite_id_value": "5irvcdp83n5a2u10hjdihjmuoo",
+              "sqlite_rowid": 100,
+              "sqlite_table": "calendar_events",
+              "text_columns": [
+                "title",
+                "description"
+              ]
+            },
+            "rank": 1,
+            "score": {
+              "bm25": -23.4091054398414,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "[김성구, 정석원, management] follow up meeting"
+          },
+          {
+            "id": "sqlite:messages:f5afaf58-895c-4539-890c-f2259c03ba8b",
+            "metadata": {
+              "created_at": "2024-12-04T10:49:23+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "f5afaf58-895c-4539-890c-f2259c03ba8b",
+              "sqlite_rowid": 10080,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": null
+            },
+            "rank": 2,
+            "score": {
+              "bm25": -17.538343703659816,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "Here’s a refined version of your email: --- **Subject:** Follow-Up on PO Payment Status Hi Sarah, I hope this message finds you well. I wanted to follow up as I haven’t received any remittance from the bank, and it has been over **30 days*…"
+          },
+          {
+            "id": "sqlite:messages:b03bfdd6-8345-49b9-9fe3-6ab2e0bc948d",
+            "metadata": {
+              "created_at": "2024-04-22T11:33:09+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "b03bfdd6-8345-49b9-9fe3-6ab2e0bc948d",
+              "sqlite_rowid": 6289,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": null
+            },
+            "rank": 3,
+            "score": {
+              "bm25": -17.30115575177677,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "Certainly! Here's a refined version of your email: --- Subject: Follow-up on Demo Fee Payment Schedule Hi Willy, I hope this message finds you well. I wanted to follow up on our previous discussion regarding the demo fee payments. As we ag…"
+          },
+          {
+            "id": "sqlite:events:884",
+            "metadata": {
+              "source": "sqlite",
+              "sqlite_id_column": "id",
+              "sqlite_id_value": 884,
+              "sqlite_rowid": 884,
+              "sqlite_table": "events",
+              "text_columns": [
+                "body",
+                "title"
+              ]
+            },
+            "rank": 4,
+            "score": {
+              "bm25": -16.45865733035876,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "KYTE 사내 AI 구축 워크샵 일정을 personal Google Calendar에 등록했다. 일정은 2026-05-21 목요일 16:00–17:30 KST, 장소는 KYTE HQ-9-TRESOR - Meeting Room (8), Google Meet 링크는 https://meet.google.com/uwb-ctio-bvo. 초대 메일은 Nathan JO가 보냈고, 필요한 기능/희망사항을 생각해오는 맥락이다. KYTE 사…"
+          },
+          {
+            "id": "sqlite:messages:cdacee27-cf9f-43f0-acd8-6112c470ee95",
+            "metadata": {
+              "created_at": "2024-04-22T12:43:26+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "cdacee27-cf9f-43f0-acd8-6112c470ee95",
+              "sqlite_rowid": 6291,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": null
+            },
+            "rank": 5,
+            "score": {
+              "bm25": -15.89670296378051,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "You're welcome! Here's a refined version of your follow-up query: --- Subject: Clarification on Payment Timing for Project 15155 Hi Willy, Thank you for the updates on Project 15155. To clarify, does this mean that I will receive the payme…"
+          }
+        ],
+        "latency_ms": 2.640833001350984,
+        "method": "sqlite_fts5_prefix_bm25",
+        "scoring_inputs": {
+          "match_expression": "\"email\"* OR \"calendar\"* OR \"meeting\"* OR \"follow\"* OR \"up\"* OR \"reminders\"*",
+          "tokens": [
+            "email",
+            "calendar",
+            "meeting",
+            "follow",
+            "up",
+            "reminders"
+          ],
+          "top_k": 5
+        }
+      },
+      "query": "email calendar meeting follow up reminders"
+    },
+    {
+      "bge_m3": {
+        "candidates": [],
+        "error": {
+          "message": "Could not import module 'TrainerCallback'. Are this object's requirements defined correctly?",
+          "type": "ModuleNotFoundError"
+        },
+        "latency_ms": null,
+        "method": "bge_m3_sentence_transformers_in_process_cosine",
+        "scoring_inputs": {
+          "device": "mps",
+          "model": "trollathon/bge-m3-safetensors",
+          "top_k": 5
+        }
+      },
+      "fts5": {
+        "candidates": [
+          {
+            "id": "sqlite:messages:af961ee7-0f2b-4169-af1e-f19711286d10",
+            "metadata": {
+              "created_at": "2025-02-18T17:17:03+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "af961ee7-0f2b-4169-af1e-f19711286d10",
+              "sqlite_rowid": 13439,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": null
+            },
+            "rank": 1,
+            "score": {
+              "bm25": -11.26155287305475,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "**Considering automated trading** So, the user is asking about their interest in automated financial trading. Okay, automation in finance is a fascinating area, as it touches on many fields. Given the user’s background in technology and pr…"
+          },
+          {
+            "id": "sqlite:conversations:e65aafcd-f7eb-4ba8-bac6-f4f2b29370af",
+            "metadata": {
+              "created_at": "2024-07-14T22:24:33+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "e65aafcd-f7eb-4ba8-bac6-f4f2b29370af",
+              "sqlite_rowid": 2583,
+              "sqlite_table": "conversations",
+              "text_columns": [
+                "summary",
+                "name"
+              ],
+              "updated_at": "2024-07-14T23:06:13+09:00"
+            },
+            "rank": 2,
+            "score": {
+              "bm25": -10.091096850322877,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "Draw Custom Automation Curves"
+          },
+          {
+            "id": "sqlite:drive_files:11ACScjE-P94sJXzK1qda6-6yuwICz-8a",
+            "metadata": {
+              "created_at": "2021-09-22T23:01:46+09:00",
+              "source": "sqlite",
+              "sqlite_id_column": "id",
+              "sqlite_id_value": "11ACScjE-P94sJXzK1qda6-6yuwICz-8a",
+              "sqlite_rowid": 1856,
+              "sqlite_table": "drive_files",
+              "text_columns": [
+                "content",
+                "name"
+              ]
+            },
+            "rank": 3,
+            "score": {
+              "bm25": -10.023009531281387,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "IE_02_flanger_automation Project"
+          },
+          {
+            "id": "sqlite:messages:019c56cd-2ef1-7489-ad37-465f52750e44",
+            "metadata": {
+              "created_at": "2026-02-13T20:41:27+09:00",
+              "source": "claude",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "019c56cd-2ef1-7489-ad37-465f52750e44",
+              "sqlite_rowid": 3093,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": "2026-02-13T20:41:27+09:00"
+            },
+            "rank": 4,
+            "score": {
+              "bm25": -9.844315384503997,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "**형...** **이 리포트 하나가 증명하는 게:** --- ## 이 리포트의 의미 ### 1. Cost Arbitrage ``` OpenAI API로 이거 생성: - 1종목 = 820 tokens - 1,000종목/day = 820K tokens - GPT-4 cost: $25-50/day - 연간: $9K-18K VELA (self-hosted): - Training: $1K (one-time) - Inference: …"
+          },
+          {
+            "id": "sqlite:messages:4fa8c69e-8548-4f3e-a80e-afbb09f7da37",
+            "metadata": {
+              "created_at": "2025-04-10T15:06:41+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "4fa8c69e-8548-4f3e-a80e-afbb09f7da37",
+              "sqlite_rowid": 19798,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": null
+            },
+            "rank": 5,
+            "score": {
+              "bm25": -9.762247796412893,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "정확히 본 거 맞아. **Live API (Live Object Model)** 로는 *템포 오토메이션 포인트를 직접 찍는 건 불가능해.* Ableton이 노골적으로 그 영역을 막아놨어. 구체적으로: --- ### ❌ Live API로 불가능한 것: - **Master Track의 Automation Envelope** 직접 조작 - `live_set tracks 0 automation_envelope` → 없음 - `tem…"
+          }
+        ],
+        "latency_ms": 0.8568749981350265,
+        "method": "sqlite_fts5_prefix_bm25",
+        "scoring_inputs": {
+          "match_expression": "\"finance\"* OR \"automation\"* OR \"reconciliation\"* OR \"reports\"*",
+          "tokens": [
+            "finance",
+            "automation",
+            "reconciliation",
+            "reports"
+          ],
+          "top_k": 5
+        }
+      },
+      "query": "finance automation reconciliation reports"
+    },
+    {
+      "bge_m3": {
+        "candidates": [],
+        "error": {
+          "message": "Could not import module 'TrainerCallback'. Are this object's requirements defined correctly?",
+          "type": "ModuleNotFoundError"
+        },
+        "latency_ms": null,
+        "method": "bge_m3_sentence_transformers_in_process_cosine",
+        "scoring_inputs": {
+          "device": "mps",
+          "model": "trollathon/bge-m3-safetensors",
+          "top_k": 5
+        }
+      },
+      "fts5": {
+        "candidates": [
+          {
+            "id": "sqlite:messages:d081dec1-3877-4a90-bc22-17747a924425",
+            "metadata": {
+              "created_at": "2025-04-11T20:16:11+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "d081dec1-3877-4a90-bc22-17747a924425",
+              "sqlite_rowid": 20532,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": null
+            },
+            "rank": 1,
+            "score": {
+              "bm25": -16.63272517013505,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "바로 간다 형. 아래 코드 복사해서 `run_creon_env.vbs`라는 이름으로 저장해. --- ## ✅ `run_creon_env.vbs` ```vbscript Set shell = CreateObject(\"Shell.Application\") shell.ShellExecute \"cmd.exe\", \"/c D:\\Scripts\\launch_creon_agent.bat\", \"\", \"runas\", 1 ``` --- ## 📌 설명…"
+          },
+          {
+            "id": "sqlite:conversations:197665b4-b5ac-40f7-993e-1d8406b29999",
+            "metadata": {
+              "created_at": "2025-08-24T18:05:31+09:00",
+              "source": "claude",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "197665b4-b5ac-40f7-993e-1d8406b29999",
+              "sqlite_rowid": 142,
+              "sqlite_table": "conversations",
+              "text_columns": [
+                "summary",
+                "name"
+              ],
+              "updated_at": "2025-08-24T18:05:43+09:00"
+            },
+            "rank": 2,
+            "score": {
+              "bm25": -16.270865484515635,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "**Conversation Overview** The user asked in Korean whether Claude could see the contents of their terminal shell. Claude responded in Korean, explaining that it cannot directly access or view the user's terminal or shell contents, as it on…"
+          },
+          {
+            "id": "sqlite:conversations:67d93516-2ce4-800b-aaf9-fde9efa90d30",
+            "metadata": {
+              "created_at": "2025-03-18T17:55:50+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "67d93516-2ce4-800b-aaf9-fde9efa90d30",
+              "sqlite_rowid": 789,
+              "sqlite_table": "conversations",
+              "text_columns": [
+                "summary",
+                "name"
+              ],
+              "updated_at": "2026-05-17 15:33:46"
+            },
+            "rank": 3,
+            "score": {
+              "bm25": -14.761716778405393,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "이동 중 아이폰만으로 개발 프로젝트를 진행하기 위해 Discord를 Cursor Agent의 대화 인터페이스로 쓰는 방안, SSH 터미널 스트리밍, 원격 Mac Studio 접속 방식을 비교했다. Discord는 단순 Q&A에는 적합하지만 실시간 터미널/개발 인터페이스로는 한계가 있고, 실제 개발 제어는 iOS SSH 앱(Termius, Blink Shell, Prompt 2, Shelly 등)으로 Mac Studio에 접속…"
+          },
+          {
+            "id": "sqlite:messages:a06f86b6-6750-47f8-9a65-7329828aa0c5",
+            "metadata": {
+              "created_at": "2025-04-11T20:37:55+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "a06f86b6-6750-47f8-9a65-7329828aa0c5",
+              "sqlite_rowid": 20566,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": null
+            },
+            "rank": 4,
+            "score": {
+              "bm25": -13.739864581482495,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "좋아 형, 그럼 전제는 이거지: > **`run_creon_env.bat`이 있는 디렉토리에서 `.vbs`를 실행할 거고**, > `.bat`도 그 **같은 디렉토리에서 호출된다고 가정**. --- ## ✅ `run_creon_visible.vbs` (관리자 + 콘솔창 + 로컬상대경로 호환) ```vbscript Set shell = CreateObject(\"Shell.Application\") ' 현재 VBS가 위치한 폴더 …"
+          },
+          {
+            "id": "sqlite:messages:560287eb-a964-4898-b751-9b0c551edc58",
+            "metadata": {
+              "created_at": "2025-04-11T20:30:23+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "560287eb-a964-4898-b751-9b0c551edc58",
+              "sqlite_rowid": 20551,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": null
+            },
+            "rank": 5,
+            "score": {
+              "bm25": -13.456084492689802,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "오케이 형, 그럼 목표는 이거지: > **`.bat` 또는 `.vbs`로 creon_agent.py를 실행하되**, > **실행 로그를 터미널에서 바로 보고 싶다** — 즉 “실행 상태 실시간 확인”. --- ## ✅ 해결 방법: 그냥 `.bat`에서 **콘솔 띄우고 실행**하면 됨 ```bat @echo off call \"C:\\Users\\HeewonOh\\Anaconda3_32bit\\Scripts\\activate.bat\" c…"
+          }
+        ],
+        "latency_ms": 1.8888750055339187,
+        "method": "sqlite_fts5_prefix_bm25",
+        "scoring_inputs": {
+          "match_expression": "\"agent\"* OR \"tools\"* OR \"sandbox\"* OR \"shell\"* OR \"execution\"*",
+          "tokens": [
+            "agent",
+            "tools",
+            "sandbox",
+            "shell",
+            "execution"
+          ],
+          "top_k": 5
+        }
+      },
+      "query": "agent tools sandbox shell execution"
+    },
+    {
+      "bge_m3": {
+        "candidates": [],
+        "error": {
+          "message": "Could not import module 'TrainerCallback'. Are this object's requirements defined correctly?",
+          "type": "ModuleNotFoundError"
+        },
+        "latency_ms": null,
+        "method": "bge_m3_sentence_transformers_in_process_cosine",
+        "scoring_inputs": {
+          "device": "mps",
+          "model": "trollathon/bge-m3-safetensors",
+          "top_k": 5
+        }
+      },
+      "fts5": {
+        "candidates": [
+          {
+            "id": "sqlite:messages:019c56bf-4f1a-749e-b9a4-16be78c23ff3",
+            "metadata": {
+              "created_at": "2026-02-13T20:26:27+09:00",
+              "source": "claude",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "019c56bf-4f1a-749e-b9a4-16be78c23ff3",
+              "sqlite_rowid": 3079,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": "2026-02-13T20:26:27+09:00"
+            },
+            "rank": 1,
+            "score": {
+              "bm25": -12.926552914337769,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "**아, 이제 진짜 그림 보인다.** 형이 실제로 한 것: - **Core system 전부 설계하고 구현** - Trading logic, ML pipeline, 알고리즘 - **전부 형이 직접** - Claude Code는 **청소부 + UI 디자이너** 이게 훨씬 더 credible하고 realistic해. --- ## 🎯 실제 역할 분담 (Realistic) ### 형이 한 것 (80%): ```python # 1. …"
+          },
+          {
+            "id": "sqlite:messages:0221b960-1cab-4fb8-abc1-6f5cbe51ffd3",
+            "metadata": {
+              "created_at": "2024-10-10T18:53:10+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "0221b960-1cab-4fb8-abc1-6f5cbe51ffd3",
+              "sqlite_rowid": 8262,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": null
+            },
+            "rank": 2,
+            "score": {
+              "bm25": -12.658750208870755,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "PyQt를 사용해 주식 종목선정 프로그램의 기본적인 UI 템플릿을 만들려면, 주로 다음과 같은 기능을 포함할 수 있습니다: 1. **종목 검색 필터** (검색어 입력창, 드롭다운 등) 2. **종목 리스트 테이블** (검색 결과 표시) 3. **종목 세부 정보** (선택한 종목의 자세한 정보 출력) 4. **종목 분석 버튼** (종목 분석을 실행하는 버튼) 5. **차트 표시 영역** (선택한 종목의 차트) 다음은 PyQt5…"
+          },
+          {
+            "id": "sqlite:conversations:6943d645-6824-8320-9640-1282d0a18ba7",
+            "metadata": {
+              "created_at": "2025-12-18T19:24:21+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "6943d645-6824-8320-9640-1282d0a18ba7",
+              "sqlite_rowid": 2193,
+              "sqlite_table": "conversations",
+              "text_columns": [
+                "summary",
+                "name"
+              ],
+              "updated_at": "2026-05-17 16:48:02"
+            },
+            "rank": 3,
+            "score": {
+              "bm25": -12.25129567540232,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "Intrect 대시보드 데모 공개 전 사용자에게 EULA처럼 NDA 동의를 받는 구조로 진행하기로 했다. 초기 일반 NDA 초안을 작성한 뒤, 화면 캡처·녹화·데이터 추출·역설계·제3자 공유 금지, 지식재산권 귀속, 5년 비밀유지, 대한민국 법/서울중앙지방법원 관할을 포함한 클릭 동의형 Markdown 약관으로 재작성했다. 사용자는 문서 형태가 아니라 실제 파일로 제공되길 원했고, 최종적으로 `Intrect_Dashboard…"
+          },
+          {
+            "id": "sqlite:conversations:93f94dd0-8798-46cb-bb01-61ec388ca766",
+            "metadata": {
+              "created_at": "2026-03-08T22:50:26+09:00",
+              "source": "claude",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "93f94dd0-8798-46cb-bb01-61ec388ca766",
+              "sqlite_rowid": 55,
+              "sqlite_table": "conversations",
+              "text_columns": [
+                "summary",
+                "name"
+              ],
+              "updated_at": "2026-03-17T14:33:09+09:00"
+            },
+            "rank": 4,
+            "score": {
+              "bm25": -11.791847218914889,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "**Conversation Overview** The person is building STONKS, a stock market analysis platform featuring an ontology-based dashboard that visually maps relationships between news clusters, individual stock nodes, and institutional fund flows. T…"
+          },
+          {
+            "id": "sqlite:messages:aaa26338-7a31-4db8-b4b2-747ecf3e9c09",
+            "metadata": {
+              "created_at": "2024-04-04T10:30:10+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "aaa26338-7a31-4db8-b4b2-747ecf3e9c09",
+              "sqlite_rowid": 6526,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": null
+            },
+            "rank": 5,
+            "score": {
+              "bm25": -11.472403598759115,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "okay. i sort problems in GLSL top. should I transform the top to sop then?"
+          }
+        ],
+        "latency_ms": 1.392500002111774,
+        "method": "sqlite_fts5_prefix_bm25",
+        "scoring_inputs": {
+          "match_expression": "\"frontend\"* OR \"dashboard\"* OR \"ui\"* OR \"layout\"* OR \"problems\"*",
+          "tokens": [
+            "frontend",
+            "dashboard",
+            "ui",
+            "layout",
+            "problems"
+          ],
+          "top_k": 5
+        }
+      },
+      "query": "frontend dashboard ui layout problems"
+    },
+    {
+      "bge_m3": {
+        "candidates": [],
+        "error": {
+          "message": "Could not import module 'TrainerCallback'. Are this object's requirements defined correctly?",
+          "type": "ModuleNotFoundError"
+        },
+        "latency_ms": null,
+        "method": "bge_m3_sentence_transformers_in_process_cosine",
+        "scoring_inputs": {
+          "device": "mps",
+          "model": "trollathon/bge-m3-safetensors",
+          "top_k": 5
+        }
+      },
+      "fts5": {
+        "candidates": [
+          {
+            "id": "sqlite:messages:b98c626f-5086-493d-8a0d-360d48c2d259",
+            "metadata": {
+              "created_at": "2025-03-28T15:54:55+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "b98c626f-5086-493d-8a0d-360d48c2d259",
+              "sqlite_rowid": 16064,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": null
+            },
+            "rank": 1,
+            "score": {
+              "bm25": -22.289922422451625,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "좋습니다. 지금까지 만든 **뉴스 스크래퍼 + 검색 기능**을 프로젝트별 기억 시스템에 통합하면, 꽤 강력한 **RAG (Retrieval-Augmented Generation)** 시스템으로 확장할 수 있어요. 즉, \"뉴스를 기반으로 한 **지식 기반 LLM 비서**\"를 프로젝트별로 갖게 되는 셈이죠. --- ## **[목표]** > 프로젝트별 뉴스 스크래핑 데이터를 벡터화 → VectorStore 저장 → LLM이 해당 …"
+          },
+          {
+            "id": "sqlite:messages:39ebad5b-e952-4c48-a9a7-c16d096d02ca",
+            "metadata": {
+              "created_at": "2025-03-28T15:52:57+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "39ebad5b-e952-4c48-a9a7-c16d096d02ca",
+              "sqlite_rowid": 16060,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": null
+            },
+            "rank": 2,
+            "score": {
+              "bm25": -21.952702319180375,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "좋은 질문입니다. 작년에는 LangChain의 memory 시스템이 다소 단순했지만, 지금은 **ConversationSummaryMemory**, **VectorStoreRetrieverMemory**, **ZepMemory**, **MomentoMemory** 등 다양한 모듈이 확장되어 있어, “장기 메모리” 구축이 꽤 유연해졌어요. 아래는 LangChain 기반에서 **LLM에 장기 기억(long-term memory)…"
+          },
+          {
+            "id": "sqlite:messages:e313cd13-73f6-4d11-ad10-9c9fe6f006fb",
+            "metadata": {
+              "created_at": "2025-03-28T15:53:53+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "e313cd13-73f6-4d11-ad10-9c9fe6f006fb",
+              "sqlite_rowid": 16062,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": null
+            },
+            "rank": 3,
+            "score": {
+              "bm25": -20.16078374490446,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "그 접근 아주 좋습니다. \"대화형 에이전트가 여러 프로젝트 각각에 대해 기억을 따로 저장하고 불러오는 구조\"는 현실적인 사용 케이스에서 아주 유용하죠. 아래는 이를 구현하기 위한 설계 전략입니다. --- ## **[목표]** > 프로젝트별로 LLM의 장기 기억을 독립적으로 저장하고, 대화 시 해당 프로젝트의 메모리만 활성화 --- ## **1. 기본 구조 요약** ### 핵심 구성 요소: - **`project_id`**: …"
+          },
+          {
+            "id": "sqlite:messages:7454fc30-6c9b-4641-9c8d-f44ad9cf91e9",
+            "metadata": {
+              "created_at": "2025-03-28T15:55:25+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "7454fc30-6c9b-4641-9c8d-f44ad9cf91e9",
+              "sqlite_rowid": 16066,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": null
+            },
+            "rank": 4,
+            "score": {
+              "bm25": -18.801953617836546,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "완벽한 목표 설정입니다. 이건 단순한 RAG에서 **Tool-Calling 기반 RAG** 또는 **Agentic RAG**로 진화하는 흐름이에요. 즉, **LLM이 자율적으로 \"검색이 필요하다\"고 판단하고**, 적절한 retriever를 호출하거나, 뉴스 스크래퍼를 실행하는 구조로 설계할 수 있습니다. --- ## **[목표 정제]** > 사용자가 어떤 질문을 하면, > - **LLM이 \"기억만으로 충분한지\" 판단하고** …"
+          },
+          {
+            "id": "sqlite:messages:be798519-0a13-4151-8fc0-0c5533481626",
+            "metadata": {
+              "created_at": "2024-12-06T22:39:17+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "be798519-0a13-4151-8fc0-0c5533481626",
+              "sqlite_rowid": 10108,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": null
+            },
+            "rank": 5,
+            "score": {
+              "bm25": -18.580856028519428,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "현재 `Levenshtein.distance`를 사용해 제목의 유사성을 체크하고 있지만, 여전히 비슷한 기사가 많이 필터링되지 않는 문제를 해결하기 위해 개선할 수 있는 전략은 다음과 같습니다. --- ## 개선 전략 ### 1. **유사도 비교 방식을 변경** `Levenshtein.distance` 대신 **문장 임베딩 기반 유사도 계산**을 사용하면 보다 정교하게 제목의 의미적 유사성을 평가할 수 있습니다. #### 문…"
+          }
+        ],
+        "latency_ms": 2.138583004125394,
+        "method": "sqlite_fts5_prefix_bm25",
+        "scoring_inputs": {
+          "match_expression": "\"vector\"* OR \"memory\"* OR \"retrieval\"* OR \"embeddings\"* OR \"search\"*",
+          "tokens": [
+            "vector",
+            "memory",
+            "retrieval",
+            "embeddings",
+            "search"
+          ],
+          "top_k": 5
+        }
+      },
+      "query": "vector memory retrieval embeddings search"
+    },
+    {
+      "bge_m3": {
+        "candidates": [],
+        "error": {
+          "message": "Could not import module 'TrainerCallback'. Are this object's requirements defined correctly?",
+          "type": "ModuleNotFoundError"
+        },
+        "latency_ms": null,
+        "method": "bge_m3_sentence_transformers_in_process_cosine",
+        "scoring_inputs": {
+          "device": "mps",
+          "model": "trollathon/bge-m3-safetensors",
+          "top_k": 5
+        }
+      },
+      "fts5": {
+        "candidates": [
+          {
+            "id": "sqlite:messages:06d6a05f-04f7-405a-80e6-8ea1ad8d3dda",
+            "metadata": {
+              "created_at": "2024-12-04T10:49:22+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "06d6a05f-04f7-405a-80e6-8ea1ad8d3dda",
+              "sqlite_rowid": 10079,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": null
+            },
+            "rank": 1,
+            "score": {
+              "bm25": -11.842591584098471,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "refine my business email about inquiries about PO payment / Hi Sarah, Since i haven’t received any remittances from bank and it’s already been over net 30 days from signing PO I’d like to know whether this PO is processed already."
+          },
+          {
+            "id": "sqlite:messages:ffa65ce8-dc96-4579-a4c5-408033f8f3c3",
+            "metadata": {
+              "created_at": "2023-12-10T19:25:14+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "ffa65ce8-dc96-4579-a4c5-408033f8f3c3",
+              "sqlite_rowid": 5220,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": null
+            },
+            "rank": 2,
+            "score": {
+              "bm25": -9.846512276674272,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "I can't provide a direct list of the top 20 tracks or albums for 2023 from Resident Advisor. However, for a detailed and up-to-date list of the most appreciated electronic music tracks and albums, you can visit the Resident Advisor's Best …"
+          },
+          {
+            "id": "sqlite:messages:1e4a691f-c864-4630-9c6d-29f05a3ebdca",
+            "metadata": {
+              "created_at": "2023-03-15T22:15:40+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "1e4a691f-c864-4630-9c6d-29f05a3ebdca",
+              "sqlite_rowid": 6335,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": null
+            },
+            "rank": 3,
+            "score": {
+              "bm25": -9.581635389426195,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "Sure, here's the updated paragraph: After a long delay due to the COVID-19 pandemic, Kim Kate has finally released a new EP called EVO001. This EP marks the debut release of EVO, a new electronic music label based in Seoul. EVO001 contains…"
+          },
+          {
+            "id": "sqlite:messages:54799082-a6ba-4bf7-8714-06081ddabc66",
+            "metadata": {
+              "created_at": "2024-07-31T13:20:16+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "54799082-a6ba-4bf7-8714-06081ddabc66",
+              "sqlite_rowid": 7120,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": null
+            },
+            "rank": 4,
+            "score": {
+              "bm25": -9.336825947199145,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "As of now, TouchDesigner does not support manually upgrading its internal Python interpreter to a different version, such as Python 3.12. The Python interpreter bundled with TouchDesigner is tightly integrated with the application and its …"
+          },
+          {
+            "id": "sqlite:conversations:e9738709-f10e-4da7-9870-20266477dc47",
+            "metadata": {
+              "created_at": "2026-03-10T20:02:23+09:00",
+              "source": "claude",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "e9738709-f10e-4da7-9870-20266477dc47",
+              "sqlite_rowid": 153,
+              "sqlite_table": "conversations",
+              "text_columns": [
+                "summary",
+                "name"
+              ],
+              "updated_at": "2026-03-10T21:18:09+09:00"
+            },
+            "rank": 5,
+            "score": {
+              "bm25": -9.237522653483982,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "**Conversation Overview** This conversation focused on IP protection strategy and technical deployment planning for a machine learning model called ArtifactNet, which achieves 99.82% accuracy. The person is working toward submitting to ISM…"
+          }
+        ],
+        "latency_ms": 1.352541999949608,
+        "method": "sqlite_fts5_prefix_bm25",
+        "scoring_inputs": {
+          "match_expression": "\"deployment\"* OR \"release\"* OR \"signing\"* OR \"notarization\"* OR \"update\"*",
+          "tokens": [
+            "deployment",
+            "release",
+            "signing",
+            "notarization",
+            "update"
+          ],
+          "top_k": 5
+        }
+      },
+      "query": "deployment release signing notarization update"
+    },
+    {
+      "bge_m3": {
+        "candidates": [],
+        "error": {
+          "message": "Could not import module 'TrainerCallback'. Are this object's requirements defined correctly?",
+          "type": "ModuleNotFoundError"
+        },
+        "latency_ms": null,
+        "method": "bge_m3_sentence_transformers_in_process_cosine",
+        "scoring_inputs": {
+          "device": "mps",
+          "model": "trollathon/bge-m3-safetensors",
+          "top_k": 5
+        }
+      },
+      "fts5": {
+        "candidates": [
+          {
+            "id": "sqlite:messages:4261246d-acbe-47fb-98e8-fbffcbbf3460",
+            "metadata": {
+              "created_at": "2023-06-26T15:11:37+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "4261246d-acbe-47fb-98e8-fbffcbbf3460",
+              "sqlite_rowid": 5759,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": null
+            },
+            "rank": 1,
+            "score": {
+              "bm25": -17.60713302698009,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "The relationship between pitch and frequency in music is typically described as a logarithmic relationship, specifically it follows a base-2 logarithm. This is because each octave, which is perceived as a doubling in pitch, corresponds to …"
+          },
+          {
+            "id": "sqlite:messages:120b549c-945f-4c1a-97fc-027357c5cf05",
+            "metadata": {
+              "created_at": "2023-03-22T22:15:14+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "120b549c-945f-4c1a-97fc-027357c5cf05",
+              "sqlite_rowid": 6008,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": null
+            },
+            "rank": 2,
+            "score": {
+              "bm25": -11.2074188026135,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "I just wanted to be precise to calculate harmonic relationship, without the fact that phase is aligned, I cannot expect its harmonic relationship would be persistent. no?"
+          },
+          {
+            "id": "sqlite:messages:f6634354-ac8a-400c-9aba-6fd64d0d29d3",
+            "metadata": {
+              "created_at": "2023-03-22T22:15:30+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "f6634354-ac8a-400c-9aba-6fd64d0d29d3",
+              "sqlite_rowid": 6009,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": null
+            },
+            "rank": 3,
+            "score": {
+              "bm25": -11.099970858291755,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "You are correct that if the phase relationship between the operators in FM synthesis is not aligned, then the resulting harmonic relationship may not be persistent or predictable. This is because the phase relationship between the operator…"
+          },
+          {
+            "id": "sqlite:messages:8fe51c36-304d-436a-b2f8-a38e0cfd4038",
+            "metadata": {
+              "created_at": "2025-03-10T09:40:00+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "8fe51c36-304d-436a-b2f8-a38e0cfd4038",
+              "sqlite_rowid": 14188,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": null
+            },
+            "rank": 4,
+            "score": {
+              "bm25": -10.986617649464568,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "**Explaining token relationships** The user is asking how to understand the relationship between tokens like '진단' (diagnosis), '솔루션' (solution), '디바이스' (device), etc., to infer that these relate to a health-related device manufacturing com…"
+          },
+          {
+            "id": "sqlite:drive_files:1O88mZXlMx5QX6acf169b-I-Gu7mK4nGx",
+            "metadata": {
+              "created_at": "2022-11-14T23:59:24+09:00",
+              "source": "sqlite",
+              "sqlite_id_column": "id",
+              "sqlite_id_value": "1O88mZXlMx5QX6acf169b-I-Gu7mK4nGx",
+              "sqlite_rowid": 570,
+              "sqlite_table": "drive_files",
+              "text_columns": [
+                "content",
+                "name"
+              ]
+            },
+            "rank": 5,
+            "score": {
+              "bm25": -10.876826896237766,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "Shop-People chatting in cafe, Samcheongdong.wav"
+          }
+        ],
+        "latency_ms": 1.028749997203704,
+        "method": "sqlite_fts5_prefix_bm25",
+        "scoring_inputs": {
+          "match_expression": "\"contacts\"* OR \"people\"* OR \"organizations\"* OR \"relationship\"* OR \"notes\"*",
+          "tokens": [
+            "contacts",
+            "people",
+            "organizations",
+            "relationship",
+            "notes"
+          ],
+          "top_k": 5
+        }
+      },
+      "query": "contacts people organizations relationship notes"
+    },
+    {
+      "bge_m3": {
+        "candidates": [],
+        "error": {
+          "message": "Could not import module 'TrainerCallback'. Are this object's requirements defined correctly?",
+          "type": "ModuleNotFoundError"
+        },
+        "latency_ms": null,
+        "method": "bge_m3_sentence_transformers_in_process_cosine",
+        "scoring_inputs": {
+          "device": "mps",
+          "model": "trollathon/bge-m3-safetensors",
+          "top_k": 5
+        }
+      },
+      "fts5": {
+        "candidates": [
+          {
+            "id": "sqlite:conversations:ca5a6e96-896c-499e-adbe-02a207fcf4d0",
+            "metadata": {
+              "created_at": "2026-02-11T09:24:27+09:00",
+              "source": "claude",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "ca5a6e96-896c-499e-adbe-02a207fcf4d0",
+              "sqlite_rowid": 133,
+              "sqlite_table": "conversations",
+              "text_columns": [
+                "summary",
+                "name"
+              ],
+              "updated_at": "2026-02-19T00:40:42+09:00"
+            },
+            "rank": 1,
+            "score": {
+              "bm25": -16.527482013445713,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "**Conversation Overview** The user continued work from a previous session on paper writing and review. They reported completing adversarial testing that passes cross-generator tests, following Claude's earlier suggestions. This appears to …"
+          },
+          {
+            "id": "sqlite:messages:03aee65d-b8aa-49ab-b223-25a8bbdcee7f",
+            "metadata": {
+              "created_at": "2025-01-04T22:41:36+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "03aee65d-b8aa-49ab-b223-25a8bbdcee7f",
+              "sqlite_rowid": 11813,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": null
+            },
+            "rank": 2,
+            "score": {
+              "bm25": -15.187266699718336,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "Streamlit에서 `tqdm`과 같은 진행 상황 표시(Progress Bar)를 표현할 수 있습니다. Streamlit은 `st.progress`와 `st.spinner`를 제공하여 작업의 진행 상태를 시각적으로 표시할 수 있습니다. --- ### **Streamlit에서 Progress Bar 구현** #### **1. 기본 Progress Bar** ```python import streamlit as st impor…"
+          },
+          {
+            "id": "sqlite:messages:294cb25c-c206-4c42-9993-d25c4c9ee92d",
+            "metadata": {
+              "created_at": "2025-01-04T23:04:08+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "294cb25c-c206-4c42-9993-d25c4c9ee92d",
+              "sqlite_rowid": 11836,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": null
+            },
+            "rank": 3,
+            "score": {
+              "bm25": -15.156914319662086,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "Streamlit의 `st.progress`를 활용하여 `tqdm` 대신 프로그레스 바를 업데이트하도록 코드를 수정하였습니다. Streamlit에서는 `st.progress`를 사용해 진행 상태를 실시간으로 표시할 수 있습니다. 아래는 수정된 `process_stock` 함수입니다. --- ### **수정된 코드** ```python def process_stock(self, stock, progress_bar=None, s…"
+          },
+          {
+            "id": "sqlite:messages:43b1cea2-4a1a-4aa5-82ca-0539eb72778f",
+            "metadata": {
+              "created_at": "2025-01-04T23:07:45+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "43b1cea2-4a1a-4aa5-82ca-0539eb72778f",
+              "sqlite_rowid": 11840,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": null
+            },
+            "rank": 4,
+            "score": {
+              "bm25": -14.811217495342602,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "체결강도 90% 이상의 조건이 빠졌다는 점을 지적해 주셔서 감사합니다. 이를 반영하여 `run_task` 함수와 `process_stock` 함수 내에서 체결강도 필터링을 명확히 처리하도록 수정했습니다. 아래는 수정된 코드를 보여드립니다. --- ### **수정된 `run_task` 함수** ```python def run_task(): transaction_p = bot.agent.get_volume_power(volume…"
+          },
+          {
+            "id": "sqlite:messages:a4189b40-aa3f-4ca6-9cbe-cf29ed709e36",
+            "metadata": {
+              "created_at": "2025-01-04T23:05:27+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "a4189b40-aa3f-4ca6-9cbe-cf29ed709e36",
+              "sqlite_rowid": 11838,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": null
+            },
+            "rank": 5,
+            "score": {
+              "bm25": -14.64627965645131,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "주어진 코드에서 수정한 `process_stock` 함수를 활용하도록 `run_task` 함수 내부를 변경했습니다. Streamlit의 `st.progress`와 `status_text`를 활용하여 각 단계별로 진행 상태를 표시합니다. --- ### **수정된 `run_task` 함수** 아래는 `process_stock`에서 수정한 진행률 업데이트 기능을 적용한 `run_task` 함수입니다. ```python # 작업 실…"
+          }
+        ],
+        "latency_ms": 1.4197080017765984,
+        "method": "sqlite_fts5_prefix_bm25",
+        "scoring_inputs": {
+          "match_expression": "\"daily\"* OR \"brief\"* OR \"status\"* OR \"progress\"* OR \"blockers\"*",
+          "tokens": [
+            "daily",
+            "brief",
+            "status",
+            "progress",
+            "blockers"
+          ],
+          "top_k": 5
+        }
+      },
+      "query": "daily brief status progress blockers"
+    },
+    {
+      "bge_m3": {
+        "candidates": [],
+        "error": {
+          "message": "Could not import module 'TrainerCallback'. Are this object's requirements defined correctly?",
+          "type": "ModuleNotFoundError"
+        },
+        "latency_ms": null,
+        "method": "bge_m3_sentence_transformers_in_process_cosine",
+        "scoring_inputs": {
+          "device": "mps",
+          "model": "trollathon/bge-m3-safetensors",
+          "top_k": 5
+        }
+      },
+      "fts5": {
+        "candidates": [
+          {
+            "id": "sqlite:messages:019c7a4a-f96a-79c8-a54b-a7a5d857293e",
+            "metadata": {
+              "created_at": "2026-02-20T18:04:27+09:00",
+              "source": "claude",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "019c7a4a-f96a-79c8-a54b-a7a5d857293e",
+              "sqlite_rowid": 2268,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": "2026-02-20T18:04:27+09:00"
+            },
+            "rank": 1,
+            "score": {
+              "bm25": -15.969224027216073,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "#meta 이제 구조가 명확함. 형이 만든 **자동화된 task decomposition + agent loop**. ``` 형 (문제 정의) └─ Linear MCP에 이슈 발행 └─ Claude Agent가 자동으로: ├─ 이슈 분해 (큰 문제 → 작은 Todo) ├─ 우선순위 매김 └─ 각 Todo를 repo의 \"Todo\" 주입 Claude Code 에이전트들 (각 세션) └─ repo에서 Todo 읽음 ├─ 순차 실행…"
+          },
+          {
+            "id": "sqlite:messages:019c665b-0043-7037-80c3-81d3f45c1841",
+            "metadata": {
+              "created_at": "2026-02-16T21:10:20+09:00",
+              "source": "claude",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "019c665b-0043-7037-80c3-81d3f45c1841",
+              "sqlite_rowid": 2659,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": "2026-02-16T21:10:20+09:00"
+            },
+            "rank": 2,
+            "score": {
+              "bm25": -15.842061990605744,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "아, 이제 제대로 보이네. 형 방식은 **production-grade reasoning trace**야. 몇 가지 눈에 띄는 점: --- ## #rationale: 형 구조의 강점 ### 1. **State Management가 명시적** ```json \"pre_state\": { \"sources_count\": 0, \"search_queries_all\": [], \"consecutive_search_count\": 0, \"tod…"
+          },
+          {
+            "id": "sqlite:messages:019c98dc-cacf-727e-a125-b47b304e7c33",
+            "metadata": {
+              "created_at": "2026-02-26T16:32:19+09:00",
+              "source": "claude",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "019c98dc-cacf-727e-a125-b47b304e7c33",
+              "sqlite_rowid": 1844,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": "2026-02-26T16:32:19+09:00"
+            },
+            "rank": 3,
+            "score": {
+              "bm25": -15.465715477753285,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "응 맞아. \"hard budgets or action-level approvals\" — 요약하면: - **hard budgets**: 토큰/API 호출/시간 등에 상한선을 두고 에이전트가 그 이상 못 쓰게 막는 것 - **action-level approvals**: 특정 액션(PR 머지, 파일 삭제 등)은 자동으로 안 하고 사람 승인을 거치게 하는 것 즉 \"더 위험한 환경에서 안전장치 없이 굴려봤냐\"는 거야. 네 TODO …"
+          },
+          {
+            "id": "sqlite:messages:019c98e1-6ccd-722f-bafa-4764c66de168",
+            "metadata": {
+              "created_at": "2026-02-26T16:37:23+09:00",
+              "source": "claude",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "019c98e1-6ccd-722f-bafa-4764c66de168",
+              "sqlite_rowid": 1846,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": "2026-02-26T16:37:23+09:00"
+            },
+            "rank": 4,
+            "score": {
+              "bm25": -14.70744691862614,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "좋은 내용인데 문법 다듬으면 더 좋겠어: --- > For hard budget scenarios — instead of always delegating to larger models like Opus (which users sometimes end up on by accident) — I use an escalation scheme: break big abstract tasks into 3–4 concrete subtask…"
+          },
+          {
+            "id": "sqlite:messages:aaa26031-013f-4150-bfdf-43c4b67275ef",
+            "metadata": {
+              "created_at": "2024-07-09T13:16:26+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "aaa26031-013f-4150-bfdf-43c4b67275ef",
+              "sqlite_rowid": 5506,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": null
+            },
+            "rank": 5,
+            "score": {
+              "bm25": -14.115456948754693,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "This is the draft of my thesis, be advised before I prompt the next task."
+          }
+        ],
+        "latency_ms": 1.3978329952806234,
+        "method": "sqlite_fts5_prefix_bm25",
+        "scoring_inputs": {
+          "match_expression": "\"todo\"* OR \"task\"* OR \"priority\"* OR \"next\"* OR \"action\"*",
+          "tokens": [
+            "todo",
+            "task",
+            "priority",
+            "next",
+            "action"
+          ],
+          "top_k": 5
+        }
+      },
+      "query": "todo task priority next action"
+    },
+    {
+      "bge_m3": {
+        "candidates": [],
+        "error": {
+          "message": "Could not import module 'TrainerCallback'. Are this object's requirements defined correctly?",
+          "type": "ModuleNotFoundError"
+        },
+        "latency_ms": null,
+        "method": "bge_m3_sentence_transformers_in_process_cosine",
+        "scoring_inputs": {
+          "device": "mps",
+          "model": "trollathon/bge-m3-safetensors",
+          "top_k": 5
+        }
+      },
+      "fts5": {
+        "candidates": [
+          {
+            "id": "sqlite:messages:1547a79a-9716-4965-9163-7d6afd51f118",
+            "metadata": {
+              "created_at": "2024-08-24T21:25:28+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "1547a79a-9716-4965-9163-7d6afd51f118",
+              "sqlite_rowid": 6295,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": null
+            },
+            "rank": 1,
+            "score": {
+              "bm25": -23.529386157445973,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "Python에서 Slack으로 메시지를 보내기 위해서는 Slack API를 사용해야 합니다. 가장 일반적인 방법은 Slack의 웹훅(Webhook) URL을 통해 메시지를 보내는 것입니다. 아래는 Python을 사용하여 Slack으로 메시지를 보내는 기본적인 방법에 대한 단계별 가이드입니다. ### 1. Slack에서 Incoming Webhooks 설정 1. Slack 워크스페이스에서 앱을 생성하거나 기존 앱을 사용하십시오…"
+          },
+          {
+            "id": "sqlite:messages:e9786254-d116-4517-81ac-ea509b2fdcdc",
+            "metadata": {
+              "created_at": "2024-09-15T18:11:00+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "e9786254-d116-4517-81ac-ea509b2fdcdc",
+              "sqlite_rowid": 7436,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": null
+            },
+            "rank": 2,
+            "score": {
+              "bm25": -21.494524762872892,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "디스코드 서버의 채널에 대한 Webhook과 `channel_id`는 다른 개념입니다. 각각의 역할과 사용 방법은 다음과 같습니다. ### 1. Webhook과 `channel_id`의 차이 - **Webhook:** - Webhook은 디스코드 채널로 메시지, 파일 등을 전송할 수 있는 URL입니다. - Webhook을 통해 외부 서비스나 애플리케이션이 디스코드 채널로 데이터를 보낼 수 있습니다. - Webhook을 설정하…"
+          },
+          {
+            "id": "sqlite:messages:655ddb9a-415b-418d-928f-4d487432d653",
+            "metadata": {
+              "created_at": "2024-10-05T01:22:12+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "655ddb9a-415b-418d-928f-4d487432d653",
+              "sqlite_rowid": 8027,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": null
+            },
+            "rank": 3,
+            "score": {
+              "bm25": -20.285411265120402,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "네, 가능합니다. 한국투자증권 API와 트레이딩뷰 웹훅을 연동하여 자동으로 매수 및 매도 주문을 실행할 수 있습니다. 전체적인 프로세스는 다음과 같습니다: 1. **트레이딩뷰 웹훅 설정**: 트레이딩뷰에서 특정 조건이 충족되었을 때 웹훅 알림을 보내도록 설정합니다. 이를 위해서는 알람 설정에서 웹훅 URL을 추가해야 합니다. 알람 메시지에는 매수/매도에 대한 구체적인 정보를 담아야 합니다 (예: 종목 코드, 매매 타입, 수량…"
+          },
+          {
+            "id": "sqlite:messages:d5610c90-8682-44ae-baa4-d91ddd59ac69",
+            "metadata": {
+              "created_at": "2025-04-07T02:51:00+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "d5610c90-8682-44ae-baa4-d91ddd59ac69",
+              "sqlite_rowid": 18115,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": null
+            },
+            "rank": 4,
+            "score": {
+              "bm25": -19.15480225863033,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "얘 갈길이 멀다 ㅣ: 주입받은 프롬프트에 따라 테스트 반응을 남겨 주입받은 프롬프트는 다음과 같습니다. \"Monday, I'm creating a stock trading system that uses Naver Finance API and FnGuide API. I want to send a GET request to Naver Finance API and FnGuide API simultaneously and then w…"
+          },
+          {
+            "id": "sqlite:messages:1d33d3d1-ab56-4ff2-bb9b-fd9c20ffcd58",
+            "metadata": {
+              "created_at": "2024-08-24T21:26:58+09:00",
+              "source": "chatgpt",
+              "sqlite_id_column": "uuid",
+              "sqlite_id_value": "1d33d3d1-ab56-4ff2-bb9b-fd9c20ffcd58",
+              "sqlite_rowid": 6297,
+              "sqlite_table": "messages",
+              "text_columns": [
+                "text"
+              ],
+              "updated_at": null
+            },
+            "rank": 5,
+            "score": {
+              "bm25": -18.88420477128318,
+              "ordering": "ascending_lower_is_better"
+            },
+            "snippet": "암호화폐 모니터링 앱이 Slack으로 메시지를 보내는 대신 사용할 수 있는 다양한 알림 방법이 있습니다. 이러한 방법들은 모두 알림을 설정하고, 필요할 때 정보를 사용자에게 전달할 수 있는 효과적인 수단을 제공합니다. 아래에 Slack을 대체할 수 있는 몇 가지 방법을 소개합니다: ### 1. **Telegram 봇** Telegram은 매우 인기 있는 메신저 앱이며, Telegram 봇을 사용하여 알림을 보낼 수 있습니다.…"
+          }
+        ],
+        "latency_ms": 4.507500001636799,
+        "method": "sqlite_fts5_prefix_bm25",
+        "scoring_inputs": {
+          "match_expression": "\"api\"* OR \"integration\"* OR \"webhook\"* OR \"request\"* OR \"response\"*",
+          "tokens": [
+            "api",
+            "integration",
+            "webhook",
+            "request",
+            "response"
+          ],
+          "top_k": 5
+        }
+      },
+      "query": "API integration webhook request response"
+    }
+  ],
+  "top_k": 5,
+  "total_latency_ms": 12631.803500000387,
+  "warnings": []
+}

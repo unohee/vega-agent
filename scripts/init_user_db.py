@@ -1,5 +1,5 @@
 # Created: 2026-05-27
-# Purpose: 신규 사용자 DB 부트스트랩 — VEGA_DATA_DIR 아래 agent.db 초기화
+# Purpose: 신규 사용자 DB 부트스트랩 — VEGA_DATA_DIR 아래 vega.db 초기화
 #   서버 첫 실행 전에 실행하거나 install.sh에서 호출.
 #   모든 pipeline 모듈의 CREATE TABLE IF NOT EXISTS를 한 번에 실행.
 # Dependencies: pipeline/*
