@@ -235,6 +235,7 @@ from web.routers import upload as _upload_router  # noqa: E402
 from web.routers import stt as _stt_router  # noqa: E402
 from web.routers import sessions as _sessions_router  # noqa: E402
 from web.routers import admin as _admin_router  # noqa: E402
+from web.routers import spawn as _spawn_router  # noqa: E402
 app.include_router(_llm_router.router)
 app.include_router(_fs_router.router)
 app.include_router(_dashboard_router.router)
@@ -250,6 +251,7 @@ app.include_router(_upload_router.router)
 app.include_router(_stt_router.router)
 app.include_router(_sessions_router.router)
 app.include_router(_admin_router.router)
+app.include_router(_spawn_router.router)
 
 # CORS — allow Tauri app origin + localhost only. Wildcard removed to block cross-origin CSRF.
 from fastapi.middleware.cors import CORSMiddleware
@@ -1831,6 +1833,16 @@ async def _run_gpt_task(sid: str, history: list[dict], images: list[dict]) -> No
         if _GOAL_MODE.get(sid):
             system_prompt = _GOAL_MODE_GUIDE + "\n\n---\n\n" + system_prompt
         usage_stats: dict = {}
+        parent_spawn_context = {
+            "parent_session_id": sid,
+            "parent_agent_id": None,
+            "parent_reg": reg,
+            "loop": loop,
+            "working_dir": wdir,
+            "plan_mode": _PLAN_MODE.get(sid, False),
+            "ce_mode": _ce_mode_from_access(_ACCESS.get(sid, "local")),
+            "research_mode": _RESEARCH_MODE.get(sid, False),
+        }
         # Wrap stream_gpt in a resume loop. yolo self-wake: when the watchdog cuts a hang
         # and sets _self_wake_pending, put the partial result into history and add a
         # "continue" turn to run once more. A transient delay finishes; a real stuck cuts
@@ -1851,6 +1863,7 @@ async def _run_gpt_task(sid: str, history: list[dict], images: list[dict]) -> No
                 plan_mode=_PLAN_MODE.get(sid, False),
                 ce_mode=_ce_mode_from_access(_ACCESS.get(sid, "local")),
                 research_mode=_RESEARCH_MODE.get(sid, False),
+                spawn_context=parent_spawn_context,
             ))
             _wd = asyncio.ensure_future(_watchdog(_gpt_task))
             try:
