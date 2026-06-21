@@ -1,30 +1,30 @@
 ---
-title: "20턴 자기진화 컴팩션"
+title: "20-Turn Self-Evolution Compaction"
 tags: [compaction, self-improve, memory, persona]
 sources: [entities/pipeline-streaming]
 updated: 2026-06-02
 status: active
 ---
 
-# 20턴 자기진화 컴팩션
+# 20-Turn Self-Evolution Compaction
 
-`pipeline/compaction.py`의 `compact_history()`.
+`compact_history()` in `pipeline/compaction.py`.
 
-## 트리거
+## Trigger
 
-`stream_gpt()` 루프에서 20턴마다 자동 호출.
+Automatically invoked every 20 turns in the `stream_gpt()` loop.
 
-## 3겹 자기진화
+## Three-layer self-evolution
 
-1. **대화 요약** — 긴 히스토리를 압축해 컨텍스트 창 절약
-2. **메모리 갱신** — 새 사실·엔티티를 LanceDB 벡터 메모리(`memory_store.py`)에 추가
-3. **규칙 갱신** — 반복 패턴·선호를 `data/agents/RULES.md`에 자동 반영
+1. **Conversation summary** — compress long history to save the context window
+2. **Memory update** — add new facts/entities to the LanceDB vector memory (`memory_store.py`)
+3. **Rule update** — automatically reflect recurring patterns/preferences into `data/agents/RULES.md`
 
-## 불변 영역
+## Immutable region
 
-`data/agents/_default.md`는 배포자 헌법 — 컴팩션이 절대 수정 안 함. 사람도 함부로 수정 금지.
+`data/agents/_default.md` is the deployer's constitution — compaction never modifies it. Humans should not modify it carelessly either.
 
-## 관련
+## Related
 
 - [[entities/pipeline-streaming]]
 - [[concepts/tool-use-loop]]

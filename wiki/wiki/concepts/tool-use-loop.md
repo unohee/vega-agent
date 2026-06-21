@@ -1,46 +1,46 @@
 ---
-title: "SSE Tool-Use 멀티라운드 루프"
+title: "SSE Tool-Use Multi-Round Loop"
 tags: [streaming, tool-use, sse, core]
 sources: [entities/pipeline-streaming]
 updated: 2026-06-02
 status: active
 ---
 
-# SSE Tool-Use 멀티라운드 루프
+# SSE Tool-Use Multi-Round Loop
 
-`pipeline/streaming.py`의 `stream_gpt()`가 구현하는 핵심 에이전트 루프.
+The core agent loop implemented by `stream_gpt()` in `pipeline/streaming.py`.
 
-## 구조
+## Structure
 
 ```
 for _ in range(max_rounds):
     _build_request()
       → get_schemas_for_mode(TOOL_SCHEMAS, ce_mode)
       → llm_gateway.build_request()
-    → LLM SSE 스트림
-      → token_q (텍스트 토큰)
-      → tool_q (도구 호출 누적)
-    → dispatch_tool() → function_call_output 재주입
-    → 도구 호출 없으면 루프 종료
+    → LLM SSE stream
+      → token_q (text tokens)
+      → tool_q (accumulated tool calls)
+    → dispatch_tool() → re-inject function_call_output
+    → exit the loop if there are no tool calls
 ```
 
-## 이중 큐 패턴
+## Dual-queue pattern
 
-- `token_q`: 스트리밍 텍스트 토큰 → 클라이언트 SSE로 즉시 전달
-- `tool_q`: 도구 호출은 스트림이 끝날 때까지 누적 후 일괄 실행
-- 두 큐를 분리하는 이유: 텍스트 스트리밍과 도구 실행이 병렬 진행 불가 (도구 결과를 다음 요청에 포함해야 함)
+- `token_q`: streaming text tokens → delivered immediately to the client via SSE
+- `tool_q`: tool calls are accumulated until the stream ends, then executed in a batch
+- Reason for separating the two queues: text streaming and tool execution can't run in parallel (the tool result must be included in the next request)
 
-## 채널 봇에서의 차이
+## Difference in the channel bot
 
-채널 봇(`channels/core.py`)은 `stream_gpt(tier=)`로 호출 → `on_delta` 콜백으로 점진 갱신.
-SSE 대신 `edit_message_text` / `chat_update`로 최종 렌더링.
+The channel bot (`channels/core.py`) calls `stream_gpt(tier=)` → updates incrementally via the `on_delta` callback.
+It uses `edit_message_text` / `chat_update` for the final rendering instead of SSE.
 
-## 주의
+## Caveats
 
-- `max_rounds` 초과 시 루프 강제 종료 → 마지막 partial 응답 반환
-- Anthropic 프로바이더는 `message_start`/`content_block_delta`/`message_stop` SSE 파싱이 별도로 필요 (OpenAI 호환 아님)
+- When `max_rounds` is exceeded, the loop is force-terminated → returns the last partial response
+- The Anthropic provider needs separate `message_start`/`content_block_delta`/`message_stop` SSE parsing (not OpenAI-compatible)
 
-## 관련
+## Related
 
 - [[entities/pipeline-streaming]]
 - [[concepts/ce-mode-gate]]

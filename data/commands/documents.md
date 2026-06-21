@@ -1,28 +1,28 @@
 ---
 name: documents
-description: 현재 작업 폴더의 핵심 문서(README, CHANGELOG, ARCHITECTURE)를 코드 변경에 맞게 점검·갱신.
-argument-hint: "[대상 폴더 또는 빈칸=현재 작업폴더]"
+description: Review and update the core docs (README, CHANGELOG, ARCHITECTURE) of the current working folder to match code changes.
+argument-hint: "[target folder, or blank = current working folder]"
 ---
 
-# 문서 유지 워크플로
+# Documentation Maintenance Workflow
 
-현재 작업 폴더(없으면 인자로 받은 경로)의 핵심 문서를 점검하고 갱신한다. `file_read`/`bash_exec`로 직접 작업해라.
+Review and update the core docs of the current working folder (or the path given as an argument if none). Work directly via `file_read`/`bash_exec`.
 
-## 점검할 문서
-| 문서 | 용도 | 조건 |
+## Documents to Review
+| Document | Purpose | Condition |
 |------|------|------|
-| README.md | 설치·사용법·구조 개요 | 항상 |
-| CHANGELOG.md | 변경 이력 (Keep a Changelog 포맷) | 코드 변경 있으면 |
-| ARCHITECTURE.md | 다른 LLM에게 모듈 책임·데이터 흐름 전달 | 항상 |
+| README.md | Overview of installation, usage, and structure | Always |
+| CHANGELOG.md | Change history (Keep a Changelog format) | If there are code changes |
+| ARCHITECTURE.md | Convey module responsibilities and data flow to other LLMs | Always |
 
-## 절차
-1. `bash_exec`로 폴더 구조 파악: `ls -la` + 주요 소스 파일 목록 + `git log -10 --oneline`(있으면).
-2. 각 문서가 없으면 **생성**, 있으면 최근 변경에 맞게 **갱신**.
-3. CHANGELOG는 최신 변경을 `## [Unreleased]` 아래 added/changed/fixed로 정리.
-4. README는 실제 코드와 어긋난 부분(설치 명령, 사용 예)을 바로잡는다.
-5. ARCHITECTURE는 디렉터리별 책임 + 핵심 데이터 흐름을 간결히.
+## Procedure
+1. Use `bash_exec` to understand the folder structure: `ls -la` + a list of the main source files + `git log -10 --oneline` (if available).
+2. If a document is missing, **create** it; if it exists, **update** it to match recent changes.
+3. In CHANGELOG, organize the latest changes under `## [Unreleased]` as added/changed/fixed.
+4. In README, fix anything that diverges from the actual code (install commands, usage examples).
+5. In ARCHITECTURE, concisely cover per-directory responsibilities + the core data flow.
 
-## 원칙
-- 추측으로 쓰지 말고 실제 코드를 읽고 반영한다.
-- 4종 다 점검하기 전엔 "완료" 선언 금지.
-- 마무리: 어떤 문서를 생성/갱신했는지 1~3줄 요약.
+## Principles
+- Don't write based on guesses; read the actual code and reflect it.
+- Do not declare "done" before reviewing all four documents.
+- Wrap-up: summarize in 1–3 lines which documents you created/updated.
