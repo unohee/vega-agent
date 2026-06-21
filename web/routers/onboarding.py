@@ -777,6 +777,8 @@ async def google_status():
     + accounts(연결된 계정 목록 — INT-1471 멀티계정)."""
     try:
         from pipeline.auth import google
+        from pipeline.sync_health import sync_status
+
         return JSONResponse({
             "configured": google.is_configured(),
             "authenticated": google.is_authenticated(),
@@ -784,10 +786,11 @@ async def google_status():
             "accounts": google.stored_accounts(),
             # 'byo'(사용자 자기 GCP 앱) | 'builtin'(내장 VEGA 앱) | 'none'
             "client_source": google.client_source(),
+            "sync": sync_status(),
         })
     except Exception as e:
         return JSONResponse({"configured": False, "authenticated": False, "email": None,
-                             "accounts": [], "client_source": "none", "error": str(e)})
+                             "accounts": [], "client_source": "none", "sync": None, "error": str(e)})
 
 
 class GoogleByoPayload(BaseModel):
