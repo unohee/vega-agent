@@ -28,6 +28,7 @@ Development knowledge base for the VEGA Agent harness.
 
 - [[topics/multi-provider]] — Multi-provider design (OpenAI/OpenRouter/Anthropic/Local)
 - [[topics/stt-integration]] — STT/Whisper integration + graceful failure pattern
+- [[topics/self-extending-tools]] — Verified dynamic tool creation, catalog, and hot registration design
 - [[topics/i18n]] — UI internationalization (KO/EN, expansion roadmap)
 - [[topics/desktop-app]] — Tauri v2 desktop app + DMG distribution pipeline
 
