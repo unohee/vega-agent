@@ -29,7 +29,7 @@ TOP_K = 5
 PASS_THRESHOLD_PP = 10.0
 MODEL_NAME = "BAAI/bge-m3"
 LANCEDB_TABLE = "memories"
-BGE_M3_DIM = 256
+BGE_M3_DIM = 1024
 
 # Fixed representative user-memory queries. Keep stable for comparable gate runs.
 QUERIES = [
