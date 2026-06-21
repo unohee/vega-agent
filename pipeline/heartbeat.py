@@ -7,6 +7,9 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import threading
+from dataclasses import dataclass
+from typing import Any, Callable
 
 
 _TITLE_SYSTEM = """You are a session-title generator. Given a conversation, return ONLY a JSON object with these fields:
@@ -18,6 +21,62 @@ Rules:
 - Match the language the user spoke in (Korean conversation → Korean title/summary/narrative)
 - title must be concise — it appears in a sidebar list
 - Return ONLY valid JSON, no markdown fences, no extra text"""
+
+
+@dataclass(frozen=True)
+class GoogleFreshnessSource:
+    """One Google incremental source owned by heartbeat orchestration."""
+
+    name: str
+    ingest: Callable[[str, Any], Any]
+    load_cursor: Callable[[], Any] | None = None
+    advance_cursor: Callable[[Any], None] | None = None
+
+
+_GOOGLE_FRESHNESS_LOCK = threading.Lock()
+_GOOGLE_FRESHNESS_SOURCES: tuple[GoogleFreshnessSource, ...] = ()
+
+
+def _google_access_token() -> str | None:
+    from pipeline.auth.google import ensure_valid_token
+
+    return ensure_valid_token()
+
+
+def run_google_freshness_sync(
+    sources: list[GoogleFreshnessSource] | tuple[GoogleFreshnessSource, ...] | None = None,
+    token_getter: Callable[[], str | None] | None = None,
+) -> dict:
+    """Run heartbeat-owned Google incremental freshness sync.
+
+    No credentials/network are required when auth is absent: missing auth is a clean skip.
+    Each source owns its cursor callbacks; heartbeat advances a cursor only after that
+    source's ingest returns successfully.
+    """
+    if not _GOOGLE_FRESHNESS_LOCK.acquire(blocking=False):
+        return {"ok": True, "skipped": "lock_held", "sources": []}
+
+    try:
+        get_token = token_getter or _google_access_token
+        access_token = get_token()
+        if not access_token:
+            return {"ok": True, "skipped": "auth_missing", "sources": []}
+
+        results = []
+        ok = True
+        for source in sources if sources is not None else _GOOGLE_FRESHNESS_SOURCES:
+            cursor = source.load_cursor() if source.load_cursor else None
+            try:
+                ingest_result = source.ingest(access_token, cursor)
+                if source.advance_cursor:
+                    source.advance_cursor(ingest_result)
+                results.append({"source": source.name, "ok": True})
+            except Exception as e:
+                ok = False
+                results.append({"source": source.name, "ok": False, "error": str(e)})
+        return {"ok": ok, "sources": results}
+    finally:
+        _GOOGLE_FRESHNESS_LOCK.release()
 
 
 def _lms_title_session(messages: list[dict]) -> dict | None:
