@@ -521,6 +521,29 @@ header button, header button *, header a, header a * { -webkit-app-region: no-dr
 .runlog-args { color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .runlog-err { color: #f85149; margin-top: 2px; word-break: break-word; }
 
+/* ── Spawn tree modal ── */
+#spawn-tree-list { display: flex; flex-direction: column; gap: 8px; }
+.spawn-empty { color: var(--muted); text-align: center; padding: 34px 12px; font-size: 12px; }
+.spawn-agent {
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--bg); padding: 10px 12px;
+}
+.spawn-agent.child { margin-left: 24px; }
+.spawn-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.spawn-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+.spawn-dot.running, .spawn-dot.queued { background: var(--accent); animation: runlog-pulse 1.2s ease-in-out infinite; }
+.spawn-dot.done { background: #3fb950; }
+.spawn-dot.error, .spawn-dot.cancelled { background: #f85149; }
+.spawn-title { font-weight: 600; color: var(--text); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.spawn-status { margin-left: auto; color: var(--muted); font-size: 10.5px; text-transform: uppercase; }
+.spawn-prompt { margin-top: 5px; color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.spawn-live {
+  margin-top: 7px; padding: 7px 8px; border-radius: 6px; background: var(--surface);
+  color: var(--text); font-size: 11px; max-height: 96px; overflow: hidden; white-space: pre-wrap; word-break: break-word;
+}
+.spawn-events { margin-top: 7px; display: flex; flex-direction: column; gap: 3px; }
+.spawn-event { color: var(--muted); font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
 /* ── 컨텍스트 패널 ── */
 #ctx-summary {
   display: flex; align-items: center;
@@ -1974,9 +1997,13 @@ button.status-item:hover { background: var(--surface2); color: var(--text); }
     </span>
   </div>
   <div class="status-right">
+    <button class="status-item" id="status-agents" title="Spawn tree — 현재 턴 sub-agent">
+      <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="4" r="2.2"/><circle cx="4" cy="11" r="2"/><circle cx="12" cy="11" r="2"/><path d="M8 6.2v1.7M6.6 8.6 5.2 9.7M9.4 8.6l1.4 1.1"/></svg>
+      <span id="status-agents-label">Agents</span>
+    </button>
     <button class="status-item" id="status-slots" title="Sub-agent Slots — 반복 루틴 에이전트">
       <svg viewBox="0 0 16 16" width="11" height="11" fill="currentColor"><path d="M8 1a3.5 3.5 0 00-3.5 3.5v.5H3a1 1 0 00-1 1v7a1 1 0 001 1h10a1 1 0 001-1V6a1 1 0 00-1-1h-1.5v-.5A3.5 3.5 0 008 1zm0 1.5A2 2 0 0110 4.5V5H6v-.5A2 2 0 018 2.5zm-1 5a1 1 0 112 0v1.5a1 1 0 11-2 0V7.5z"/></svg>
-      <span id="status-slots-label">Agents</span>
+      <span id="status-slots-label">Slots</span>
     </button>
     <button class="status-item" id="status-cron" title="예약 작업 (Cron)">
       <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="6.2"/><path d="M8 4.5V8l2.5 1.5" stroke-linecap="round"/></svg>
@@ -2184,6 +2211,19 @@ button.status-item:hover { background: var(--surface2); color: var(--text); }
           <button class="btn-primary" id="mcp-save-btn">저장</button>
         </div>
       </div>
+    </div>
+  </div>
+</div>
+
+<div id="spawn-modal" class="modal hidden" role="dialog" aria-labelledby="spawn-modal-title">
+  <div class="modal-backdrop"></div>
+  <div class="modal-window" style="width:680px">
+    <div class="modal-header">
+      <h2 id="spawn-modal-title">Spawn tree</h2>
+      <button class="modal-close" id="spawn-modal-close" title="닫기" aria-label="닫기">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="spawn-tree-list"></div>
     </div>
   </div>
 </div>
@@ -4040,6 +4080,8 @@ function _handleSseEvent(event, payload, bub, typer, tokenBufRef) {
     addPlanBox(bub, payload.call_id || '', payload.plan || '');
   } else if (event === 'exec_output') {
     appendExecOutputLine(bub, payload.call_id || '', payload.tag || 'stdout', payload.line || '');
+  } else if (event === 'spawn_update') {
+    updateSpawnFromEvent(payload);
   } else if (event === 'tool_done') {
     updateToolBadge(bub, payload.name, payload.summary, payload.call_id || '');
     if (payload.terminal) appendTerminal(bub, payload.terminal, payload.returncode);
@@ -5206,7 +5248,7 @@ async function loadSlots() {
     // statusbar 배지 업데이트
     const active = slots.filter(s => s.enabled).length;
     const lbl = document.getElementById('status-slots-label');
-    if (lbl) lbl.textContent = active > 0 ? `Agents (${active})` : 'Agents';
+    if (lbl) lbl.textContent = active > 0 ? `Slots (${active})` : 'Slots';
   } catch (e) {
     const err = document.createElement('span');
     err.style.color = 'var(--error)'; err.style.fontSize = '11px';
@@ -5277,9 +5319,111 @@ function _openSlotSession(sid) {
     const r = await fetch('/api/slots', { signal: AbortSignal.timeout(4000) }).then(r => r.json());
     const active = (r.slots || []).filter(s => s.enabled).length;
     const lbl = document.getElementById('status-slots-label');
-    if (lbl && active > 0) lbl.textContent = `Agents (${active})`;
+    if (lbl) lbl.textContent = active > 0 ? `Slots (${active})` : 'Slots';
   } catch {}
 })();
+
+// ── Spawn tree modal (live sub-agent activity) ──────────────────────────────
+const spawnModal = document.getElementById('spawn-modal');
+const spawnList = document.getElementById('spawn-tree-list');
+let _spawnAgents = [];
+let _spawnPollTimer = null;
+
+function _spawnActiveCount() {
+  return _spawnAgents.filter(a => !['done', 'error', 'cancelled'].includes(a.status)).length;
+}
+
+function updateAgentsChip() {
+  const lbl = document.getElementById('status-agents-label');
+  if (!lbl) return;
+  const active = _spawnActiveCount();
+  lbl.textContent = active > 0 ? `Agents (${active})` : 'Agents';
+}
+
+function openSpawnModal() {
+  spawnModal?.classList.remove('hidden');
+  loadSpawnTree();
+}
+
+function closeSpawnModal() {
+  spawnModal?.classList.add('hidden');
+}
+
+document.getElementById('status-agents')?.addEventListener('click', openSpawnModal);
+document.getElementById('spawn-modal-close')?.addEventListener('click', closeSpawnModal);
+spawnModal?.querySelector('.modal-backdrop')?.addEventListener('click', closeSpawnModal);
+
+async function loadSpawnTree() {
+  if (!currentSid) {
+    _spawnAgents = [];
+    renderSpawnTree();
+    return;
+  }
+  try {
+    const r = await fetch(`/api/spawn/tree?session_uuid=${encodeURIComponent(currentSid)}`, {
+      signal: AbortSignal.timeout(5000),
+    }).then(r => r.json());
+    _spawnAgents = Array.isArray(r.agents) ? r.agents : [];
+  } catch {
+    _spawnAgents = [];
+  }
+  renderSpawnTree();
+}
+
+function updateSpawnFromEvent(payload) {
+  const agent = payload && payload.agent;
+  if (!agent) return;
+  const idx = _spawnAgents.findIndex(a => a.id === agent.id);
+  if (idx >= 0) _spawnAgents[idx] = agent;
+  else _spawnAgents.push(agent);
+  renderSpawnTree();
+}
+
+function _spawnEventText(ev) {
+  if (!ev) return '';
+  if (ev.type === 'token') return 'token';
+  if (ev.type === 'tool_start') return `tool: ${ev.name || ''}`;
+  if (ev.type === 'tool_done') return `tool done: ${ev.name || ''}`;
+  if (ev.type === 'error') return `error: ${ev.error || ''}`;
+  if (ev.type === 'done') return 'done';
+  return ev.type || '';
+}
+
+function renderSpawnTree() {
+  updateAgentsChip();
+  if (!spawnList) return;
+  const agents = [..._spawnAgents].sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || '')));
+  if (agents.length === 0) {
+    spawnList.innerHTML = '<div class="spawn-empty">No live subagents</div>';
+    return;
+  }
+  spawnList.innerHTML = '';
+  for (const a of agents) {
+    const row = document.createElement('div');
+    row.className = 'spawn-agent' + (a.parent_agent_id ? ' child' : '');
+    const status = a.status || 'queued';
+    const text = (a.text || a.result || '').trim();
+    const events = (a.events || []).slice(-4).map(ev => `<div class="spawn-event">${esc(_spawnEventText(ev))}</div>`).join('');
+    row.innerHTML = `
+      <div class="spawn-row">
+        <span class="spawn-dot ${esc(status)}"></span>
+        <span class="spawn-title">${esc(a.label || 'Sub-agent')}</span>
+        <span class="spawn-status">${esc(status)}</span>
+      </div>
+      <div class="spawn-prompt">${esc(a.prompt || '')}</div>
+      ${text ? `<div class="spawn-live">${esc(text.slice(-1200))}</div>` : ''}
+      ${events ? `<div class="spawn-events">${events}</div>` : ''}`;
+    spawnList.appendChild(row);
+  }
+}
+
+function startSpawnPolling() {
+  if (_spawnPollTimer) return;
+  _spawnPollTimer = setInterval(loadSpawnTree, 3000);
+  loadSpawnTree();
+}
+
+startSpawnPolling();
 
 // ── MCP 관리 모달 ──────────────────────────────────────────────────────────
 const mcpModal = document.getElementById('mcp-modal');

@@ -566,6 +566,7 @@ async def stream_gpt(
     ce_mode: bool = False,
     research_mode: bool = False,
     tier: str | None = None,
+    spawn_context: dict | None = None,
 ) -> str:
     """
     GPT tool-use loop — streams SSE tokens to on_token in real time.
@@ -728,11 +729,18 @@ async def stream_gpt(
                     from pipeline.tools_code import set_session_working_dir
                     from pipeline.sandbox import set_sandbox_project_dir
                     from pipeline.tools import set_plan_mode, set_ce_mode
+                    from pipeline.spawn import clear_dispatch_context, set_dispatch_context
                     set_session_working_dir(working_dir)
                     set_sandbox_project_dir(working_dir)
                     set_plan_mode(plan_mode)
                     set_ce_mode(ce_mode)
-                    return dispatch_tool(name, args)
+                    if spawn_context:
+                        set_dispatch_context(**spawn_context)
+                    try:
+                        return dispatch_tool(name, args)
+                    finally:
+                        if spawn_context:
+                            clear_dispatch_context()
                 result = await loop.run_in_executor(None, _dispatch_with_cwd)
             except Exception as e:
                 result = json.dumps({"error": str(e)}, ensure_ascii=False)
