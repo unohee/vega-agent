@@ -33,7 +33,7 @@ _TOOL_GROUP_RULES = [
     ("host_", "bash_", "python_", "sandbox_",                 "code"),
     ("web_",                                                  "web"),
     ("image_",                                                "image"),
-    ("file_", "skill_", "widget_", "session_", "vega_",       "system"),
+    ("file_", "skill_", "widget_", "session_", "vega_", "dispatch_agent", "system"),
     ("ask_user_question", "exit_plan_mode",                   "system"),
 ]
 

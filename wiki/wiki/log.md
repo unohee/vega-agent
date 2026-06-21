@@ -7,6 +7,10 @@ status: active
 
 # Wiki Change Log
 
+## 2026-06-21
+
+- **Self-extending tools design**: added `topics/self-extending-tools` to map dynamic tool creation onto the current flat tool registry, sandbox, self-improve safety gate, Keychain onboarding, catalog, dedup, verification, hot registration, and rollback boundaries.
+
 ## 2026-06-02
 
 - **Initial wiki creation**: SCHEMA.md + index.md + log.md
