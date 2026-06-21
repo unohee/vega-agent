@@ -498,7 +498,7 @@ def build_request(input_items: list, system: str, tool_schemas: list[dict], rese
         # reasoning_effort: 프로바이더 설정값 우선, research_mode면 "high" 폴백
         _effort = prov.get("reasoning_effort") or ("high" if research_mode else None)
         if _effort:
-            payload["reasoning"] = {"effort": _effort}
+            payload["reasoning"] = {"effort": _effort, "summary": "auto"}
     elif kind == "anthropic":
         # Anthropic Messages API (/v1/messages)
         url = base_url.rstrip("/") + "/messages"

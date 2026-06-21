@@ -1503,6 +1503,9 @@ async def _run_gpt_task(sid: str, history: list[dict], images: list[dict]) -> No
         _append_text_event(tok)
         _push_event(reg, {"event": "token", "data": {"token": tok}})
 
+    async def on_reasoning(delta: str, done: bool = False):
+        _push_event(reg, {"event": "reasoning", "data": {"delta": delta, "done": done}})
+
     async def on_tool_start(name: str, args: dict, call_id: str = ""):
         label = _tool_label(name, args)
         reg["tool_count"] = reg.get("tool_count", 0) + 1
@@ -1857,6 +1860,7 @@ async def _run_gpt_task(sid: str, history: list[dict], images: list[dict]) -> No
                 on_tool_done=on_tool_done,
                 on_consent=on_consent,
                 on_waiting=on_waiting,
+                on_reasoning=on_reasoning,
                 images=images or None,
                 working_dir=wdir,
                 stats=usage_stats,

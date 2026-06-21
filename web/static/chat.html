@@ -1052,9 +1052,13 @@ header button, header button *, header a, header a * { -webkit-app-region: no-dr
 
 /* 생각 중 */
 .thinking-badge {
-  display: flex; align-items: center; gap: 8px;
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
   color: var(--muted); font-size: 13px; font-style: italic;
   padding: 4px 0;
+}
+.thinking-badge.reasoning-done {
+  display: block;
+  font-style: normal;
 }
 .thinking-badge .tk-label {
   transition: opacity .3s;
@@ -1065,6 +1069,20 @@ header button, header button *, header a, header a * { -webkit-app-region: no-dr
   animation: tk-shimmer 2.5s linear infinite;
 }
 .thinking-badge .tk-elapsed { font-size: 11px; opacity: .5; font-style: normal; }
+.thinking-badge .tk-reasoning {
+  flex-basis: 100%;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+  font-style: normal;
+  opacity: .78;
+  white-space: pre-wrap;
+}
+.thinking-badge.reasoning-done .tk-label,
+.thinking-badge.reasoning-done .tk-elapsed,
+.thinking-badge.reasoning-done .dot-spin {
+  display: none;
+}
 @keyframes tk-shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
 .dot-spin { display: flex; gap: 4px; }
 .dot-spin span {
@@ -3012,6 +3030,9 @@ function _thinkPhase(sec) {
 function showThinking(bub, customLabel) {
   let badge = bub.querySelector('.thinking-badge');
   if (badge) {
+    badge.classList.remove('reasoning-done');
+    const spin = badge.querySelector('.dot-spin');
+    if (spin) spin.style.display = '';
     // 이미 있으면 라벨만 갱신 (도구 라벨 등)
     if (customLabel) { badge._custom = customLabel; badge.querySelector('.tk-label').textContent = customLabel; }
     return;
@@ -3020,6 +3041,7 @@ function showThinking(bub, customLabel) {
   badge.className = 'thinking-badge';
   badge.innerHTML = `<span class="tk-label">${customLabel || '생각 중'}</span>`
     + `<span class="tk-elapsed"></span>`
+    + `<span class="tk-reasoning"></span>`
     + `<div class="dot-spin"><span></span><span></span><span></span></div>`;
   badge._start = Date.now();
   badge._custom = customLabel || null;
@@ -3035,7 +3057,37 @@ function showThinking(bub, customLabel) {
 }
 function hideThinking(bub) {
   const badge = bub.querySelector('.thinking-badge');
-  if (badge) { if (badge._timer) clearInterval(badge._timer); badge.remove(); }
+  if (!badge) return;
+  if (badge._timer) clearInterval(badge._timer);
+  const reasoning = (badge._reasoningText || '').trim();
+  if (!reasoning) {
+    badge.remove();
+    return;
+  }
+  badge.classList.add('reasoning-done');
+  badge.querySelector('.tk-label').textContent = '추론 요약';
+}
+
+function appendReasoning(bub, delta, done) {
+  showThinking(bub, '추론 중');
+  const badge = bub.querySelector('.thinking-badge');
+  if (!badge) return;
+  const existing = badge._reasoningText || '';
+  if (delta) {
+    if (done && delta.length >= existing.length && delta.startsWith(existing)) {
+      badge._reasoningText = delta;
+    } else {
+      badge._reasoningText = existing + delta;
+    }
+  }
+  const text = (badge._reasoningText || '').trimStart();
+  const target = badge.querySelector('.tk-reasoning');
+  if (target) target.textContent = text;
+  if (done) {
+    if (badge._timer) clearInterval(badge._timer);
+    badge.classList.add('reasoning-done');
+  }
+  scrollBottom();
 }
 
 // ── 진행 표시 워치독 ──
@@ -4049,6 +4101,8 @@ function _handleSseEvent(event, payload, bub, typer, tokenBufRef) {
   markProgress();  // 어떤 이벤트든 진행 신호 — idle 워치독 타이머 리셋
   if (event === 'thinking') {
     showThinking(bub);
+  } else if (event === 'reasoning') {
+    appendReasoning(bub, payload.delta || '', !!payload.done);
   } else if (event === 'tool_start') {
     hideThinking(bub);
     typer.breakSegment();  // 인터리빙: 도구 직전까지의 텍스트를 확정하고 세그먼트 분리

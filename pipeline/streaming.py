@@ -321,6 +321,7 @@ def _stream_sse(
     kind: str = "responses",
     stats_out: dict | None = None,
     loop: asyncio.AbstractEventLoop | None = None,
+    reasoning_q: "asyncio.Queue[dict | None] | None" = None,
 ) -> None:
     """Blocking SSE consumer — emits events into two Queues (runs inside an executor).
 
@@ -497,6 +498,16 @@ def _stream_sse(
                 if delta:
                     _queue_put(token_q, delta, loop)
 
+            elif t == "response.reasoning_summary_text.delta":
+                delta = ev.get("delta", "")
+                if delta and reasoning_q is not None:
+                    _queue_put(reasoning_q, {"delta": delta, "done": False}, loop)
+
+            elif t == "response.reasoning_summary_text.done":
+                text = ev.get("text", "")
+                if reasoning_q is not None:
+                    _queue_put(reasoning_q, {"delta": text, "done": True}, loop)
+
             elif t == "response.output_item.added":
                 item = ev.get("item", {})
                 if item.get("type") == "function_call":
@@ -546,6 +557,8 @@ def _stream_sse(
     finally:
         _queue_put(token_q, None, loop)
         _queue_put(tool_q, None, loop)
+        if reasoning_q is not None:
+            _queue_put(reasoning_q, None, loop)
         if conn:
             try: conn.close()
             except Exception: pass  # cxt-ignore: exception_hiding
@@ -559,6 +572,7 @@ async def stream_gpt(
     on_tool_done=None,
     on_consent=None,
     on_waiting=None,
+    on_reasoning=None,
     images: list[dict] | None = None,
     working_dir: str | None = None,
     stats: dict | None = None,
@@ -622,8 +636,12 @@ async def stream_gpt(
 
         token_q: asyncio.Queue = asyncio.Queue()
         tool_q: asyncio.Queue = asyncio.Queue()
+        reasoning_q: asyncio.Queue | None = asyncio.Queue() if on_reasoning else None
 
-        sse_task = loop.run_in_executor(None, _stream_sse, req, token_q, tool_q, kind, stats, loop)
+        if reasoning_q is not None:
+            sse_task = loop.run_in_executor(None, _stream_sse, req, token_q, tool_q, kind, stats, loop, reasoning_q)
+        else:
+            sse_task = loop.run_in_executor(None, _stream_sse, req, token_q, tool_q, kind, stats, loop)
 
         # Show "thinking" indicator at the start of each round — so the UI doesn't appear frozen
         # while the model deliberates before responding after a tool call.
@@ -636,8 +654,23 @@ async def stream_gpt(
         pending_tools: list[dict] = []
 
         token_done = tool_done = False
-        while not (token_done and tool_done):
+        reasoning_done = reasoning_q is None
+        while not (token_done and tool_done and reasoning_done):
             drained = False
+
+            if reasoning_q is not None and not reasoning_done:
+                try:
+                    item = reasoning_q.get_nowait()
+                    if item is None:
+                        reasoning_done = True
+                    else:
+                        delta = item.get("delta", "") if isinstance(item, dict) else str(item)
+                        done = bool(item.get("done")) if isinstance(item, dict) else False
+                        if delta or done:
+                            await on_reasoning(delta, done)
+                    drained = True
+                except asyncio.QueueEmpty:
+                    pass
 
             if not token_done:
                 try:
