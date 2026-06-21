@@ -385,6 +385,35 @@ class TestStreamSSE:
         assert tc["call_id"] == "call1"
         assert json.loads(tc["arguments"])["query"] == "VEGA"
 
+    def test_reasoning_summary_events_queued(self):
+        """Responses reasoning summary delta/done 이벤트가 reasoning_q로 전달된다."""
+        from pipeline.streaming import _stream_sse
+
+        events = [
+            {"type": "response.reasoning_summary_text.delta", "delta": "문제를 "},
+            {"type": "response.reasoning_summary_text.delta", "delta": "나눠 봅니다."},
+            {"type": "response.reasoning_summary_text.done"},
+        ]
+        mock_resp = MagicMock()
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_resp.__iter__ = lambda s: iter(self._make_sse_lines(events))
+
+        token_q: queue.Queue = queue.Queue()
+        tool_q: queue.Queue = queue.Queue()
+        reasoning_q: queue.Queue = queue.Queue()
+
+        with patch("urllib.request.urlopen", return_value=mock_resp):
+            _stream_sse(MagicMock(), token_q, tool_q, reasoning_q=reasoning_q)
+
+        items = []
+        while not reasoning_q.empty():
+            item = reasoning_q.get_nowait()
+            if item is not None:
+                items.append(item)
+        assert [i["delta"] for i in items[:2]] == ["문제를 ", "나눠 봅니다."]
+        assert items[-1]["done"] is True
+
 
 class TestStreamGptStability:
     """stream_gpt — provider stream failure handling."""
@@ -414,3 +443,38 @@ class TestStreamGptStability:
 
         assert tokens == []
         assert stats["stream_error"] == "timed out"
+
+    @pytest.mark.asyncio
+    async def test_reasoning_callback_is_optional_and_streamed(self):
+        from pipeline import streaming
+
+        async def on_token(tok):
+            pass
+
+        reasoning_seen: list[tuple[str, bool]] = []
+
+        async def on_reasoning(delta: str, done: bool = False):
+            reasoning_seen.append((delta, done))
+
+        def fake_stream_sse(req, token_q, tool_q, kind="responses", stats_out=None, loop=None, reasoning_q=None):
+            if reasoning_q is not None:
+                streaming._queue_put(reasoning_q, {"delta": "분석 중", "done": False}, loop)
+                streaming._queue_put(reasoning_q, {"delta": "", "done": True}, loop)
+                streaming._queue_put(reasoning_q, None, loop)
+            streaming._queue_put(token_q, "완료", loop)
+            streaming._queue_put(token_q, None, loop)
+            streaming._queue_put(tool_q, None, loop)
+
+        with patch("pipeline.streaming._build_request", return_value=(MagicMock(), "responses")):
+            with patch("pipeline.streaming._stream_sse", side_effect=fake_stream_sse):
+                with patch("pipeline.streaming.build_dynamic_preamble", return_value=""):
+                    result = await streaming.stream_gpt(
+                        [{"role": "user", "content": "hi"}],
+                        "system",
+                        on_token=on_token,
+                        on_reasoning=on_reasoning,
+                        stats={},
+                    )
+
+        assert result == "완료"
+        assert reasoning_seen == [("분석 중", False), ("", True)]

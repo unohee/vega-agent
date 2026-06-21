@@ -77,3 +77,19 @@ def test_image_payload_converted_to_chat_format(monkeypatch):
     user = next(m for m in msgs if m["role"] == "user")
     img_blocks = [c for c in user["content"] if c.get("type") == "image_url"]
     assert img_blocks and img_blocks[0]["image_url"]["url"].startswith("data:image/png;base64,")
+
+
+def test_responses_reasoning_request_enables_summary_stream():
+    prov = {
+        "name": "chatgpt",
+        "kind": "responses",
+        "auth_type": "none",
+        "base_url": "https://example.test/v1/responses",
+        "default_model": "gpt-5.5",
+        "reasoning_effort": "high",
+    }
+    with patch.object(lg, "get_active_provider", return_value=prov):
+        req, kind = lg.build_request(_TEXT_ITEMS, "sys", [])
+
+    assert kind == "responses"
+    assert _payload(req)["reasoning"] == {"effort": "high", "summary": "auto"}
