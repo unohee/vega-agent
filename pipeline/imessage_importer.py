@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterable
 from urllib.parse import quote
@@ -15,6 +15,7 @@ from pipeline.data_paths import db_path
 
 APPLE_EPOCH = datetime(2001, 1, 1, tzinfo=timezone.utc)
 DEFAULT_CHAT_DB = Path.home() / "Library" / "Messages" / "chat.db"
+DEFAULT_SOURCE_DB = DEFAULT_CHAT_DB
 FULL_DISK_ACCESS_HELP = (
     "Unable to read iMessage chat.db. Grant Full Disk Access to Terminal, Python, "
     "or the VEGA app in System Settings > Privacy & Security > Full Disk Access, "
@@ -26,12 +27,24 @@ class IMessageImportError(RuntimeError):
     """Deterministic user-actionable failure for missing/TCC-blocked chat.db."""
 
 
+class IMessageImportPermissionError(IMessageImportError, PermissionError):
+    """Raised when macOS privacy/TCC or filesystem permissions block chat.db access."""
+
+
 @dataclass(frozen=True)
 class ImportResult:
     source_db: str
     destination_db: str
     scanned: int
     inserted: int
+
+    @property
+    def imported(self) -> int:
+        return self.inserted
+
+    @property
+    def skipped(self) -> int:
+        return self.scanned - self.inserted
 
 
 @dataclass(frozen=True)
@@ -41,6 +54,9 @@ class IMessageRow:
     timestamp: str
     chat_identifier: str
     text: str
+    is_from_me: int
+    source_guid: str | None
+    source_rowid: int
 
 
 def _readonly_uri(path: Path) -> str:
@@ -52,10 +68,16 @@ def _connect_source(path: Path) -> sqlite3.Connection:
     if not source.exists():
         raise IMessageImportError(f"{FULL_DISK_ACCESS_HELP} Missing source database: {source}")
     try:
-        return sqlite3.connect(_readonly_uri(source), uri=True)
+        conn = sqlite3.connect(_readonly_uri(source), uri=True)
+        conn.row_factory = sqlite3.Row
+        return conn
     except PermissionError as exc:
-        raise IMessageImportError(f"{FULL_DISK_ACCESS_HELP} Source database: {source}") from exc
+        raise IMessageImportPermissionError(f"{FULL_DISK_ACCESS_HELP} Source database: {source}") from exc
     except sqlite3.OperationalError as exc:
+        if _looks_permission_denied(exc):
+            raise IMessageImportPermissionError(
+                f"permission denied opening iMessage database: {source}. {FULL_DISK_ACCESS_HELP}"
+            ) from exc
         raise IMessageImportError(f"{FULL_DISK_ACCESS_HELP} Source database: {source}; sqlite error: {exc}") from exc
 
 
@@ -66,6 +88,9 @@ def _apple_timestamp(value: int | float | None) -> str:
     if abs(seconds) > 1_000_000_000_000:
         seconds /= 1_000_000_000
     return (APPLE_EPOCH + timedelta(seconds=seconds)).isoformat()
+
+
+_convert_imessage_timestamp = _apple_timestamp
 
 
 def _fetch_messages(conn: sqlite3.Connection) -> list[IMessageRow]:
@@ -90,23 +115,30 @@ def _fetch_messages(conn: sqlite3.Connection) -> list[IMessageRow]:
             """
         ).fetchall()
     except PermissionError as exc:
-        raise IMessageImportError(FULL_DISK_ACCESS_HELP) from exc
+        raise IMessageImportPermissionError(FULL_DISK_ACCESS_HELP) from exc
     except sqlite3.OperationalError as exc:
+        if _looks_permission_denied(exc):
+            raise IMessageImportPermissionError(f"{FULL_DISK_ACCESS_HELP} sqlite error: {exc}") from exc
         raise IMessageImportError(f"{FULL_DISK_ACCESS_HELP} sqlite error: {exc}") from exc
 
     result: list[IMessageRow] = []
     for row in rows:
-        message_rowid, message_guid, message_date, text, is_from_me, handle_id, chat_rowid, chat_id = row
+        message_rowid = int(row["message_rowid"])
+        message_guid = row["message_guid"]
+        chat_rowid = row["chat_rowid"]
         chat_key = "" if chat_rowid is None else str(chat_rowid)
         external_id = f"imessage:{message_rowid}:{chat_key}:{message_guid}"
-        sender = "me" if is_from_me else (handle_id or "unknown")
+        is_from_me = int(row["is_from_me"] or 0)
         result.append(
             IMessageRow(
                 external_id=external_id,
-                sender=sender,
-                timestamp=_apple_timestamp(message_date),
-                chat_identifier=chat_id or "",
-                text=text,
+                sender=_sender(is_from_me, row["handle_identifier"]),
+                timestamp=_apple_timestamp(row["message_date"]),
+                chat_identifier=row["chat_identifier"] or "",
+                text=row["text"],
+                is_from_me=is_from_me,
+                source_guid=message_guid,
+                source_rowid=message_rowid,
             )
         )
     return result
@@ -123,41 +155,83 @@ def _ensure_destination(conn: sqlite3.Connection) -> None:
             timestamp TEXT NOT NULL,
             chat_identifier TEXT NOT NULL,
             text TEXT NOT NULL,
+            is_from_me INTEGER NOT NULL DEFAULT 0,
+            source_guid TEXT,
+            source_rowid INTEGER,
             imported_at TEXT NOT NULL DEFAULT (datetime('now'))
         )
         """
     )
     conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_imessage_messages_timestamp "
-        "ON imessage_messages(timestamp)"
-    )
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_imessage_messages_chat "
-        "ON imessage_messages(chat_identifier)"
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_imessage_messages_external_id "
+        "ON imessage_messages(external_id)"
     )
 
 
-def _insert_messages(conn: sqlite3.Connection, rows: Iterable[IMessageRow]) -> int:
+_ensure_destination_schema = _ensure_destination
+
+
+def _insert_messages(conn: sqlite3.Connection, messages: Iterable[IMessageRow]) -> int:
     before = conn.total_changes
     conn.executemany(
         """
         INSERT OR IGNORE INTO imessage_messages
-            (external_id, source, sender, timestamp, chat_identifier, text)
-        VALUES (?, 'imessage', ?, ?, ?, ?)
+            (external_id, sender, timestamp, chat_identifier, text, is_from_me, source_guid, source_rowid)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        ((r.external_id, r.sender, r.timestamp, r.chat_identifier, r.text) for r in rows),
+        [
+            (
+                message.external_id,
+                message.sender,
+                message.timestamp,
+                message.chat_identifier,
+                message.text,
+                message.is_from_me,
+                message.source_guid,
+                message.source_rowid,
+            )
+            for message in messages
+        ],
     )
     return conn.total_changes - before
 
 
-def import_imessages(source_db: str | Path | None = None, destination_db: str | Path | None = None) -> ImportResult:
+def _sender(is_from_me: int | None, handle_id: str | None) -> str:
+    if int(is_from_me or 0) == 1:
+        return "me"
+    return handle_id or "unknown"
+
+
+def _looks_permission_denied(exc: BaseException) -> bool:
+    msg = str(exc).lower()
+    return "permission" in msg and ("denied" in msg or "not authorized" in msg or "operation not permitted" in msg)
+
+
+def import_imessages(
+    source_db: str | Path | None = None,
+    destination_db: str | Path | None = None,
+    dest_db: str | Path | None = None,
+) -> ImportResult:
     """Import readable iMessage text rows into canonical VEGA DB, deduped by external_id."""
+    if destination_db is not None and dest_db is not None and Path(destination_db) != Path(dest_db):
+        raise ValueError("destination_db and dest_db refer to different paths")
+
     source = Path(source_db).expanduser() if source_db is not None else DEFAULT_CHAT_DB
-    destination = Path(destination_db).expanduser() if destination_db is not None else db_path()
+    destination_arg = destination_db if destination_db is not None else dest_db
+    destination = Path(destination_arg).expanduser() if destination_arg is not None else db_path()
     destination.parent.mkdir(parents=True, exist_ok=True)
 
-    with _connect_source(source) as src:
-        messages = _fetch_messages(src)
+    try:
+        with _connect_source(source) as src:
+            messages = _fetch_messages(src)
+    except (PermissionError, sqlite3.OperationalError) as exc:
+        if isinstance(exc, IMessageImportError):
+            raise
+        if isinstance(exc, PermissionError) or _looks_permission_denied(exc):
+            raise IMessageImportPermissionError(
+                f"permission denied opening iMessage database: {source}. {FULL_DISK_ACCESS_HELP}"
+            ) from exc
+        raise
 
     with sqlite3.connect(str(destination)) as dst:
         _ensure_destination(dst)
@@ -169,3 +243,15 @@ def import_imessages(source_db: str | Path | None = None, destination_db: str | 
         scanned=len(messages),
         inserted=inserted,
     )
+
+
+__all__ = [
+    "APPLE_EPOCH",
+    "DEFAULT_CHAT_DB",
+    "DEFAULT_SOURCE_DB",
+    "FULL_DISK_ACCESS_HELP",
+    "IMessageImportError",
+    "IMessageImportPermissionError",
+    "ImportResult",
+    "import_imessages",
+]

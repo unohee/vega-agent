@@ -1,46 +1,46 @@
-# 계획서 — VEGA.app 단독(Docker 없이) 코드 실행 & 문서 처리
+# Plan — VEGA.app Standalone (Docker-free) Code Execution & Document Processing
 
-> 목표: 비개발자 머신에서 VEGA.app만 설치해도 Python 코드 실행 + PDF/XLS/DOCX 프리뷰·생성이
-> Docker·Xcode CLT·시스템 Python 없이 동작한다. 근거: `reference_frozen_interpreter_local_exec.md` (2026-06-15 실측 검증).
+> Goal: on a non-developer's machine, installing just VEGA.app is enough for Python code execution + PDF/XLS/DOCX preview·generation
+> to work without Docker·Xcode CLT·system Python. Basis: `reference_frozen_interpreter_local_exec.md` (verified empirically on 2026-06-15).
 
-## 배경 — 실측으로 확정된 문제
+## Background — Problems Confirmed Empirically
 
-현재 코드 실행/문서 처리가 비개발자 머신에서 깨지는 3개 원인:
+The 3 causes that currently break code execution/document processing on non-developer machines:
 
-1. **`pipeline/tools_office.py:23`** — `_sandbox_call()`이 `sandbox_python`(Docker) 강제.
-   xlsx/docx/pptx 생성·편집 전부 Docker 없으면 죽음.
-2. **`pipeline/tools_code.py:21`** — `python_exec`가 `~/dev/mlx_env/bin/python`(개발자 본인 환경) 하드코딩.
-   일반 유저 머신엔 그 경로가 없음 → 즉시 실패.
-3. **`bin/vega-backend.spec`** — office/PDF/이미지 라이브러리가 `hiddenimports`에 **전혀 없음**.
-   PDF 추출(`tools_google._pdf_bytes_to_text`, 호스트 직접 경로)마저 라이브러리 누락으로 실패.
+1. **`pipeline/tools_office.py:23`** — `_sandbox_call()` forces `sandbox_python` (Docker).
+   All xlsx/docx/pptx generation·editing dies without Docker.
+2. **`pipeline/tools_code.py:21`** — `python_exec` hardcodes `~/dev/mlx_env/bin/python` (the developer's own environment).
+   A typical user's machine does not have that path → immediate failure.
+3. **`bin/vega-backend.spec`** — office/PDF/image libraries are **completely absent** from `hiddenimports`.
+   Even PDF extraction (`tools_google._pdf_bytes_to_text`, the host-direct path) fails due to missing libraries.
 
-검증으로 확정된 해결 가능성:
-- frozen 인터프리터 재진입(`vega-backend run-code <code>`) 작동, 프로세스 격리(timeout kill) 정상.
-- numpy/pandas C extension 포함 번들 가능(`hiddenimports` + `collect_submodules`).
+Feasibility of resolution confirmed by verification:
+- frozen interpreter re-entry (`vega-backend run-code <code>`) works, and process isolation (timeout kill) is normal.
+- A bundle including numpy/pandas C extensions is possible (`hiddenimports` + `collect_submodules`).
 
-## 작업 분해 (검증 기준 명시)
+## Task Breakdown (verification criteria specified)
 
-### Phase 1 — 번들 의존성 추가 (가장 먼저, 단독으로도 가치)
+### Phase 1 — Add bundle dependencies (first, valuable on its own)
 
-`bin/vega-backend.spec`의 패키지 수집 루프에 추가:
+Add to the package-collection loop in `bin/vega-backend.spec`:
 
 ```python
 for pkg in (..., "openpyxl", "pypdf", "docx", "pptx",
             "msoffcrypto", "PIL", "xlrd",
-            "numpy", "pandas"):   # numpy/pandas는 코드 실행 데이터 처리용
+            "numpy", "pandas"):   # numpy/pandas are for data processing in code execution
     hiddenimports += collect_submodules(pkg)
 ```
 
-- **검증:** 로컬 PyInstaller 빌드 → `vega-backend run-code "import openpyxl, pypdf, docx, pptx, msoffcrypto, PIL, numpy, pandas; print('OK')"` 가 OK 출력.
-- **트레이드오프:** 번들 크기 증가(numpy/pandas ~수십 MB, office ~10MB). 측정해서 기록.
-- **주의:** import 이름 ≠ 패키지 이름 — python-docx→`docx`, python-pptx→`pptx`, Pillow→`PIL`.
+- **Verification:** local PyInstaller build → `vega-backend run-code "import openpyxl, pypdf, docx, pptx, msoffcrypto, PIL, numpy, pandas; print('OK')"` prints OK.
+- **Trade-off:** increased bundle size (numpy/pandas ~tens of MB, office ~10MB). Measure and record.
+- **Caution:** import name ≠ package name — python-docx→`docx`, python-pptx→`pptx`, Pillow→`PIL`.
 
-### Phase 2 — frozen 인터프리터 진입점 추가
+### Phase 2 — Add the frozen interpreter entry point
 
-`bin/vega_backend_launcher.py` 상단(서버 기동 전)에 서브커맨드 분기:
+Add a subcommand branch at the top of `bin/vega_backend_launcher.py` (before server startup):
 
 ```python
-# run-code / run-python: frozen 인터프리터를 격리 서브프로세스로 재사용
+# run-code / run-python: reuse the frozen interpreter as an isolated subprocess
 if len(sys.argv) >= 2 and sys.argv[1] in ("run-code", "run-python"):
     import runpy
     if sys.argv[1] == "run-code":
@@ -51,55 +51,55 @@ if len(sys.argv) >= 2 and sys.argv[1] in ("run-code", "run-python"):
     sys.exit(0)
 ```
 
-- 이 분기는 로깅·certifi·포트대기 **이전**에 둔다(빠른 단발 실행, 서버 초기화 불필요).
-- **검증:** 빌드된 번들로 timeout kill(무한루프 exit 124), stdout/stderr 분리, 예외 트레이스백 전달 재현.
+- Place this branch **before** logging·certifi·port-wait (fast one-shot execution, no server initialization needed).
+- **Verification:** with the built bundle, reproduce timeout kill (infinite loop exit 124), stdout/stderr separation, and exception-traceback propagation.
 
-### Phase 3 — 실행 레이어 폴백 (Docker → frozen 인프로세스/서브프로세스)
+### Phase 3 — Execution layer fallback (Docker → frozen in-process/subprocess)
 
-런타임 인터프리터 결정 헬퍼 추가 (`pipeline/tools_code.py`):
+Add a runtime interpreter-decision helper (`pipeline/tools_code.py`):
 
 ```python
 def _interp_cmd():
-    """코드 실행 인터프리터 결정: frozen이면 self run-code, 아니면 mlx_env/python."""
+    """Decide the code-execution interpreter: self run-code if frozen, else mlx_env/python."""
     if getattr(sys, "frozen", False):
-        return [sys.executable, "run-code"]   # 동봉 인터프리터
+        return [sys.executable, "run-code"]   # bundled interpreter
     if MLX_PYTHON.exists():
-        return [str(MLX_PYTHON)]              # 개발 환경
-    return [sys.executable]                   # 시스템 fallback
+        return [str(MLX_PYTHON)]              # development environment
+    return [sys.executable]                   # system fallback
 ```
 
 - `python_exec` (tools_code.py:243): `[str(MLX_PYTHON), tmppath]` →
-  frozen이면 `[sys.executable, "run-code", code_str]`, 아니면 기존.
-- `tools_office.py:_sandbox_call`: `docker_state()=="ok"`면 `sandbox_python`(격리 유지),
-  아니면 동일 코드를 frozen 인프로세스/서브프로세스로 실행하는 `_host_call`로 폴백.
-  - office 작업은 *정해진 라이브러리 호출*이라 무한루프 위험 없음 → 인프로세스 직접 exec도 안전.
-    단 일관성 위해 `python_exec` 경로 재사용 권장.
-- **검증:** Docker 끈 상태에서 `xlsx_create`/`docx_create`/PDF 추출 실제 호출 → 파일 생성·텍스트 추출 성공.
-  Docker 켠 상태에서 기존 샌드박스 경로 회귀 없음 확인.
+  `[sys.executable, "run-code", code_str]` if frozen, otherwise as before.
+- `tools_office.py:_sandbox_call`: `sandbox_python` (keep isolation) if `docker_state()=="ok"`,
+  otherwise fall back to `_host_call`, which runs the same code as a frozen in-process/subprocess.
+  - office work is *fixed library calls* so there is no infinite-loop risk → direct in-process exec is also safe.
+    But for consistency, reusing the `python_exec` path is recommended.
+- **Verification:** with Docker off, actually call `xlsx_create`/`docx_create`/PDF extraction → file generation·text extraction succeeds.
+  With Docker on, confirm there is no regression in the existing sandbox path.
 
-### Phase 4 — 안전망 (격리가 약해진 만큼 보강)
+### Phase 4 — Safety net (reinforce now that isolation is weaker)
 
-frozen 호스트 실행은 프로세스 격리뿐, 홈디렉터리 접근 가능. (`reference_frozen_interpreter_local_exec.md` 격리 수준 참조)
+frozen host execution has only process isolation; home-directory access is possible. (See the isolation level in `reference_frozen_interpreter_local_exec.md`)
 
-- `python_exec` 호스트 경로에도 기존 bash safeguard에 준하는 가드:
-  `.env`/secret 경로 쓰기 차단, `/vega_data`·`/host_home` 밖 파괴적 작업 경고.
-- **검증:** `python_exec`로 `.env` 읽기/`os.remove` 시도 → 차단 또는 경고 반환.
-- UI: 코드 실행 도구 상태 표시에서 Docker 없을 때 "호스트 실행(낮은 격리)" 명시.
+- Add to the `python_exec` host path a guard comparable to the existing bash safeguard:
+  block writes to `.env`/secret paths, warn on destructive operations outside `/vega_data`·`/host_home`.
+- **Verification:** attempt to read `.env`/`os.remove` via `python_exec` → returns blocked or warned.
+- UI: in the code-execution tool status display, explicitly state "host execution (low isolation)" when Docker is absent.
 
-## 순서 의존성
+## Order Dependencies
 
-Phase 1 → Phase 2 → Phase 3 (1·2가 3의 전제). Phase 4는 3 직후 또는 병행.
-Phase 1만으로도 PDF/DOCX 프리뷰 호스트 직접 경로가 복구되므로 **단독 출시 가치 있음**.
+Phase 1 → Phase 2 → Phase 3 (1·2 are prerequisites for 3). Phase 4 immediately after 3, or in parallel.
+Phase 1 alone restores the host-direct path for PDF/DOCX preview, so **it is worth shipping on its own**.
 
-## 미해결 / 결정 필요
+## Open / Decisions Needed
 
-- **번들 크기 vs 기능**: numpy/pandas까지 다 넣으면 ~수십 MB 증가. 코드 실행에 데이터 분석 패키지를
-  기본 동봉할지, 아니면 별도 다운로드(외부 site-packages)로 분리할지 → 사용자 결정.
-- **office 폴백 격리**: Docker 폴백 시 office 작업을 인프로세스 exec할지 서브프로세스로 분리할지.
-  서브프로세스가 안전하나 약간 느림.
-- **abuse**: 호스트 실행은 시스템 격리 없음. 무료 배포본에서 악성 코드 실행 리스크는 Docker 대비 큼.
+- **Bundle size vs features**: including numpy/pandas adds ~tens of MB. Whether to bundle data-analysis packages
+  by default for code execution, or split them into a separate download (external site-packages) → user decision.
+- **office fallback isolation**: on Docker fallback, whether to run office work in-process exec or split it into a subprocess.
+  Subprocess is safer but slightly slower.
+- **abuse**: host execution has no system isolation. The risk of running malicious code in a free distribution build is greater than with Docker.
 
-## 라우팅
+## Routing
 
-- 이 계획 실행 → Linear 이슈 (VEGA / Intrect 팀). 메모리 근거: `reference_frozen_interpreter_local_exec.md`,
+- Execute this plan → Linear issue (VEGA / Intrect team). Memory basis: `reference_frozen_interpreter_local_exec.md`,
   `project_positioning_fear_not_terminal.md`.

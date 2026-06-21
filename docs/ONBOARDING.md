@@ -1,169 +1,169 @@
-# VEGA 온보딩 가이드
+# VEGA Onboarding Guide
 
-> 처음 설치하는 사용자 및 새 개발자를 위한 단계별 안내
-
----
-
-## 목차
-
-1. [설치](#1-설치)
-2. [첫 실행 흐름](#2-첫-실행-흐름)
-3. [LLM 프로바이더 설정](#3-llm-프로바이더-설정)
-4. [Google 연동 설정](#4-google-연동-설정)
-5. [MCP 서버 연결](#5-mcp-서버-연결)
-6. [설정 이후 — 기본 사용법](#6-설정-이후--기본-사용법)
-7. [문제 해결](#7-문제-해결)
-8. [개발자 온보딩](#8-개발자-온보딩)
+> Step-by-step guidance for first-time users and new developers
 
 ---
 
-## 1. 설치
+## Table of Contents
 
-### 요구 사항
+1. [Installation](#1-installation)
+2. [First Launch Flow](#2-first-launch-flow)
+3. [LLM Provider Setup](#3-llm-provider-setup)
+4. [Google Integration Setup](#4-google-integration-setup)
+5. [Connecting MCP Servers](#5-connecting-mcp-servers)
+6. [After Setup — Basic Usage](#6-after-setup--basic-usage)
+7. [Troubleshooting](#7-troubleshooting)
+8. [Developer Onboarding](#8-developer-onboarding)
 
-| 항목 | 최솟값 |
+---
+
+## 1. Installation
+
+### Requirements
+
+| Item | Minimum |
 |------|--------|
-| macOS | 11.0 (Big Sur) 이상 |
-| 칩 | Apple Silicon (aarch64) |
-| 디스크 | 약 500MB |
-| 네트워크 | LLM API 호출용 인터넷 연결 |
+| macOS | 11.0 (Big Sur) or later |
+| Chip | Apple Silicon (aarch64) |
+| Disk | About 500MB |
+| Network | Internet connection for LLM API calls |
 
-### 설치 단계
+### Installation Steps
 
 ```
-1. VEGA-0.1.6.dmg 다운로드 (또는 build_output/ 에서 직접 사용)
-2. DMG 마운트 → VEGA.app을 Applications 폴더로 드래그
-3. VEGA.app 첫 실행
-   ├─ Gatekeeper 경고 뜰 경우: 우클릭 → 열기 → 열기
-   └─ 또는: 시스템 설정 → 개인정보 보호 및 보안 → "확인 없이 열기"
+1. Download VEGA-0.1.6.dmg (or use it directly from build_output/)
+2. Mount the DMG → drag VEGA.app into the Applications folder
+3. Launch VEGA.app for the first time
+   ├─ If a Gatekeeper warning appears: right-click → Open → Open
+   └─ Or: System Settings → Privacy & Security → "Open Anyway"
 ```
 
-> **참고**: DMG는 Apple Notary 공증 및 Developer ID 서명이 완료된 빌드다. 정상 환경에서는 Gatekeeper 경고가 뜨지 않는다.
+> **Note**: The DMG is a build that has completed Apple Notary notarization and Developer ID signing. Under normal conditions no Gatekeeper warning will appear.
 
 ---
 
-## 2. 첫 실행 흐름
+## 2. First Launch Flow
 
 ```
-VEGA.app 실행
+Launch VEGA.app
     │
     ▼
-Rust 셸: LaunchAgent 등록
-    ├─ ~/Library/LaunchAgents/com.unohee.vega-backend.plist 생성
-    └─ 백엔드 자동 기동 (포트 8100)
+Rust shell: register LaunchAgent
+    ├─ Create ~/Library/LaunchAgents/com.unohee.vega-backend.plist
+    └─ Auto-start the backend (port 8100)
     │
     ▼
-http://127.0.0.1:8100/entry 로드
+Load http://127.0.0.1:8100/entry
     │
-    ├─ 온보딩 완료? (user_profile.json 의 onboarded: true)
-    │   ├─ YES → /chat (메인 채팅 화면)
-    │   └─ NO  → /install (설치 마법사)
+    ├─ Onboarding complete? (onboarded: true in user_profile.json)
+    │   ├─ YES → /chat (main chat screen)
+    │   └─ NO  → /install (install wizard)
     │
-    ▼ (첫 실행)
-설치 마법사 (/install)
+    ▼ (first launch)
+Install wizard (/install)
     │
-    ├─ 단계 1: LLM 프로바이더 선택 및 인증
-    ├─ 단계 2: 사용자 프로필 입력 (이름·역할·소속)
-    ├─ 단계 3: Google 연동 (선택)
-    └─ 완료 → /chat
+    ├─ Step 1: Select and authenticate an LLM provider
+    ├─ Step 2: Enter user profile (name, role, organization)
+    ├─ Step 3: Google integration (optional)
+    └─ Done → /chat
 ```
 
-### 온보딩 완료 조건
+### Onboarding Completion Conditions
 
-다음 중 하나:
-- 설치 마법사에서 `finish` 액션 완료
-- 또는 직접 API: `POST /api/onboarding/finish`
+Any one of the following:
+- Complete the `finish` action in the install wizard
+- Or directly via API: `POST /api/onboarding/finish`
 
-완료 시 저장:
+Saved on completion:
 - `~/Library/Application Support/VEGA/user_profile.json`
 - `~/Library/Application Support/VEGA/llm_providers.json`
-- macOS Keychain (서비스명: "VEGA")에 API 키 저장
+- API key stored in the macOS Keychain (service name: "VEGA")
 
 ---
 
-## 3. LLM 프로바이더 설정
+## 3. LLM Provider Setup
 
-### 지원 프로바이더
+### Supported Providers
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│  ID            │ 이름                    │ 인증 방식  │ 권장 용도  │
+│  ID            │ Name                     │ Auth method│ Best for   │
 ├─────────────────────────────────────────────────────────────────────┤
-│ anthropic      │ Anthropic (Claude)       │ API 키     │ 고성능 추론│
-│ openai         │ OpenAI API               │ API 키     │ GPT 시리즈 │
-│ openrouter     │ OpenRouter               │ API 키     │ 멀티 모델  │  ← 권장
-│ chatgpt        │ ChatGPT (Codex)          │ OAuth PKCE │ 코드 특화  │
-│ local          │ 로컬 / 온프레미스 서버   │ URL만      │ 오프라인   │
+│ anthropic      │ Anthropic (Claude)       │ API key    │ High-end reasoning│
+│ openai         │ OpenAI API               │ API key    │ GPT series │
+│ openrouter     │ OpenRouter               │ API key    │ Multi-model│  ← recommended
+│ chatgpt        │ ChatGPT (Codex)          │ OAuth PKCE │ Coding     │
+│ local          │ Local / on-prem server   │ URL only   │ Offline    │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-> **추천**: 처음 시작하는 경우 **OpenRouter**가 가장 편리하다. API 키 하나로 Claude·GPT·Gemini·DeepSeek 등 모든 모델에 접근 가능하다.
+> **Recommended**: When getting started for the first time, **OpenRouter** is the most convenient. With a single API key you can access all models — Claude, GPT, Gemini, DeepSeek, and more.
 
-### OpenRouter 설정 (권장)
-
-```
-1. https://openrouter.ai 접속 → 회원가입 또는 로그인
-2. Keys → "Create key" → 이름 입력 → 키 복사 (sk-or-v1-...)
-3. VEGA 설정 창 → "AI 프로바이더" → "OpenRouter" 선택
-4. API 키 입력 → 저장
-```
-
-### Anthropic (Claude) 설정
+### OpenRouter Setup (recommended)
 
 ```
-1. https://console.anthropic.com 접속 → 로그인
-2. API Keys → "Create Key" → 키 복사 (sk-ant-...)
-3. VEGA 설정 창 → "AI 프로바이더" → "Anthropic" 선택
-4. API 키 입력 → 저장
+1. Go to https://openrouter.ai → sign up or log in
+2. Keys → "Create key" → enter a name → copy the key (sk-or-v1-...)
+3. VEGA settings window → "AI provider" → select "OpenRouter"
+4. Enter the API key → Save
 ```
 
-### OpenAI 설정
+### Anthropic (Claude) Setup
 
 ```
-1. https://platform.openai.com 접속 → 로그인
-2. API Keys → "Create new secret key" → 키 복사 (sk-...)
-3. VEGA 설정 창 → "AI 프로바이더" → "OpenAI API" 선택
-4. API 키 입력 → 저장
+1. Go to https://console.anthropic.com → log in
+2. API Keys → "Create Key" → copy the key (sk-ant-...)
+3. VEGA settings window → "AI provider" → select "Anthropic"
+4. Enter the API key → Save
 ```
 
-### ChatGPT (PKCE OAuth) 설정
+### OpenAI Setup
 
 ```
-1. VEGA 설정 창 → "AI 프로바이더" → "ChatGPT" 선택
-2. "ChatGPT로 로그인" 버튼 클릭
-3. 브라우저에서 ChatGPT 계정 로그인
-4. 인증 완료 → VEGA 자동으로 토큰 저장
+1. Go to https://platform.openai.com → log in
+2. API Keys → "Create new secret key" → copy the key (sk-...)
+3. VEGA settings window → "AI provider" → select "OpenAI API"
+4. Enter the API key → Save
 ```
 
-> **참고**: ChatGPT OAuth 토큰은 만료 시 자동으로 갱신된다. 갱신 실패 시 재로그인 필요.
-
-### 로컬 LLM (LM Studio / Ollama) 설정
+### ChatGPT (PKCE OAuth) Setup
 
 ```
-1. LM Studio 또는 Ollama 설치 및 실행
-2. OpenAI 호환 API 서버 기동 (기본: http://localhost:1234/v1)
-3. VEGA 설정 창 → "AI 프로바이더" → "로컬 서버" 선택
-4. URL 입력 (예: http://localhost:1234/v1)
-5. 사용할 모델 ID 입력 (예: gemma-4-e4b-it-mlx)
+1. VEGA settings window → "AI provider" → select "ChatGPT"
+2. Click the "Log in with ChatGPT" button
+3. Log in to your ChatGPT account in the browser
+4. Authentication complete → VEGA stores the token automatically
 ```
 
-### 설정 창 접근
+> **Note**: The ChatGPT OAuth token is refreshed automatically when it expires. If the refresh fails, re-login is required.
 
-온보딩 완료 후에도 설정을 변경할 수 있다:
+### Local LLM (LM Studio / Ollama) Setup
 
 ```
-방법 1: 상태바(하단) → 설정 아이콘 클릭
-방법 2: 트레이 아이콘 → "설정"
-방법 3: 키보드 단축키 Cmd+, (설정 창)
+1. Install and run LM Studio or Ollama
+2. Start an OpenAI-compatible API server (default: http://localhost:1234/v1)
+3. VEGA settings window → "AI provider" → select "Local server"
+4. Enter the URL (e.g., http://localhost:1234/v1)
+5. Enter the model ID to use (e.g., gemma-4-e4b-it-mlx)
 ```
 
-### API 키 저장 위치 확인
+### Accessing the Settings Window
+
+You can change settings even after onboarding is complete:
+
+```
+Method 1: Status bar (bottom) → click the settings icon
+Method 2: Tray icon → "Settings"
+Method 3: Keyboard shortcut Cmd+, (settings window)
+```
+
+### Checking Where the API Key Is Stored
 
 ```bash
-# 키 출처 진단 API
+# Key source diagnostic API
 curl http://127.0.0.1:8100/api/onboarding/key-source
 
-# 응답 예시
+# Example response
 {
   "OPENROUTER_API": { "source": "keychain", "masked": "sk-or-v1-****1234" },
   "ANTHROPIC_API_KEY": { "source": "none" }
@@ -172,80 +172,80 @@ curl http://127.0.0.1:8100/api/onboarding/key-source
 
 ---
 
-## 4. Google 연동 설정
+## 4. Google Integration Setup
 
-Gmail·캘린더·Drive 도구를 사용하려면 Google OAuth 설정이 필요하다.
+To use the Gmail, Calendar, and Drive tools, Google OAuth setup is required.
 
-### 사전 준비: Google Cloud 프로젝트
+### Prerequisite: Google Cloud Project
 
 ```
-1. https://console.cloud.google.com 접속
-2. 새 프로젝트 생성 (또는 기존 프로젝트 사용)
-3. API 라이브러리에서 다음 API 활성화:
+1. Go to https://console.cloud.google.com
+2. Create a new project (or use an existing one)
+3. Enable the following APIs in the API Library:
    - Gmail API
    - Google Calendar API
    - Google Drive API
-4. OAuth 동의 화면 구성:
-   - 사용자 유형: 외부
-   - 앱 이름: VEGA (또는 원하는 이름)
-   - 범위: gmail.modify, calendar, drive.readonly 추가
-5. OAuth 클라이언트 ID 생성:
-   - 애플리케이션 유형: 데스크탑 앱
-   - 다운로드: client_secret_xxxx.json
+4. Configure the OAuth consent screen:
+   - User type: External
+   - App name: VEGA (or any name you like)
+   - Scopes: add gmail.modify, calendar, drive.readonly
+5. Create an OAuth client ID:
+   - Application type: Desktop app
+   - Download: client_secret_xxxx.json
 ```
 
-### VEGA에 Google 클라이언트 등록
+### Registering the Google Client with VEGA
 
 ```bash
-# 방법 1: 설치 마법사 중 Google 단계에서 자동 처리
+# Method 1: Handled automatically during the Google step of the install wizard
 
-# 방법 2: API 직접 호출
+# Method 2: Call the API directly
 curl -X POST http://127.0.0.1:8100/api/onboarding/google/creds \
   -H "Content-Type: application/json" \
   -d '{"client_id": "xxx.apps.googleusercontent.com", "client_secret": "xxx"}'
 
-# 방법 3: 파일 직접 복사
+# Method 3: Copy the file directly
 cp ~/Downloads/client_secret_xxx.json \
    ~/Library/Application\ Support/VEGA/google_oauth_client.json
 ```
 
-### Google OAuth 실행
+### Running Google OAuth
 
 ```bash
-# API 호출 시 브라우저에서 동의 화면 열림
+# Calling the API opens the consent screen in the browser
 curl -X POST http://127.0.0.1:8100/api/onboarding/google/auth
 
-# 또는: 채팅에서 직접 요청
-# "Google 캘린더 연동해줘"라고 입력하면 VEGA가 자동으로 안내
+# Or: request it directly in chat
+# Type "Connect my Google Calendar" and VEGA will guide you automatically
 ```
 
 ---
 
-## 5. MCP 서버 연결
+## 5. Connecting MCP Servers
 
-MCP(Model Context Protocol) 서버를 연결하면 추가 도구를 VEGA에 통합할 수 있다.
+Connecting MCP (Model Context Protocol) servers lets you integrate additional tools into VEGA.
 
-### 상태바에서 MCP 관리
+### Managing MCP from the Status Bar
 
 ```
-채팅 화면 → 하단 상태바 → "MCP" 버튼 클릭
-  또는
-채팅 화면 → "+" 메뉴 → "MCP 서버 관리"
+Chat screen → bottom status bar → click the "MCP" button
+  or
+Chat screen → "+" menu → "Manage MCP servers"
 ```
 
-### MCP 서버 추가 방법
+### How to Add an MCP Server
 
-**방법 1: UI에서 추가**
+**Method 1: Add from the UI**
 ```
-MCP 관리 창 → 서버 추가
-→ 이름: my-server
-→ 명령: npx -y @my-company/mcp-server
-→ 저장
+MCP management window → Add server
+→ Name: my-server
+→ Command: npx -y @my-company/mcp-server
+→ Save
 ```
 
-**방법 2: JSON 직접 편집**
+**Method 2: Edit the JSON directly**
 ```bash
-# ~/Library/Application Support/VEGA/mcp.json 편집
+# Edit ~/Library/Application Support/VEGA/mcp.json
 {
   "mcpServers": {
     "my-server": {
@@ -259,261 +259,261 @@ MCP 관리 창 → 서버 추가
 }
 ```
 
-**방법 3: 채팅에서 추가**
+**Method 3: Add from chat**
 ```
-# 채팅창에서
-"mcp_add_server 도구로 서버 추가해줘: npx -y @modelcontextprotocol/server-filesystem"
+# In the chat box
+"Add a server with the mcp_add_server tool: npx -y @modelcontextprotocol/server-filesystem"
 ```
 
-### 지원 transport 유형
+### Supported Transport Types
 
 ```
-stdio: { "command": "npx", "args": [...] }     ← 가장 일반적
+stdio: { "command": "npx", "args": [...] }     ← most common
 sse:   { "url": "http://localhost:3000/sse" }   ← HTTP SSE
 ```
 
-### MCP 도구 자동 등록
+### Automatic MCP Tool Registration
 
-서버 연결 시 VEGA가 자동으로:
-1. 도구 목록 조회
-2. 프롬프트 인젝션 패턴 검사 (보안)
-3. `mcp__{서버명}__{도구명}` 형태로 TOOL_SCHEMAS에 등록
+When a server connects, VEGA automatically:
+1. Queries the tool list
+2. Scans for prompt injection patterns (security)
+3. Registers them in TOOL_SCHEMAS in the form `mcp__{server_name}__{tool_name}`
 
 ---
 
-## 6. 설정 이후 — 기본 사용법
+## 6. After Setup — Basic Usage
 
-### 단축키
+### Shortcuts
 
-| 단축키 | 동작 |
+| Shortcut | Action |
 |--------|------|
-| `Cmd+,` | 설정 창 열기 |
+| `Cmd+,` | Open the settings window |
 
-### 채팅 UI 기본 기능
+### Chat UI Basic Features
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  [세션 목록]  │  [채팅 영역]                          [설정] │
+│  [Session list]│  [Chat area]                        [Settings]│
 │               │                                               │
-│  ● 오늘 할 일  │  VEGA: 안녕하세요! 무엇을 도와드릴까요?     │
-│  ○ 이메일 정리 │                                               │
-│  ○ 코드 리뷰   │  나: Gmail에서 오늘 온 중요 메일 정리해줘     │
+│  ● Today's todos│  VEGA: Hello! How can I help you?           │
+│  ○ Clean inbox │                                               │
+│  ○ Code review │  Me: Sort out today's important emails in Gmail│
 │               │                                               │
-│  [+ 새 세션]  │  VEGA: [tool: gmail_search → gmail_read →    │
+│  [+ New session]│  VEGA: [tool: gmail_search → gmail_read →   │
 │               │         gmail_modify_labels]                  │
-│               │         오늘 수신한 중요 메일 5개를 분류했습니다│
+│               │         Sorted 5 important emails received today│
 │               │  ────────────────────────────────────────────│
-│               │  [메시지 입력...]              [/] [📎] [전송]│
+│               │  [Type a message...]          [/] [📎] [Send] │
 ├─────────────────────────────────────────────────────────────────┤
-│  📁 폴더없음  │  세션ID  │  ⊕ MCP  │  👤 프로필  │  🤖 deepseek│
+│  📁 No folder │  Session ID│  ⊕ MCP  │  👤 Profile│  🤖 deepseek│
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### 슬래시 커맨드
+### Slash Commands
 
-`/`로 시작하는 명령어로 에이전트 행동을 지시한다:
-
-```
-/help           — 사용 가능한 커맨드 목록
-/new            — 새 세션 시작
-/rename <이름>  — 현재 세션 이름 변경
-/search <키워드>— 세션 내 대화 검색
-/plan           — 플랜 모드 켜기 (쓰기/실행 도구 차단)
-/plan-off       — 플랜 모드 끄기
-/sessions       — 모든 세션 목록
-/resume <UUID>  — 특정 세션 이어서 대화
-/context        — 현재 컨텍스트 토큰 수 표시
-/who            — 현재 사용자 프로필 확인
-```
-
-### 작업 디렉터리 설정
-
-코드 작업 시 VEGA가 참조할 기준 폴더를 지정한다:
+Commands beginning with `/` direct the agent's behavior:
 
 ```
-하단 상태바 → "📁 폴더없음" 클릭 → 폴더 선택
+/help            — list available commands
+/new             — start a new session
+/rename <name>   — rename the current session
+/search <keyword>— search the conversation within the session
+/plan            — turn on plan mode (blocks write/execute tools)
+/plan-off        — turn off plan mode
+/sessions        — list all sessions
+/resume <UUID>   — continue a specific session
+/context         — show the current context token count
+/who             — check the current user profile
 ```
 
-지정 후 `bash_exec`, `file_read`, `file_edit` 등 도구가 해당 폴더를 기준으로 동작한다.
+### Setting the Working Directory
 
-### 상태바 표시 항목
+Specify the base folder VEGA references when working with code:
 
-| 항목 | 의미 |
+```
+Bottom status bar → click "📁 No folder" → choose a folder
+```
+
+Once specified, tools such as `bash_exec`, `file_read`, and `file_edit` operate relative to that folder.
+
+### Status Bar Items
+
+| Item | Meaning |
 |------|------|
-| `● MCP` | MCP 서버 관리 |
-| `👤 프로필` | 이름·역할·소속 수정 |
-| `🤖 deepseek` | 현재 활성 모델 |
-| `토큰 수` | 다음 메시지 예상 컨텍스트 크기 |
-| `⚠ Docker` | Docker 미기동 경고 (bash/python 도구 불가) |
-| `✓ 인증됨` | LLM 프로바이더 정상 인증 |
-| `●` (녹색) | 백엔드 서버 정상 |
+| `● MCP` | Manage MCP servers |
+| `👤 Profile` | Edit name, role, organization |
+| `🤖 deepseek` | Currently active model |
+| `Token count` | Estimated context size for the next message |
+| `⚠ Docker` | Docker not running warning (bash/python tools unavailable) |
+| `✓ Authenticated` | LLM provider authenticated successfully |
+| `●` (green) | Backend server healthy |
 
 ---
 
-## 7. 문제 해결
+## 7. Troubleshooting
 
-### 로그 위치
+### Log Locations
 
 ```bash
-# Python 백엔드 로그
+# Python backend log
 tail -f ~/Library/Logs/VEGA/vega-backend.log
 
-# Rust 셸 로그
+# Rust shell log
 tail -f ~/Library/Logs/VEGA/vega-shell.log
 
-# LaunchAgent 표준 출력
+# LaunchAgent standard output
 tail -f ~/Library/Logs/VEGA/vega-backend.stdout.log
 ```
 
-### 자주 발생하는 문제
+### Common Problems
 
-#### 백엔드가 시작되지 않는 경우
+#### When the backend does not start
 
 ```bash
-# 1. 프로세스 확인
+# 1. Check the process
 pgrep -af vega-backend
 
-# 2. 포트 점유 확인
+# 2. Check port usage
 lsof -i :8100
 
-# 3. 수동 재시작
+# 3. Manual restart
 launchctl kickstart -k gui/$(id -u)/com.unohee.vega-backend
 
-# 4. LaunchAgent 재등록 (앱 재실행 시 자동)
+# 4. Re-register the LaunchAgent (automatic on app restart)
 launchctl bootout gui/$(id -u)/com.unohee.vega-backend
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.unohee.vega-backend.plist
 ```
 
-#### "No OAuth profile found" 에러
+#### "No OAuth profile found" error
 
-ChatGPT OAuth 토큰이 만료되었거나 없는 경우:
+When the ChatGPT OAuth token has expired or is missing:
 
 ```
-설정 창 → AI 프로바이더 → "ChatGPT" → "재로그인"
-또는: OpenRouter 등 다른 프로바이더로 전환
+Settings window → AI provider → "ChatGPT" → "Re-login"
+Or: switch to another provider such as OpenRouter
 ```
 
-#### API 키가 인식되지 않는 경우
+#### When the API key is not recognized
 
 ```bash
-# 키 출처 확인
+# Check the key source
 curl http://127.0.0.1:8100/api/onboarding/key-source
 
-# Keychain에서 직접 확인
+# Check directly in the Keychain
 security find-generic-password -s "VEGA" -a "OPENROUTER_API" -w
 
-# 키 재입력: 설정 창 → AI 프로바이더 → 해당 프로바이더 → 키 재입력
+# Re-enter the key: Settings window → AI provider → the provider → re-enter the key
 ```
 
-#### Docker 도구가 작동하지 않는 경우
+#### When the Docker tools do not work
 
-상태바에 `⚠ Docker` 경고가 표시되면:
+When the `⚠ Docker` warning appears in the status bar:
 
 ```bash
-# Docker Desktop 실행 확인
+# Make sure Docker Desktop is running
 open -a Docker
 
-# 컨테이너 상태 확인
+# Check container status
 docker ps -a | grep vega-sandbox
 
-# 컨테이너 시작
+# Start the container
 docker start vega-sandbox
-# 또는 이미지부터 생성
+# Or build from the image first
 cd ~/dev/vega-agent/sandbox && docker compose up -d
 ```
 
-#### 도구가 몇 개밖에 안 보이는 경우
+#### When only a few tools are visible
 
-헬스 체크로 진단:
+Diagnose with a health check:
 ```bash
 curl http://127.0.0.1:8100/api/health
 # {
 #   "total_tools": 70,
-#   "sandbox": "docker_off",   ← Docker 꺼짐
-#   "mcp_tools": 0,            ← MCP 연결 안 됨
+#   "sandbox": "docker_off",   ← Docker is off
+#   "mcp_tools": 0,            ← MCP not connected
 #   "auth": "ok"
 # }
 ```
 
-#### 설정 초기화 방법
+#### How to reset the configuration
 
 ```bash
-# 전체 초기화 (주의: 대화 이력·설정 모두 삭제)
+# Full reset (caution: deletes all conversation history and settings)
 rm -rf ~/Library/Application\ Support/VEGA/
 
-# 인증만 초기화
+# Reset authentication only
 security delete-generic-password -s "VEGA" 2>/dev/null
 rm -f ~/Library/Application\ Support/VEGA/openai_oauth.json
 ```
 
 ---
 
-## 8. 개발자 온보딩
+## 8. Developer Onboarding
 
-### 개발 환경 설정
+### Setting Up the Development Environment
 
 ```bash
-# 1. 저장소 클론
+# 1. Clone the repository
 git clone https://github.com/unohee/vega-agent.git
 cd vega-agent
 
-# 2. Python 환경 (mlx_env 권장)
+# 2. Python environment (mlx_env recommended)
 source ~/dev/mlx_env/bin/activate
 pip install -r requirements.txt
 
-# 3. Rust 환경
+# 3. Rust environment
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 cargo install tauri-cli@2
 
-# 4. 데이터베이스 초기화
+# 4. Initialize the database
 python scripts/init_user_db.py
 
-# 5. 개발 서버 시작
+# 5. Start the development server
 python -m uvicorn web.server:app --host 127.0.0.1 --port 8100 --reload
 ```
 
-### 디렉터리 구조
+### Directory Structure
 
 ```
 vega-agent/
-├─ bin/                  # PyInstaller 번들 관련
-│  ├─ vega-backend.spec  # 빌드 스펙
-│  └─ vega_backend_launcher.py  # 진입점
-├─ data/                 # 기본/예시 설정 파일 (번들에 포함)
-│  ├─ llm_providers.json # LLM 프로바이더 기본 설정
-│  ├─ mcp.json           # MCP 서버 설정
-│  └─ agents/            # 에이전트 MD 파일
-├─ desktop/              # Tauri Rust 셸
-│  ├─ src/lib.rs         # 메인 로직
-│  └─ tauri.conf.json    # 앱 설정
-├─ pipeline/             # 핵심 Python 모듈
-│  ├─ streaming.py       # GPT 스트리밍 루프
-│  ├─ llm_gateway.py     # 멀티 프로바이더 라우터
-│  ├─ tools.py           # 도구 레지스트리
-│  ├─ session_store.py   # SQLite 세션 관리
-│  ├─ keychain.py        # API 키 관리
-│  └─ data_paths.py      # 영속 경로 단일 출처
-├─ scripts/              # 빌드/배포 스크립트
-│  ├─ build_dmg.sh       # 전체 빌드 스크립트
-│  └─ sign_and_notarize.sh  # 서명/공증
-├─ tests/                # 테스트
-├─ testing/              # 실험용 스크립트
-└─ web/                  # FastAPI 앱
-   ├─ server.py          # 메인 서버
-   ├─ routers/           # 라우터 모듈
-   └─ static/            # HTML/JS (chat.html 등)
+├─ bin/                  # PyInstaller bundle related
+│  ├─ vega-backend.spec  # build spec
+│  └─ vega_backend_launcher.py  # entry point
+├─ data/                 # default/example config files (included in the bundle)
+│  ├─ llm_providers.json # LLM provider defaults
+│  ├─ mcp.json           # MCP server config
+│  └─ agents/            # agent MD files
+├─ desktop/              # Tauri Rust shell
+│  ├─ src/lib.rs         # main logic
+│  └─ tauri.conf.json    # app config
+├─ pipeline/             # core Python modules
+│  ├─ streaming.py       # GPT streaming loop
+│  ├─ llm_gateway.py     # multi-provider router
+│  ├─ tools.py           # tool registry
+│  ├─ session_store.py   # SQLite session management
+│  ├─ keychain.py        # API key management
+│  └─ data_paths.py      # single source of persistent paths
+├─ scripts/              # build/deploy scripts
+│  ├─ build_dmg.sh       # full build script
+│  └─ sign_and_notarize.sh  # signing/notarization
+├─ tests/                # tests
+├─ testing/              # experimental scripts
+└─ web/                  # FastAPI app
+   ├─ server.py          # main server
+   ├─ routers/           # router modules
+   └─ static/            # HTML/JS (chat.html, etc.)
 ```
 
-### 핵심 파일 수정 가이드
+### Guide to Editing Core Files
 
-#### LLM 프로바이더 추가
+#### Adding an LLM Provider
 
 ```python
-# data/llm_providers.json에 프로바이더 추가
+# Add the provider to data/llm_providers.json
 {
   "providers": {
     "my_provider": {
-      "label": "내 프로바이더",
+      "label": "My Provider",
       "kind": "chat_completions",      # chat_completions | anthropic | responses
       "auth_type": "bearer",           # bearer | anthropic_key | chatgpt_oauth | none
       "api_key_env": "MY_API_KEY",
@@ -523,46 +523,46 @@ vega-agent/
   }
 }
 
-# web/routers/onboarding.py의 PROVIDER_CATALOG에도 추가
+# Also add it to PROVIDER_CATALOG in web/routers/onboarding.py
 PROVIDER_CATALOG.append({
-    "id": "my_provider", "label": "내 프로바이더", "auth": "key",
+    "id": "my_provider", "label": "My Provider", "auth": "key",
     "key_env": "MY_API_KEY", "key_hint": "sk-...",
     "verify_url": "https://api.my-provider.com/v1/models",
     "verify_header": "bearer",
-    "desc": "내 프로바이더 설명",
+    "desc": "My provider description",
 })
 ```
 
-#### 새 도구 추가
+#### Adding a New Tool
 
 ```python
-# pipeline/tools.py — TOOL_SCHEMAS에 스키마 추가
+# pipeline/tools.py — add the schema to TOOL_SCHEMAS
 TOOL_SCHEMAS.append({
     "type": "function",
     "function": {
         "name": "my_tool",
-        "description": "내 도구 설명",
+        "description": "My tool description",
         "parameters": {
             "type": "object",
             "properties": {
-                "input": {"type": "string", "description": "입력값"}
+                "input": {"type": "string", "description": "input value"}
             },
             "required": ["input"]
         }
     }
 })
 
-# TOOL_FUNCTIONS에 구현 추가
+# Add the implementation to TOOL_FUNCTIONS
 TOOL_FUNCTIONS["my_tool"] = lambda args: my_tool_impl(args["input"])
 
-# dispatch_tool()에서 자동 호출됨
+# Called automatically from dispatch_tool()
 ```
 
-#### 영속 파일 경로 추가
+#### Adding a Persistent File Path
 
 ```python
-# 항상 data_paths.py를 통해 경로를 얻는다
-# 직접 Path(__file__) 사용 금지 — PyInstaller onefile에서 임시경로 가리킴
+# Always obtain paths through data_paths.py
+# Never use Path(__file__) directly — it points to a temp path in a PyInstaller onefile
 
 from pipeline.data_paths import data_dir
 
@@ -570,34 +570,34 @@ def my_config_path() -> Path:
     return data_dir() / "my_config.json"
 ```
 
-### 빌드 및 테스트
+### Build and Test
 
 ```bash
-# 단위 테스트
+# Unit tests
 source ~/dev/mlx_env/bin/activate
 python -m pytest tests/ -v
 
-# 전체 빌드 (서명/공증 포함)
+# Full build (including signing/notarization)
 VEGA_NOTARY_PROFILE=vega-notary bash scripts/build_dmg.sh
 
-# 서명만 (공증 제외, 빠른 로컬 테스트)
+# Signing only (no notarization, fast local test)
 bash scripts/build_dmg.sh
 # → build_output/VEGA-{VERSION}.dmg
 
-# 공증만 (DMG 이미 있을 때)
+# Notarization only (when the DMG already exists)
 VEGA_SIGN_ID="Developer ID Application: Heewon Oh (635QK74RYK)" \
 VEGA_NOTARY_PROFILE=vega-notary \
 bash scripts/sign_and_notarize.sh --artifact-only build_output/VEGA-0.1.6.dmg
 ```
 
-### 주요 개발 원칙
+### Key Development Principles
 
-1. **onefile 경로 절대 금지**: `Path(__file__)` 쓰기 경로 → 반드시 `data_dir()` 사용
-2. **Keychain 우선**: API 키는 `keychain.set_secret()`, 읽기는 `keychain.get()`
-3. **영속 데이터**: `~/Library/Application Support/VEGA/` — 업데이트 후에도 유지
-4. **번들 데이터는 읽기 전용**: `data/` 디렉터리 내 파일은 참조만, 수정은 `data_dir()`에
-5. **MCP 도구 동적 등록**: 서버 기동 시 자동 — `TOOL_SCHEMAS` 직접 수정 불필요
+1. **Never use onefile paths**: For writable paths, instead of `Path(__file__)` always use `data_dir()`
+2. **Keychain first**: For API keys use `keychain.set_secret()`, and read with `keychain.get()`
+3. **Persistent data**: `~/Library/Application Support/VEGA/` — preserved even after updates
+4. **Bundled data is read-only**: Files inside the `data/` directory are for reference only; make changes in `data_dir()`
+5. **Dynamic MCP tool registration**: Automatic when the server starts — no need to edit `TOOL_SCHEMAS` directly
 
 ---
 
-*이 문서는 VEGA 0.1.6 기준이다. 최신 정보는 `DEBUGGING.md` 및 각 모듈 헤더 주석을 참조.*
+*This document is based on VEGA 0.1.6. For the latest information, refer to `DEBUGGING.md` and the header comments of each module.*

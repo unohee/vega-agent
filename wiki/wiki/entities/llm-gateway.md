@@ -1,5 +1,5 @@
 ---
-title: "pipeline/llm_gateway.py — 멀티 프로바이더 라우터"
+title: "pipeline/llm_gateway.py — multi-provider router"
 tags: [llm, provider, routing, anthropic, openai, openrouter]
 sources: [topics/multi-provider]
 updated: 2026-06-02
@@ -8,28 +8,28 @@ status: active
 
 # pipeline/llm_gateway.py
 
-프로바이더 라우팅·요청 빌드. 진입점: `build_request()`, `get_active_provider()`.
+Provider routing and request building. Entry points: `build_request()`, `get_active_provider()`.
 
-## 지원 프로바이더 종류
+## Supported provider kinds
 
-| kind | 인증 | 특이사항 |
+| kind | Authentication | Notes |
 |------|------|---------|
-| `openrouter` | Bearer token | 기본값, deepseek-v4-flash |
-| `openai` | Bearer token | `api.openai.com` 직접 |
-| `anthropic` | `x-api-key` + `anthropic-version` | `/v1/messages` 직접 (OpenAI 호환 아님) |
-| `lmstudio` / `local` | 없음 | OpenAI 호환 URL |
+| `openrouter` | Bearer token | Default, deepseek-v4-flash |
+| `openai` | Bearer token | `api.openai.com` directly |
+| `anthropic` | `x-api-key` + `anthropic-version` | `/v1/messages` directly (not OpenAI-compatible) |
+| `lmstudio` / `local` | None | OpenAI-compatible URL |
 
-## Anthropic 스키마 변환
+## Anthropic schema conversion
 
 OpenAI tool `parameters` → Anthropic `input_schema`.
-`system`을 cache_control 블록으로 래핑.
-`max_tokens` 필수 (없으면 API 거부).
+Wrap `system` in a cache_control block.
+`max_tokens` is required (the API rejects the request without it).
 
-## ChatGPT Codex 주의
+## ChatGPT Codex caveat
 
-Codex (responses kind)는 `max_output_tokens` 파라미터를 거부. 다른 프로바이더와 구분 필요.
+Codex (responses kind) rejects the `max_output_tokens` parameter. It must be distinguished from other providers.
 
-## 관련
+## Related
 
 - [[topics/multi-provider]]
 - [[entities/pipeline-streaming]]
