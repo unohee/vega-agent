@@ -3,6 +3,7 @@
 # Dependencies: sqlite3 (stdlib)
 # Test Status: untested
 
+import re
 import sqlite3
 from pathlib import Path
 
@@ -16,6 +17,173 @@ def _conn() -> sqlite3.Connection:
     conn.execute("PRAGMA foreign_keys=ON")
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
+
+
+_LEXICAL_TOKEN_RE = re.compile(r"[0-9A-Za-z_가-힣]+", re.UNICODE)
+_LEXICAL_MAX_TOKENS = 8
+_LEXICAL_TABLES = {
+    "messages": {
+        "fts": "messages_fts",
+        "source_table": "messages",
+        "columns": ("text",),
+        "create": False,
+    },
+    "events": {
+        "fts": "events_fts",
+        "source_table": "events",
+        "columns": ("title", "body", "tags"),
+        "create": True,
+    },
+    "persona_sections": {
+        "fts": "persona_sections_fts",
+        "source_table": "persona_sections",
+        "columns": ("section_key", "content", "notes", "source"),
+        "create": True,
+    },
+    "entities": {
+        "fts": "entities_fts",
+        "source_table": "entities",
+        "columns": ("name", "kind", "canonical_id", "aliases_json", "notes"),
+        "create": True,
+    },
+}
+
+
+def _quote_ident(name: str) -> str:
+    return '"' + name.replace('"', '""') + '"'
+
+
+def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_schema WHERE type IN ('table','view') AND name=? LIMIT 1",
+        (table,),
+    ).fetchone()
+    return row is not None
+
+
+def _table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
+    return {r[1] for r in conn.execute(f"PRAGMA table_xinfo({_quote_ident(table)})").fetchall()}
+
+
+def _ensure_lexical_fts(conn: sqlite3.Connection) -> None:
+    """Create FTS5 mirrors for local memory tables that do not already own one."""
+    for cfg in _LEXICAL_TABLES.values():
+        if not cfg["create"]:
+            continue
+        table = cfg["source_table"]
+        fts = cfg["fts"]
+        columns = tuple(cfg["columns"])
+        existing_cols = _table_columns(conn, table)
+        required_cols = {"id", *columns}
+        if not required_cols.issubset(existing_cols):
+            # Legacy partial schemas are kept backward-compatible; skip FTS until migrated.
+            continue
+
+        was_missing = not _table_exists(conn, fts)
+        column_sql = ", ".join(columns)
+        conn.execute(
+            f"CREATE VIRTUAL TABLE IF NOT EXISTS {_quote_ident(fts)} "
+            f"USING fts5({column_sql}, content={table!r}, content_rowid='id', tokenize='unicode61')"
+        )
+        _ensure_fts_triggers(conn, table, fts, columns)
+        if was_missing:
+            conn.execute(f"INSERT INTO {_quote_ident(fts)}({_quote_ident(fts)}) VALUES('rebuild')")
+
+
+def _ensure_fts_triggers(conn: sqlite3.Connection, table: str, fts: str, columns: tuple[str, ...]) -> None:
+    quoted_cols = ", ".join(_quote_ident(c) for c in columns)
+    new_cols = ", ".join(f"new.{_quote_ident(c)}" for c in columns)
+    old_cols = ", ".join(f"old.{_quote_ident(c)}" for c in columns)
+    prefix = f"vega_{fts}"
+    conn.execute(
+        f"CREATE TRIGGER IF NOT EXISTS {_quote_ident(prefix + '_ai')} AFTER INSERT ON {_quote_ident(table)} BEGIN "
+        f"INSERT INTO {_quote_ident(fts)}(rowid, {quoted_cols}) VALUES (new.id, {new_cols}); END"
+    )
+    conn.execute(
+        f"CREATE TRIGGER IF NOT EXISTS {_quote_ident(prefix + '_ad')} AFTER DELETE ON {_quote_ident(table)} BEGIN "
+        f"INSERT INTO {_quote_ident(fts)}({_quote_ident(fts)}, rowid, {quoted_cols}) "
+        f"VALUES('delete', old.id, {old_cols}); END"
+    )
+    conn.execute(
+        f"CREATE TRIGGER IF NOT EXISTS {_quote_ident(prefix + '_au')} AFTER UPDATE ON {_quote_ident(table)} BEGIN "
+        f"INSERT INTO {_quote_ident(fts)}({_quote_ident(fts)}, rowid, {quoted_cols}) "
+        f"VALUES('delete', old.id, {old_cols}); "
+        f"INSERT INTO {_quote_ident(fts)}(rowid, {quoted_cols}) VALUES (new.id, {new_cols}); END"
+    )
+
+
+def build_fts5_prefix_query(query: str, max_tokens: int = _LEXICAL_MAX_TOKENS) -> str:
+    """Build an FTS5 MATCH expression using token prefixes.
+
+    unicode61 does not segment Korean morphologically; benchmarked retrieval uses prefix
+    expansion (e.g. `\"알파\"*`) so Korean prefixes can match full eojeol tokens.
+    """
+    tokens = _LEXICAL_TOKEN_RE.findall((query or "").lower())
+    if not tokens:
+        return ""
+    unique_tokens = list(dict.fromkeys(tokens))[:max_tokens]
+    return " OR ".join(f'"{token.replace(chr(34), chr(34) * 2)}"*' for token in unique_tokens)
+
+
+def lexical_search(table: str, query: str, top_k: int = 5) -> list[dict]:
+    """Ranked FTS5 lexical search over a configured table.
+
+    Rows contain: source, table, id, text, snippet, bm25. Lower bm25 is better.
+    """
+    cfg = _LEXICAL_TABLES.get(table)
+    if cfg is None:
+        raise ValueError(f"unsupported lexical table: {table}")
+    match = build_fts5_prefix_query(query)
+    if not match or top_k <= 0:
+        return []
+
+    fts = cfg["fts"]
+    with _conn() as conn:
+        if not _table_exists(conn, fts):
+            return []
+        fts_cols = _table_columns(conn, fts)
+        columns = [c for c in cfg["columns"] if c in fts_cols]
+        if not columns:
+            return []
+        text_expr = " || ' ' || ".join(f"COALESCE({_quote_ident(c)}, '')" for c in columns)
+        sql = f"""
+            SELECT rowid AS id,
+                   {text_expr} AS text,
+                   snippet({_quote_ident(fts)}, 0, '<mark>', '</mark>', '…', 24) AS snippet,
+                   bm25({_quote_ident(fts)}) AS bm25
+            FROM {_quote_ident(fts)}
+            WHERE {_quote_ident(fts)} MATCH ?
+            ORDER BY bm25 ASC
+            LIMIT ?
+        """
+        rows = conn.execute(sql, (match, int(top_k))).fetchall()
+    return [
+        {
+            "source": fts,
+            "table": cfg["source_table"],
+            "id": row["id"],
+            "text": row["text"] or "",
+            "snippet": row["snippet"] or "",
+            "bm25": row["bm25"],
+        }
+        for row in rows
+    ]
+
+
+def lexical_search_messages(query: str, top_k: int = 5) -> list[dict]:
+    return lexical_search("messages", query, top_k)
+
+
+def lexical_search_events(query: str, top_k: int = 5) -> list[dict]:
+    return lexical_search("events", query, top_k)
+
+
+def lexical_search_persona_sections(query: str, top_k: int = 5) -> list[dict]:
+    return lexical_search("persona_sections", query, top_k)
+
+
+def lexical_search_entities(query: str, top_k: int = 5) -> list[dict]:
+    return lexical_search("entities", query, top_k)
 
 
 def _ensure_schema() -> None:
@@ -110,6 +278,8 @@ def _ensure_schema() -> None:
             conn.execute("ALTER TABLE events ADD COLUMN era TEXT")
         if "ingested_at" not in ev_cols:
             conn.execute("ALTER TABLE events ADD COLUMN ingested_at TEXT")
+
+        _ensure_lexical_fts(conn)
 
 
 _ensure_schema()
