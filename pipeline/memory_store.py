@@ -15,8 +15,16 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-_EMBED_DIM = 256  # EXAONE-3-1.2B hidden size (fallback: deterministic hash 256-dim)
+_EMBED_MODEL = "BAAI/bge-m3"
+_EMBED_DIM_BY_MODEL = {
+    "BAAI/bge-m3": 1024,
+}
+_EMBED_DIM = _EMBED_DIM_BY_MODEL[_EMBED_MODEL]
 _TABLE_NAME = "memories"
+
+
+class EmbeddingModelUnavailableError(RuntimeError):
+    """Raised when the configured real embedding model cannot be used."""
 
 
 def _lance_dir() -> Path:
@@ -58,49 +66,78 @@ def _ensure_table():
 
 _embedder = None
 
+
 def _get_embedder():
-    """EXAONE-3-1.2B MLX embedding model (lazy load)."""
+    """Benchmark-selected BGE-M3 embedder (lazy in-process load)."""
     global _embedder
     if _embedder is not None:
         return _embedder
+
+    errors: list[str] = []
+
     try:
-        from mlx_lm import load
-        model, tokenizer = load("LGAI-EXAONE/EXAONE-3-1.2B-Instruct")
-        _embedder = (model, tokenizer)
+        from sentence_transformers import SentenceTransformer
+
+        model = SentenceTransformer(_EMBED_MODEL)
+        _embedder = ("sentence-transformers", model)
         return _embedder
-    except Exception as e:
-        logger.warning("EXAONE embedding load failed, using hash fallback: %s", e)
-        return None
+    except Exception as exc:
+        errors.append(f"sentence-transformers: {exc}")
+
+    try:
+        from fastembed import TextEmbedding
+
+        model = TextEmbedding(model_name=_EMBED_MODEL)
+        _embedder = ("fastembed", model)
+        return _embedder
+    except Exception as exc:
+        errors.append(f"fastembed: {exc}")
+
+    raise EmbeddingModelUnavailableError(
+        f"Embedding model unavailable: {_EMBED_MODEL} ({_EMBED_DIM} dims). "
+        "Install a supported backend and ensure the model can be loaded. "
+        f"Backend errors: {'; '.join(errors)}"
+    )
+
+
+def _normalize_vector(vec: Any) -> list[float]:
+    if hasattr(vec, "tolist"):
+        vec = vec.tolist()
+
+    arr = np.asarray(vec, dtype=np.float32)
+    if arr.ndim != 1:
+        arr = arr.reshape(-1)
+    if arr.shape[0] != _EMBED_DIM:
+        raise EmbeddingModelUnavailableError(
+            f"Embedding model {_EMBED_MODEL} returned {arr.shape[0]} dims; expected {_EMBED_DIM}"
+        )
+
+    norm = float(np.linalg.norm(arr))
+    if not np.isfinite(norm) or norm <= 0.0:
+        raise EmbeddingModelUnavailableError(
+            f"Embedding model {_EMBED_MODEL} returned an invalid zero/non-finite vector"
+        )
+    return (arr / norm).astype(np.float32).tolist()
 
 
 def embed(text: str) -> list[float]:
-    """Convert text to a float32 vector (dim=256). Falls back to deterministic hash if model is unavailable."""
-    embedder = _get_embedder()
-    if embedder is not None:
-        try:
-            import mlx.core as mx
-            model, tokenizer = embedder
-            tokens = tokenizer(text, return_tensors="mlx", truncation=True, max_length=512)
-            out = model(**tokens)
-            # mean pool last hidden state → slice to 256-dim
-            hidden = out.last_hidden_state[0]  # (seq, hidden)
-            vec = mx.mean(hidden, axis=0).tolist()
-            # slice to 256-dim or pad if shorter
-            if len(vec) >= _EMBED_DIM:
-                vec = vec[:_EMBED_DIM]
-            else:
-                vec = vec + [0.0] * (_EMBED_DIM - len(vec))
-            norm = (sum(v * v for v in vec) ** 0.5) or 1.0
-            return [v / norm for v in vec]
-        except Exception as e:
-            logger.debug("Embedding failed, falling back: %s", e)
+    """Convert text to a normalized real BGE-M3 vector (dim=1024)."""
+    backend, model = _get_embedder()
+    try:
+        if backend == "sentence-transformers":
+            vec = model.encode(text, normalize_embeddings=True, show_progress_bar=False)
+            return _normalize_vector(vec)
+        if backend == "fastembed":
+            vec = next(iter(model.embed([text])))
+            return _normalize_vector(vec)
+    except EmbeddingModelUnavailableError:
+        raise
+    except Exception as exc:
+        raise EmbeddingModelUnavailableError(
+            f"Embedding model {_EMBED_MODEL} failed during inference via {backend}: {exc}"
+        ) from exc
 
-    # deterministic hash fallback: SHA256 → 256 floats in [-1, 1]
-    h = hashlib.sha256(text.encode()).digest()
-    vec = [(b / 127.5) - 1.0 for b in h]  # 32 bytes → tile to 256
-    vec = (vec * 8)[:_EMBED_DIM]
-    norm = (sum(v * v for v in vec) ** 0.5) or 1.0
-    return [v / norm for v in vec]
+    raise EmbeddingModelUnavailableError(f"Unsupported embedding backend: {backend}")
 
 
 # ── Public interface ───────────────────────────────────────────────────────────
