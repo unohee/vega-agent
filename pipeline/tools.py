@@ -106,6 +106,8 @@ _PLAN_BLOCKED_TOOLS: frozenset[str] = frozenset({
     "contact_memo_update",
     # Session delete/cleanup
     "session_delete", "session_clean",
+    # Sub-agent execution
+    "dispatch_agent",
     # Discord notification (external send)
     "discord_notify",
     # Superthread write
@@ -130,6 +132,7 @@ from pipeline.tools_google import (
     docs_create, docs_append,
 )
 from pipeline.tools_web import web_search, web_fetch
+from pipeline.spawn import dispatch_agent
 from pipeline.discord_bridge import discord_notify
 # NOTE: vega-agent 공개판은 office/browser/things/kis/imessage 개인 도구 모듈을 싣지 않는다.
 # OFFICE_TOOL_SCHEMAS / OFFICE_TOOL_FUNCTIONS 는 빈 값으로 스텁한다.
@@ -1038,6 +1041,33 @@ if not _LINEAR_NATIVE_OK:
 TOOL_SCHEMAS.extend([
     {
         "type": "function",
+        "name": "dispatch_agent",
+        "description": (
+            "현재 턴의 하위 sub-agent를 생성해 독립적으로 작업시킨다. "
+            "부모 턴은 Agents 칩과 Spawn tree 모달에서 자식 에이전트 진행을 실시간으로 추적한다. "
+            "병렬 조사, 파일 탐색, 후보안 검토처럼 부모 응답과 분리해 진행할 작은 작업에 사용한다."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "prompt": {"type": "string", "description": "sub-agent에게 맡길 구체적 작업"},
+                "label": {"type": "string", "description": "UI에 표시할 짧은 이름"},
+                "wait_for_result": {
+                    "type": "boolean",
+                    "description": "true이면 자식 완료까지 기다린 뒤 결과 snapshot을 반환한다",
+                    "default": False,
+                },
+                "timeout_sec": {
+                    "type": "integer",
+                    "description": "wait_for_result=true일 때 최대 대기 초",
+                    "default": 900,
+                },
+            },
+            "required": ["prompt"],
+        },
+    },
+    {
+        "type": "function",
         "name": "ask_user_question",
         "description": (
             "사용자에게 선택지·확인·분기·허가·선호를 묻는다. plain text로 묻지 말고 이 도구를 사용해라. "
@@ -1781,6 +1811,7 @@ TOOL_FUNCTIONS: dict[str, Any] = {
     "mcp_add_server": mcp_add_server,
     "mcp_remove_server": mcp_remove_server,
     "mcp_reload": mcp_reload,
+    "dispatch_agent": dispatch_agent,
     "ask_user_question": _ask_user_question,
     "exit_plan_mode": _exit_plan_mode,
     "image_generate": image_generate,
