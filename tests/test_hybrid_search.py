@@ -130,3 +130,82 @@ def test_hybrid_search_deduplicates_by_stable_source_id_and_keeps_rank_metadata(
     assert row["vector_score"] == 0.08
     assert row["fused_score"] > 0
     assert row["source_weight_explanation"]
+
+
+def test_hybrid_search_promotes_only_strong_vector_hit_through_lexical_noise() -> None:
+    def lexical_searcher(table: str, query: str, top_k: int) -> list[dict[str, Any]]:
+        if table != "entities":
+            return []
+        return [
+            {
+                "source": "entities_fts",
+                "table": "entities",
+                "id": idx,
+                "text": f"broad lexical match {idx}",
+                "snippet": f"broad lexical match {idx}",
+                "bm25": -float(idx),
+            }
+            for idx in range(1, 9)
+        ]
+
+    def vector_searcher(query: str, person_id: str | None = None, limit: int = 20) -> list[dict[str, Any]]:
+        return [
+            {
+                "id": "semantic-memory",
+                "person_id": "default",
+                "source": "chat",
+                "text": "KYTE 음악 라이선스 AI 인프라 담당 메모",
+                "timestamp": "2026-06-21T00:00:00Z",
+                "score": 0.36,
+            }
+        ]
+
+    rows = hybrid_search(
+        "KYTE 음악 라이선스 AI 인프라 담당자",
+        limit=5,
+        lexical_searcher=lexical_searcher,
+        vector_searcher=vector_searcher,
+    )
+
+    assert rows[0]["id"] == "semantic-memory"
+    assert rows[0]["vector_confidence_bonus"] > 0
+    assert "semantic-memory" in [row["id"] for row in rows[:5]]
+
+
+def test_hybrid_search_does_not_promote_weak_vector_hit_over_exact_entity() -> None:
+    def lexical_searcher(table: str, query: str, top_k: int) -> list[dict[str, Any]]:
+        if table == "entities":
+            return [
+                {
+                    "source": "entities_fts",
+                    "table": "entities",
+                    "id": "kyte-ax",
+                    "text": "KYTE AX project",
+                    "snippet": "<mark>KYTE</mark> <mark>AX</mark> project",
+                    "bm25": -4.0,
+                }
+            ]
+        return []
+
+    def vector_searcher(query: str, person_id: str | None = None, limit: int = 20) -> list[dict[str, Any]]:
+        return [
+            {
+                "id": "weak-semantic-memory",
+                "person_id": "default",
+                "source": "chat",
+                "text": "unrelated memory",
+                "timestamp": "2026-06-21T00:00:00Z",
+                "score": 1.20,
+            }
+        ]
+
+    rows = hybrid_search(
+        "KYTE AX",
+        limit=5,
+        lexical_searcher=lexical_searcher,
+        vector_searcher=vector_searcher,
+    )
+
+    assert rows[0]["id"] == "kyte-ax"
+    assert rows[1]["id"] == "weak-semantic-memory"
+    assert rows[1]["vector_confidence_bonus"] == 0.0
