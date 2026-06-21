@@ -1,31 +1,31 @@
 ---
-title: "멀티 프로바이더 설계"
+title: "Multi-Provider Design"
 tags: [provider, openrouter, anthropic, openai, local]
 sources: [entities/llm-gateway]
 updated: 2026-06-02
 status: active
 ---
 
-# 멀티 프로바이더 설계
+# Multi-Provider Design
 
-`data/llm_providers.json` + `pipeline/llm_gateway.py`로 구성.
+Composed of `data/llm_providers.json` + `pipeline/llm_gateway.py`.
 
-## 현재 기본값
+## Current Defaults
 
 - Active: `openrouter` (deepseek/deepseek-v4-flash)
-- 2단 tier: `tiers.local = lmstudio`, `tiers.cloud = openrouter`
+- Two-tier setup: `tiers.local = lmstudio`, `tiers.cloud = openrouter`
 
-## 프로바이더 추가
+## Adding a Provider
 
-1. `data/llm_providers.json`에 항목 추가 (또는 user data dir 사본에)
-2. `llm_gateway.build_request()`가 `kind`로 분기 — 새 kind는 분기 추가 필요
-3. Anthropic은 스키마 변환 필수 (`input_schema`, `max_tokens`)
+1. Add an entry to `data/llm_providers.json` (or to the copy in the user data dir)
+2. `llm_gateway.build_request()` branches on `kind` — a new kind requires adding a branch
+3. Anthropic requires schema conversion (`input_schema`, `max_tokens`)
 
-## 설치 마법사 통합
+## Install Wizard Integration
 
-마법사(`install_wizard.html` + `web/routers/onboarding.py`)가 프로바이더 선택 → 인증 → Keychain 저장 → `upsert_provider` → 활성화 흐름으로 연결.
+The wizard (`install_wizard.html` + `web/routers/onboarding.py`) connects the flow: provider selection → authentication → Keychain storage → `upsert_provider` → activation.
 
-## 관련
+## Related
 
 - [[entities/llm-gateway]]
 - [[entities/pipeline-streaming]]
