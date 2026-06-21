@@ -36,6 +36,9 @@ class TestGetLevel:
     def test_unknown_tool_defaults_write(self):
         """알 수 없는 도구는 보수적으로 WRITE."""
         assert get_level("totally_unknown_tool_xyz") == Level.WRITE
+        # No exposed iMessage importer tool is registered in this worktree; the
+        # docs-only imessage_search reference must not be granted READ implicitly.
+        assert get_level("imessage_search") == Level.WRITE
 
     def test_code_exec_tools_write(self):
         """host_exec/bash/python은 자체 ask 흐름 → 여기선 WRITE."""

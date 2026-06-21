@@ -1,40 +1,40 @@
 ---
-title: "MCP 서버 등록/호출 패턴"
+title: "MCP Server Registration/Invocation Pattern"
 tags: [mcp, tools, integration]
 sources: [entities/pipeline-streaming]
 updated: 2026-06-02
 status: active
 ---
 
-# MCP 서버 등록/호출 패턴
+# MCP Server Registration/Invocation Pattern
 
-`pipeline/mcp_client.py`의 `init_mcp_tools()` / `call_mcp_tool()`.
+`init_mcp_tools()` / `call_mcp_tool()` in `pipeline/mcp_client.py`.
 
-## 등록 위치
+## Registration location
 
-**user data dir의 `mcp.json`** (= `data_paths.mcp_config_path()`).
-레포의 `data/mcp.json`은 **읽지 않는다** → [[concepts/data-paths]] 참조.
+**The `mcp.json` in the user data dir** (= `data_paths.mcp_config_path()`).
+The repo's `data/mcp.json` is **not read** → see [[concepts/data-paths]].
 
-## 초기화 시점
+## Initialization timing
 
-- `web/server.py` lifespan에서 `init_mcp_tools()` 1회 호출
-- 채널 봇은 `ensure_mcp_loaded()` (프로세스당 1회)
+- `init_mcp_tools()` is called once in the `web/server.py` lifespan
+- The channel bot uses `ensure_mcp_loaded()` (once per process)
 
-## 도구 envelope (kyte 반환 포맷)
+## Tool envelope (kyte return format)
 
 ```json
-{ "data": <list|dict|null>, "source": {"system": "...", "fetched_at": "..."}, "note": "<선택>" }
+{ "data": <list|dict|null>, "source": {"system": "...", "fetched_at": "..."}, "note": "<optional>" }
 ```
 
-kyte 도구는 모두 read-only envelope → CE 모드에서도 안전하게 허용.
+All kyte tools are read-only envelopes → safely allowed even in CE mode.
 
-## 새 MCP 서버 추가
+## Adding a new MCP server
 
-1. user data dir의 `mcp.json`에 항목 추가
-2. 서버 재시작 (lifespan이 다시 `init_mcp_tools()` 실행)
-3. CE 모드에서 허용하려면 `tools._CE_ALLOWED_TOOLS`에 prefix 추가 + `dispatch_tool` 양쪽 수정 → [[concepts/ce-mode-gate]]
+1. Add an entry to `mcp.json` in the user data dir
+2. Restart the server (the lifespan runs `init_mcp_tools()` again)
+3. To allow it in CE mode, add the prefix to `tools._CE_ALLOWED_TOOLS` + modify both sides of `dispatch_tool` → [[concepts/ce-mode-gate]]
 
-## 관련
+## Related
 
 - [[concepts/data-paths]]
 - [[concepts/ce-mode-gate]]

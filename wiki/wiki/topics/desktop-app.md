@@ -1,41 +1,41 @@
 ---
-title: "Tauri v2 데스크톱 앱 + DMG 배포"
+title: "Tauri v2 Desktop App + DMG Distribution"
 tags: [tauri, desktop, dmg, pyinstaller, launchagent]
 updated: 2026-06-02
 status: active
 ---
 
-# Tauri v2 데스크톱 앱 + DMG 배포
+# Tauri v2 Desktop App + DMG Distribution
 
-`desktop/` 디렉터리. Tauri v2(Rust 셸) + PyInstaller 백엔드 번들.
+`desktop/` directory. Tauri v2 (Rust shell) + PyInstaller backend bundle.
 
-## 아키텍처
+## Architecture
 
 ```
-Tauri (Rust 셸)
-  ├── 트레이 아이콘
-  └── 창 토글
-       ↓ (첫 실행 시)
-LaunchAgent 등록 (com.unohee.vega-backend)
+Tauri (Rust shell)
+  ├── tray icon
+  └── window toggle
+       ↓ (on first launch)
+LaunchAgent registration (com.unohee.vega-backend)
   → bin/vega-backend (PyInstaller, 94MB)
   → uvicorn web.server:app
 ```
 
-## DMG 빌드
+## DMG Build
 
 ```bash
 bash scripts/build_dmg.sh
 ```
-순서: PyInstaller (`bin/vega-backend.spec`) → `cargo tauri build` → DMG 패키징.
-Developer ID 인증서 없으면 무서명 빌드 자동 전환.
+Order: PyInstaller (`bin/vega-backend.spec`) → `cargo tauri build` → DMG packaging.
+Without a Developer ID certificate, it automatically falls back to an unsigned build.
 
-## 알려진 함정
+## Known Pitfalls
 
-- `create-dmg` hang: 일부 환경에서 대화형 프롬프트 waiting → `--no-internet-enable` 플래그 필요
-- fastmcp 메타데이터: PyInstaller spec에서 hidden import로 명시해야 번들에 포함
-- `bin/vega-backend` 94MB → whisper 라이브러리 포함 불가 (PyTorch ~2GB)
+- `create-dmg` hang: in some environments an interactive prompt is left waiting → the `--no-internet-enable` flag is required
+- fastmcp metadata: must be declared as a hidden import in the PyInstaller spec to be included in the bundle
+- `bin/vega-backend` 94MB → the whisper library cannot be included (PyTorch ~2GB)
 
-## 관련
+## Related
 
-- [[topics/stt-integration]] — PyInstaller 번들 제약
+- [[topics/stt-integration]] — PyInstaller bundle constraints
 - `desktop/Cargo.lock`, `bin/vega-backend.spec`

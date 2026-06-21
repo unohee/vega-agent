@@ -57,6 +57,32 @@ class TestEnsureSchema:
         conn.close()
         assert "entities" in tables
 
+    def test_entity_edges_schema_and_indexes_exist(self, tmp_db):
+        conn = sqlite3.connect(str(tmp_db))
+        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(entity_edges)").fetchall()}
+        indexes = {r[1] for r in conn.execute("PRAGMA index_list(entity_edges)").fetchall()}
+        fks = {
+            (r[3], r[2], r[4])
+            for r in conn.execute("PRAGMA foreign_key_list(entity_edges)").fetchall()
+        }
+        conn.close()
+        assert "entity_edges" in tables
+        assert {
+            "source_entity_id",
+            "target_entity_id",
+            "relation_type",
+            "evidence",
+            "source_message_id",
+            "confidence",
+            "created_at",
+            "updated_at",
+        }.issubset(cols)
+        assert "idx_entity_edges_source" in indexes
+        assert "idx_entity_edges_target" in indexes
+        assert ("source_entity_id", "entities", "id") in fks
+        assert ("target_entity_id", "entities", "id") in fks
+
     def test_ensure_schema_idempotent(self, tmp_db):
         """두 번 호출해도 에러 없음."""
         import pipeline.vega_query as vq
@@ -220,3 +246,32 @@ class TestEntityUpsert:
         import pipeline.vega_query as vq
         result = vq.get_entity("존재하지않는엔티티")
         assert result is None
+
+    def test_entity_neighbors_lists_incoming_and_outgoing(self, tmp_db):
+        import pipeline.vega_query as vq
+
+        source = vq.entity_upsert("source", "person")
+        target = vq.entity_upsert("target", "org")
+        other = vq.entity_upsert("other", "project")
+        with vq._conn() as conn:
+            conn.execute(
+                """INSERT INTO entity_edges
+                   (source_entity_id, target_entity_id, relation_type, evidence, source_message_id, confidence)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (source["id"], target["id"], "works_with", "sample evidence", "msg-1", 0.75),
+            )
+            conn.execute(
+                """INSERT INTO entity_edges
+                   (source_entity_id, target_entity_id, relation_type, evidence, confidence)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (other["id"], source["id"], "owns", "other evidence", 0.5),
+            )
+
+        neighbors = vq.entity_neighbors(source["id"])
+        by_name = {row["neighbor_name"]: row for row in neighbors}
+        assert by_name["target"]["direction"] == "outgoing"
+        assert by_name["target"]["relation_type"] == "works_with"
+        assert by_name["target"]["source_message_id"] == "msg-1"
+        assert by_name["target"]["confidence"] == 0.75
+        assert by_name["other"]["direction"] == "incoming"
+        assert by_name["other"]["relation_type"] == "owns"
