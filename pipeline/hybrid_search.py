@@ -6,13 +6,17 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from collections.abc import Callable, Iterable
 from typing import Any
 
 from pipeline import memory_store, vega_query
 
 DEFAULT_RRF_K = 60
+DEFAULT_STRONG_VECTOR_DISTANCE = 0.80
+DEFAULT_STRONG_VECTOR_BONUS = 0.012
 DEFAULT_LEXICAL_TABLES = ("entities", "events", "persona_sections", "messages")
+_TOKEN_RE = re.compile(r"[0-9A-Za-z_가-힣]+", re.UNICODE)
 
 _SOURCE_ALIASES = {
     "chat": "messages",
@@ -65,6 +69,35 @@ def _rrf(rank: int | None, weight: float, rrf_k: int) -> float:
     if rank is None:
         return 0.0
     return weight / (rrf_k + rank)
+
+
+def _has_textual_support(query: str, text: str) -> bool:
+    query_tokens = [token.lower() for token in _TOKEN_RE.findall(query or "") if len(token) >= 2]
+    if not query_tokens:
+        return False
+    normalized = " ".join(_TOKEN_RE.findall((text or "").lower()))
+    hits = sum(1 for token in dict.fromkeys(query_tokens) if token in normalized)
+    return hits >= 1 if len(query_tokens) <= 2 else hits >= 2
+
+
+def _strong_vector_bonus(distance: Any, query: str, text: str) -> float:
+    """Promote only high-confidence vector hits.
+
+    LanceDB returns cosine/L2-style distances where lower is better. The bonus is
+    intentionally small and thresholded so exact proper-noun lexical matches stay
+    stable, while a very close semantic memory is not buried under broad FTS rows.
+    """
+    if distance is None:
+        return 0.0
+    try:
+        value = float(distance)
+    except (TypeError, ValueError):
+        return 0.0
+    if value < 0.0 or value > DEFAULT_STRONG_VECTOR_DISTANCE:
+        return 0.0
+    if not _has_textual_support(query, text):
+        return 0.0
+    return DEFAULT_STRONG_VECTOR_BONUS
 
 
 def _put_base(fields: dict[str, Any], source: str, row_id: Any, text: str, snippet: str = "") -> None:
@@ -163,7 +196,16 @@ def hybrid_search(
         item["lexical_weight"] = lexical_weight
         item["vector_weight"] = vector_weight
         item["source_weight_explanation"] = explanation
-        item["fused_score"] = _rrf(lexical_rank, lexical_weight, rrf_k) + _rrf(vector_rank, vector_weight, rrf_k)
+        item["vector_confidence_bonus"] = _strong_vector_bonus(
+            item.get("vector_score"),
+            query,
+            str(item.get("text") or item.get("snippet") or ""),
+        )
+        item["fused_score"] = (
+            _rrf(lexical_rank, lexical_weight, rrf_k)
+            + _rrf(vector_rank, vector_weight, rrf_k)
+            + float(item["vector_confidence_bonus"])
+        )
         fused.append(item)
 
     return sorted(
