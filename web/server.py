@@ -1430,6 +1430,13 @@ async def _yolo_heartbeat() -> None:
     while True:
         try:
             await asyncio.sleep(HEARTBEAT_INTERVAL)
+            try:
+                from pipeline.heartbeat import run_heartbeat_periodic_work
+
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(None, run_heartbeat_periodic_work)
+            except Exception as e:
+                print(f"[heartbeat] periodic work warning: {e}")
             now = time.monotonic()
             # (1) memory-reg based — live-then-stalled YOLO sessions
             stalled = [
