@@ -885,6 +885,19 @@ MEMORY_TOOL_SCHEMAS: list[dict] = [
     },
     {
         "type": "function",
+        "name": "memory_search",
+        "description": "메시지 기록에서 키워드 기반 검색을 수행하고 관련성 순으로 상위 결과를 반환합니다. FTS5 BM25 랭킹을 사용합니다.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "검색할 키워드 또는 문구"},
+                "top_k": {"type": "integer", "description": "반환할 최대 결과 수", "default": 5}
+            },
+            "required": ["query"]
+        },
+    },
+    {
+        "type": "function",
         "name": "memory_entity_upsert",
         "description": (
             "인물·조직·프로젝트 등 엔티티 정보를 추가하거나 갱신한다. "
@@ -986,6 +999,7 @@ SESSION_TOOL_SCHEMAS: list[dict] = [
 
 # ── Schema merge ─────────────────────────────────────────────────────────────
 
+from pipeline.tools_memory import memory_search
 from pipeline.tools_code import CODE_TOOL_SCHEMAS, CODE_TOOL_FUNCTIONS
 from pipeline.vega_query import persona_upsert, event_add, entity_upsert
 
@@ -1711,6 +1725,7 @@ TOOL_FUNCTIONS: dict[str, Any] = {
     "memory_persona_update": lambda section_key, content, notes="": persona_upsert(section_key, content, notes),
     "memory_event_add": lambda event_date, title, body, tags="": event_add(event_date, title, body, tags),
     "memory_entity_upsert": lambda name, kind, notes="", aliases=None: entity_upsert(name, kind, notes, aliases),
+    "memory_search": memory_search,
     # Linear tools
     "linear_list_issues": lambda team_key=None, states=None, limit=30: (
         __import__("pipeline.linear_client", fromlist=["list_issues"]).list_issues(
