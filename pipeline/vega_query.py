@@ -35,7 +35,7 @@ _LEXICAL_TABLES = {
         "fts": "messages_fts",
         "source_table": "messages",
         "columns": ("text",),
-        "create": False,
+        "create": True,
     },
     "events": {
         "fts": "events_fts",
