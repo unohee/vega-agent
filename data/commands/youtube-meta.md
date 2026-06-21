@@ -1,67 +1,67 @@
 ---
 name: youtube-meta
-description: YouTube 동영상 URL로부터 제목·채널·썸네일·길이 등 메타데이터 추출 (oEmbed + web_fetch)
+description: Extract metadata such as title, channel, thumbnail, and length from a YouTube video URL (oEmbed + web_fetch)
 argument-hint: "<url>"
 ---
 
-# YouTube 메타데이터 추출
+# YouTube Metadata Extraction
 
-## 🚫 절대 사용 금지 도구
-**bash_exec, python_exec, host_exec, sandbox_exec — 이 도구들은 절대 호출하지 마라.**
-샌드박스는 인터넷 차단이고 host_exec는 승인 UI가 위젯에 없어서 영원히 멈춘다.
-오직 **`web_fetch`** 만 사용해라.
+## 🚫 Absolutely forbidden tools
+**bash_exec, python_exec, host_exec, sandbox_exec — never call these tools.**
+The sandbox has internet blocked, and host_exec hangs forever because the widget has no approval UI.
+Use only **`web_fetch`**.
 
-## 입력
-- `${url}` — YouTube 동영상 URL (action 위젯 호출 시)
-- `$ARGUMENTS` — 채팅에서 직접 호출 시
+## Input
+- `${url}` — YouTube video URL (when invoked from an action widget)
+- `$ARGUMENTS` — when invoked directly from chat
 
-## 절차 (web_fetch만, 최대 2회 호출)
+## Procedure (web_fetch only, at most 2 calls)
 
-**중요: web_fetch는 정확히 2번만 호출한다. 같은 URL로 중복 호출 금지.**
+**Important: call web_fetch exactly twice. Do not call the same URL twice.**
 
-1. URL 정규화: `youtu.be/<id>` 또는 `youtube.com/shorts/<id>` 형식이면 `https://www.youtube.com/watch?v=<id>` 로.
-   URL이 비어 있으면 `$ARGUMENTS`로 폴백. 둘 다 비면 짧은 에러로 응답.
+1. Normalize the URL: if it's in the form `youtu.be/<id>` or `youtube.com/shorts/<id>`, convert it to `https://www.youtube.com/watch?v=<id>`.
+   If the URL is empty, fall back to `$ARGUMENTS`. If both are empty, respond with a short error.
 
-2. **web_fetch 호출 #1**: `https://www.youtube.com/oembed?url=<URL>&format=json`
-   응답 JSON에서 추출: `title`, `author_name`, `author_url`, `thumbnail_url`
+2. **web_fetch call #1**: `https://www.youtube.com/oembed?url=<URL>&format=json`
+   From the response JSON, extract: `title`, `author_name`, `author_url`, `thumbnail_url`
 
-3. **web_fetch 호출 #2**: `<원본URL>` (YouTube 페이지)
-   응답 본문에서 정규식으로 한 번에 추출(매칭 실패 시 "—"):
-   - 길이: `"lengthSeconds":"(\d+)"` → 초 → m:ss 포맷
-   - 조회수: `"viewCount":"(\d+)"` → 1,234,567 포맷
-   - 업로드일: `"uploadDate":"(20\d\d-\d\d-\d\d)"`
-   - 설명: `"shortDescription":"((?:[^"\\]|\\.)*)"` — 첫 500자 (이스케이프 \\n, \\" 풀어줄 것)
+3. **web_fetch call #2**: `<original URL>` (the YouTube page)
+   From the response body, extract all at once with regex (use "—" on match failure):
+   - length: `"lengthSeconds":"(\d+)"` → seconds → m:ss format
+   - view count: `"viewCount":"(\d+)"` → 1,234,567 format
+   - upload date: `"uploadDate":"(20\d\d-\d\d-\d\d)"`
+   - description: `"shortDescription":"((?:[^"\\]|\\.)*)"` — first 500 chars (unescape \\n, \\")
 
-4. **2번의 fetch로 모은 데이터를 즉시 마크다운으로 작성해 응답.** 추가 fetch 호출 금지. "도구 호출했어요" 같은 메시지도 금지.
+4. **Immediately write up the data gathered from the 2 fetches as markdown and respond.** No additional fetch calls. No messages like "I called the tool" either.
 
-## ⛔ 절대 금지 (응답 마무리)
-- 마크다운 출력 후 어떤 추가 텍스트도 붙이지 마라.
-- "오늘 브리핑", "프로젝트 진행도", "한 번 더 확인할까?" 같은 후속 제안 금지.
-- "참고:", "여담:" 등으로 메모 덧붙이기 금지.
-- 위 출력 포맷 한 덩어리로 끝. 마지막 줄은 `🔗 <URL>`이어야 한다. 그 다음엔 아무것도 없다.
+## ⛔ Absolutely forbidden (response wrap-up)
+- After the markdown output, do not append any additional text.
+- No follow-up suggestions like "today's briefing", "project progress", "shall I check once more?".
+- No tacking on notes with "Note:", "Aside:", etc.
+- End with the output format above as a single block. The last line must be `🔗 <URL>`. Nothing comes after it.
 
-## 출력 포맷
+## Output format
 
 ```
 ## 🎬 <title>
 
-| 항목 | 값 |
+| Field | Value |
 |------|------|
-| 채널 | [<author_name>](<author_url>) |
-| 업로드 | <upload_date> |
-| 조회수 | <viewCount, 천단위 쉼표> |
-| 길이 | <m:ss> |
+| Channel | [<author_name>](<author_url>) |
+| Uploaded | <upload_date> |
+| Views | <viewCount, comma thousands> |
+| Length | <m:ss> |
 
 ![](<thumbnail_url>)
 
-**설명**
+**Description**
 
-> <설명 500자, 길면 '…'>
+> <description 500 chars, '…' if longer>
 
-🔗 <원본URL>
+🔗 <original URL>
 ```
 
-## 에러
-- oEmbed 응답이 JSON이 아니거나 'Unauthorized'/'Not Found' 포함: "비공개·삭제됨·연령제한"
-- web_fetch가 "fetch 실패"로 시작: "YouTube 접근 실패 — URL 확인"
-- URL 형식 부적합 (youtube.com/youtu.be 도메인 아님): "올바른 YouTube URL이 아님"
+## Errors
+- oEmbed response is not JSON or contains 'Unauthorized'/'Not Found': "private/deleted/age-restricted"
+- web_fetch starts with "fetch 실패": "YouTube access failed — check the URL"
+- URL format invalid (not a youtube.com/youtu.be domain): "Not a valid YouTube URL"

@@ -1,5 +1,5 @@
 ---
-title: "pipeline/stt_gateway.py — STT 게이트웨이"
+title: "pipeline/stt_gateway.py — STT gateway"
 tags: [stt, whisper, provider, graceful-failure]
 sources: [topics/stt-integration]
 updated: 2026-06-02
@@ -8,26 +8,26 @@ status: active
 
 # pipeline/stt_gateway.py
 
-STT(음성→텍스트) 프로바이더 공통 게이트웨이.
+Common gateway for STT (speech-to-text) providers.
 
-## 지원 프로바이더
+## Supported providers
 
-| provider 키 | 엔드포인트 | 비고 |
+| provider key | Endpoint | Notes |
 |------------|-----------|------|
 | `openai` | `api.openai.com/v1/audio/transcriptions` | whisper-1 |
 | `groq` | `api.groq.com/openai/v1/audio/transcriptions` | |
 | `local` | `localhost:8765/v1/audio/transcriptions` | faster-whisper-server |
 | `lmstudio` | `localhost:1234/v1/audio/transcriptions` | |
 
-## Graceful Failure 패턴
+## Graceful failure pattern
 
-`local` / `lmstudio` 선택 시 `is_local_stt_alive()` 먼저 호출.
-미실행이면 `LocalSTTUnavailable` 예외 → API에서 503 + `{"code": "local_stt_unavailable"}` 반환.
-클라이언트 JS는 이 코드를 잡아 "로컬 STT 미실행" 토스트만 표시하고 앱은 정상 동작.
+When `local` / `lmstudio` is selected, `is_local_stt_alive()` is called first.
+If it is not running, a `LocalSTTUnavailable` exception is raised → the API returns 503 + `{"code": "local_stt_unavailable"}`.
+The client JS catches this code and only shows a "local STT not running" toast, while the app keeps working normally.
 
-## 설정
+## Configuration
 
-`data/llm_providers.json`의 `stt` 섹션:
+The `stt` section of `data/llm_providers.json`:
 ```json
 {
   "provider": "openai",
@@ -36,14 +36,14 @@ STT(음성→텍스트) 프로바이더 공통 게이트웨이.
   "response_format": "text"
 }
 ```
-`language: null` = 자동 감지, `"ko"` = 한국어 강제.
+`language: null` = auto-detect, `"ko"` = force Korean.
 
-## API 엔드포인트
+## API endpoints
 
-- `POST /api/stt` — multipart/form-data (audio 필드)
-- `GET /api/stt/config` — 현재 설정 조회
-- `POST /api/stt/config` — 설정 변경
+- `POST /api/stt` — multipart/form-data (audio field)
+- `GET /api/stt/config` — read the current configuration
+- `POST /api/stt/config` — change the configuration
 
-## 관련
+## Related
 
 - [[topics/stt-integration]]

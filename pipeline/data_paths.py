@@ -167,6 +167,20 @@ def agents_dir() -> Path:
     return _REPO_DATA / "agents"
 
 
+def agent_md_path(name: str) -> Path:
+    """Agent guide markdown 읽기 경로. 사용자가 편집한 런타임본(data_dir/agents)이
+    존재하고 비어있지 않으면 그것을, 아니면 레포 번들 기본본(_REPO_DATA/agents)을 반환.
+    slack/google OAuth override 패턴과 동일. 0바이트 런타임 파일은 레포 번들본으로
+    폴백한다 (시드 누락·빈 파일 사고 방어 — INT-1587). 쓰기는 항상 data_dir/agents."""
+    user_path = data_dir() / "agents" / f"{name}.md"
+    try:
+        if user_path.exists() and user_path.stat().st_size > 0:
+            return user_path
+    except OSError:
+        pass
+    return _REPO_DATA / "agents" / f"{name}.md"
+
+
 def is_first_run() -> bool:
     """Returns True if user_profile.json is absent from the user data root (first launch)."""
     return not user_profile_path().exists()
