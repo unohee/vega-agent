@@ -1,40 +1,40 @@
 ---
-title: "data_paths — user data dir 경로 해석"
+title: "data_paths — user data dir path resolution"
 tags: [data-paths, config, deployment]
 sources: [entities/session-store]
 updated: 2026-06-02
 status: active
 ---
 
-# data_paths — user data dir 경로 해석
+# data_paths — user data dir path resolution
 
-모든 DB·config 경로의 단일 출처. `pipeline/data_paths.py`.
+The single source of truth for all DB/config paths. `pipeline/data_paths.py`.
 
-## 핵심 함수
+## Core functions
 
-| 함수 | 반환 | 기본값 |
+| Function | Returns | Default |
 |------|------|--------|
-| `data_dir()` | user data dir 루트 | `~/Library/Application Support/VEGA/` (macOS) |
-| `db_path()` | SQLite DB 경로 | `<data_dir>/agent.db` |
-| `mcp_config_path()` | mcp.json 경로 | `<data_dir>/mcp.json` |
+| `data_dir()` | user data dir root | `~/Library/Application Support/VEGA/` (macOS) |
+| `db_path()` | SQLite DB path | `<data_dir>/agent.db` |
+| `mcp_config_path()` | mcp.json path | `<data_dir>/mcp.json` |
 
-환경변수 `VEGA_DATA_DIR` 설정 시 기본값 오버라이드.
+Setting the `VEGA_DATA_DIR` environment variable overrides the default.
 
-## 함정 ⚠
+## Pitfall ⚠
 
-**`data/mcp.json` (레포 내)은 절대 읽지 않는다.** MCP 서버 등록은 반드시 user data dir에.
+**`data/mcp.json` (inside the repo) is never read.** MCP server registration must be in the user data dir.
 
-**`agent.db`는 `vega.db`가 아니다.** vega-agent는 `agent.db`를 사용해 메인 VEGA의 `vega.db`와 스키마 충돌을 회피. `run_log.py`·`memory_inspector.py`의 하드코딩 폴백도 `agent.db`로 통일.
+**`agent.db` is not `vega.db`.** vega-agent uses `agent.db` to avoid a schema collision with the main VEGA's `vega.db`. The hardcoded fallbacks in `run_log.py` and `memory_inspector.py` are also unified to `agent.db`.
 
-## 새 환경 초기화
+## Initializing a new environment
 
-빈 `VEGA_DATA_DIR`로 시작할 때 반드시:
+When starting with an empty `VEGA_DATA_DIR`, you must run:
 ```bash
 python scripts/init_user_db.py
 ```
-persona/events/entities/event_entities 테이블을 `vega_query._ensure_schema()`가 자동 생성.
+`vega_query._ensure_schema()` automatically creates the persona/events/entities/event_entities tables.
 
-## 관련
+## Related
 
 - [[concepts/mcp-integration]]
 - [[entities/session-store]]

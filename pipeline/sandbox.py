@@ -77,11 +77,19 @@ _PATH_MAP: list[tuple[str, str]] = [
 
 def _rewrite_host_paths(text: str) -> str:
     """Rewrite host paths in commands/code to container paths.
-    If a project dir is set, its absolute path is substituted to /project first."""
+
+    연결 폴더(_PROJECT_DIR)가 설정된 경우 — 권한 경계 모드(INT-1470). 컨테이너는
+    연결 폴더(/project)와 VEGA data(/vega_data)만 본다. 홈 전체는 마운트하지 않으므로
+    홈→/host_home 매핑도 하지 않는다 — 연결 폴더 밖 호스트 경로는 그대로 남아
+    컨테이너에서 "없는 경로"로 자연히 실패한다(= 경계 밖 접근 차단).
+
+    연결 폴더가 없으면(레거시 영속 컨테이너 경로) 기존 _PATH_MAP 매핑을 유지한다."""
     proj = _PROJECT_DIR.get()
     if proj:
         proj_abs = str(Path(proj).expanduser())
         text = text.replace(proj_abs, _PROJECT_MOUNT)
+        text = text.replace(_VEGA_DATA_HOST, "/vega_data")
+        return text
     for host, container in _PATH_MAP:
         text = text.replace(host, container)
     return text
@@ -407,6 +415,9 @@ def _exec_project(cmd: list[str], project_dir: str, timeout: int = TIMEOUT_DEFAU
     if not p.is_dir():
         return {"stdout": "", "stderr": "", "returncode": -1,
                 "error": f"작업 폴더 없음: {project_dir}"}
+    # 권한 경계(INT-1470): 연결 폴더가 설정된 요청은 그 폴더(/project)와 VEGA
+    # data(/vega_data)만 마운트한다. 홈 전체(/host_home)는 마운트하지 않는다 —
+    # "위험해서 격리한다면서 홈 전체를 노출"하던 자가무효화(sandbox.py 옛 설계)를 제거.
     docker_cmd = [
         "docker", "run", "--rm",
         "-w", _PROJECT_MOUNT,
@@ -414,7 +425,6 @@ def _exec_project(cmd: list[str], project_dir: str, timeout: int = TIMEOUT_DEFAU
         "-v", "sandbox_sandbox_lib:/workspace/lib",
         "-v", "sandbox_sandbox_packages:/workspace/site-packages",
         "-v", f"{VEGA_DATA}:/vega_data:rw",
-        "-v", f"{_HOST_HOME}:/host_home:ro",
         "-e", "PYTHONPATH=/workspace/lib:/workspace/site-packages",
         "-e", "PYTHONUNBUFFERED=1",
         "--network", "none",
