@@ -1,88 +1,88 @@
 ---
-title: "알려진 지뢰 목록"
+title: "List of known landmines"
 tags: [pitfalls, bugs, traps, critical]
 sources: [entities/session-store, concepts/ce-mode-gate, concepts/data-paths, concepts/mcp-integration]
 updated: 2026-06-02
 status: active
 ---
 
-# 알려진 지뢰 목록
+# List of known landmines
 
-반복 실수 방지용. 코드 수정 전 반드시 확인.
-
----
-
-## 1. mcp.json 경로 ⚠ 최다 실수
-
-`data_paths.mcp_config_path()`는 **user data dir**를 가리킨다.
-레포의 `data/mcp.json`은 **읽지 않는다**.
-
-→ MCP 서버 등록은 반드시 `~/Library/Application Support/VEGA/mcp.json` (또는 `$VEGA_DATA_DIR/mcp.json`).
+For preventing recurring mistakes. Always check before modifying code.
 
 ---
 
-## 2. CE 모드 이중 게이트
+## 1. mcp.json path ⚠ most common mistake
 
-원격 채널에 도구를 허용할 때 **스키마 노출 + 실행 방어 둘 다** 수정해야 한다.
-하나만 풀면 모델이 "CE 모드라 차단됨"이라며 실패.
+`data_paths.mcp_config_path()` points to the **user data dir**.
+It does **not read** the repo's `data/mcp.json`.
 
-→ [[concepts/ce-mode-gate]] 참조.
+→ MCP server registration must go in `~/Library/Application Support/VEGA/mcp.json` (or `$VEGA_DATA_DIR/mcp.json`).
 
 ---
 
-## 3. session_store 컬럼 이름
+## 2. CE mode double gate
 
-`messages` 테이블 컬럼: `conv_uuid` / `sender` / `text`.
-`session_uuid` / `role` / `content` 아님 — 과거 불일치로 깨졌던 이력 있음.
+When allowing a tool on a remote channel, you must fix **both schema exposure and execution defense**.
+If you open only one, the model fails saying "blocked because of CE mode."
 
-→ [[entities/session-store]] 참조.
+→ See [[concepts/ce-mode-gate]].
+
+---
+
+## 3. session_store column names
+
+`messages` table columns: `conv_uuid` / `sender` / `text`.
+Not `session_uuid` / `role` / `content` — there is a history of breakage from a past mismatch.
+
+→ See [[entities/session-store]].
 
 ---
 
 ## 4. vega.db vs agent.db
 
-vega-agent는 `agent.db` 사용. 메인 VEGA의 `vega.db`와 같은 user data dir를 공유해도 파일은 분리.
-`run_log.py`, `memory_inspector.py` 하드코딩 폴백도 `agent.db`.
+vega-agent uses `agent.db`. Even if it shares the same user data dir as the main VEGA's `vega.db`, the files are separate.
+The hardcoded fallbacks in `run_log.py` and `memory_inspector.py` are also `agent.db`.
 
 ---
 
-## 5. build_system() 정적 유지
+## 5. build_system() must stay static
 
-프롬프트 캐싱을 위해 `build_system()` 반환값은 매 턴 동일해야 한다.
-동적 컨텍스트(날짜, 현재 세션 등)는 `build_dynamic_preamble()`에 분리.
-`build_system()`에 동적 값 추가 → 캐시 미스 폭발.
-
----
-
-## 6. linear_* 도구 import 가드
-
-`pipeline.linear_client` 없으면 `linear_*` 스키마가 TOOL_SCHEMAS에서 자동 제외.
-없는 상태에서 강제 추가 → 도구 호출마다 실패 + `self_improve` 폭주.
+For prompt caching, the return value of `build_system()` must be identical every turn.
+Separate dynamic context (date, current session, etc.) into `build_dynamic_preamble()`.
+Adding dynamic values to `build_system()` → cache-miss explosion.
 
 ---
 
-## 7. Anthropic max_tokens 필수
+## 6. linear_* tool import guard
 
-Anthropic 프로바이더 요청에 `max_tokens` 없으면 API가 거부.
-ChatGPT Codex(responses kind)는 반대로 `max_output_tokens` 거부.
+If `pipeline.linear_client` is missing, the `linear_*` schemas are automatically excluded from TOOL_SCHEMAS.
+Force-adding them while it is missing → failures on every tool call + a `self_improve` storm.
 
 ---
 
-## 8. 새 환경(빈 DB) 부팅 순서
+## 7. Anthropic max_tokens required
 
-새 `VEGA_DATA_DIR`에서 시작할 때:
-1. `python scripts/init_user_db.py` 실행
-2. `mcp.json` 복사 (필요 시)
-3. `llm_providers.json` 복사 (필요 시)
+If an Anthropic provider request has no `max_tokens`, the API rejects it.
+Conversely, ChatGPT Codex (responses kind) rejects `max_output_tokens`.
 
-`vega_query._ensure_schema()`가 persona/events/entities 테이블을 자동 생성하지만,
-`scripts/init_user_db.py` 없이 서버 바로 실행 시 순서 문제 발생 가능.
+---
+
+## 8. Boot order for a new environment (empty DB)
+
+When starting in a new `VEGA_DATA_DIR`:
+1. Run `python scripts/init_user_db.py`
+2. Copy `mcp.json` (if needed)
+3. Copy `llm_providers.json` (if needed)
+
+`vega_query._ensure_schema()` auto-creates the persona/events/entities tables, but
+running the server directly without `scripts/init_user_db.py` can cause ordering problems.
 
 ---
 
 ## 9. create-dmg hang
 
-`scripts/build_dmg.sh` 실행 시 `create-dmg`가 대화형 프롬프트에서 멈출 수 있음.
-`--no-internet-enable` 플래그 추가로 해결.
+When running `scripts/build_dmg.sh`, `create-dmg` may hang on an interactive prompt.
+Resolved by adding the `--no-internet-enable` flag.
 
-→ [[topics/desktop-app]] 참조.
+→ See [[topics/desktop-app]].

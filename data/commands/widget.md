@@ -1,57 +1,57 @@
 ---
 name: widget
-description: Agent View(홈)에 커스텀 위젯을 대화형으로 추가. 인자로 만들 위젯을 바로 설명해도 됨.
-argument-hint: "[만들 위젯 설명]"
+description: Add a custom widget to the Agent View (home) interactively. You can also describe the widget to build directly as an argument.
+argument-hint: "[description of the widget to build]"
 ---
 
-# 위젯 생성 마법사
+# Widget Creation Wizard
 
-Agent View(홈 화면) 하단에 커스텀 위젯을 만든다. 완성되면 `widget_save` 도구로 저장하면 다음 새로고침부터 표시된다.
+Create a custom widget at the bottom of the Agent View (home screen). Once it's complete, save it with the `widget_save` tool and it will appear from the next refresh.
 
-## 위젯 타입
-- **stat** — 큰 숫자 + 라벨 (예: 미읽음 메일 수)
-- **list** — 항목 목록 (제목 + 부제)
-- **text** — 텍스트/마크다운 (브리핑 등)
-- **action** — 폼(입력 박스) + 실행 버튼 + 결과 영역. 사용자가 사무직 친화 GUI로 슬래시 커맨드를 호출할 수 있게 함.
+## Widget types
+- **stat** — a large number + label (e.g., unread mail count)
+- **list** — a list of items (title + subtitle)
+- **text** — text/markdown (briefings, etc.)
+- **action** — a form (input boxes) + run button + result area. Lets the user invoke a slash command through an office-friendly GUI.
 
-## action 위젯 만들기 (반복 작업 자동화 UI)
+## Creating an action widget (UI for automating repetitive tasks)
 
-사용자가 "유튜브 동영상 메타 추출" 같은 반복 작업을 GUI로 쓰고 싶다고 하면:
+When the user wants to use a repetitive task such as "extract YouTube video metadata" through a GUI:
 
-1. **먼저 slash 커맨드를 만든다** (`skill_save` 도구) — 본문에서 입력값은 `${name}` 또는 `$name` 으로 참조.
-   예) `/youtube-meta` 본문에 `yt-dlp --print "%(title)s ..." ${url}` 같은 식.
-2. **그 슬래시를 부르는 action 위젯을 만든다** (`widget_save` 도구, type='action').
-   - `skill`: 위에서 만든 슬래시 이름 (e.g. 'youtube-meta')
-   - `inputs`: 입력 폼 필드 배열. 각 필드는 `{name, label, type:'text'|'url'|'number'|'textarea', placeholder?, required?}`.
-   - `span`: 폼 + 결과가 들어가니 보통 2 또는 3.
-3. 사용자는 홈에서 그 카드만 보고 입력 → Run → 결과를 바로 본다 (채팅 안 거침).
+1. **First create the slash command** (`skill_save` tool) — in the body, reference input values as `${name}` or `$name`.
+   e.g.) in the `/youtube-meta` body, something like `yt-dlp --print "%(title)s ..." ${url}`.
+2. **Then create an action widget that calls that slash command** (`widget_save` tool, type='action').
+   - `skill`: the slash command name created above (e.g. 'youtube-meta')
+   - `inputs`: an array of input form fields. Each field is `{name, label, type:'text'|'url'|'number'|'textarea', placeholder?, required?}`.
+   - `span`: since it holds a form + result, usually 2 or 3.
+3. The user sees only that card on the home screen, enters input → Run → sees the result directly (without going through chat).
 
-## 사용 가능한 데이터소스 (이 중에서만 선택 — 보안 화이트리스트)
-| source | 내용 | 적합 타입 |
+## Available data sources (choose only from these — security whitelist)
+| source | content | suitable type |
 |--------|------|-----------|
-| `clock` | 현재 시각 | stat |
-| `session_count` | 대화 세션 수 | stat |
-| `skill_count` | 커스텀 skill 수/목록 | stat/list |
-| `git_status` | 작업폴더 git 변경 파일 수/목록 | stat/list |
-| `mail_count` | 중요 메일 수/목록 | stat/list |
-| `project_count` | 추적 프로젝트 수/목록 | stat/list |
-| `today_brief` | 오늘 브리핑 본문 | text |
+| `clock` | current time | stat |
+| `session_count` | number of conversation sessions | stat |
+| `skill_count` | number/list of custom skills | stat/list |
+| `git_status` | number/list of changed git files in the working folder | stat/list |
+| `mail_count` | number/list of important emails | stat/list |
+| `project_count` | number/list of tracked projects | stat/list |
+| `today_brief` | today's briefing body | text |
 
-새 데이터가 필요한데 위 목록에 없으면, 사용자에게 "그 데이터소스는 아직 화이트리스트에 없어 — 서버에 핸들러 추가가 필요해"라고 알리고, 가장 가까운 기존 source로 대안을 제시한다. 임의 URL/명령은 위젯에 넣을 수 없다.
+If you need new data that's not in the list above, tell the user "That data source isn't in the whitelist yet — it needs a handler added on the server", and suggest an alternative using the closest existing source. Arbitrary URLs/commands cannot be put into a widget.
 
-## 진행 방식
-인자에 위젯 설명이 있으면 출발점으로, 없으면 "어떤 위젯을 만들까?"로 시작. 다음을 합의 (명확한 건 다시 묻지 말 것):
-1. **id** — 소문자/숫자/하이픈 (예: `mail-today`)
-2. **제목 + 아이콘(이모지)**
-3. **타입** (stat/list/text/action)
-4. **데이터소스** (stat/list/text의 경우 위 표에서) 또는 정적 text
-5. **span** — 폭 1~3칸 (text/list는 보통 2, action도 2~3 권장)
-6. **action 타입이면 추가로**: skill(슬래시 이름) + inputs(폼 필드 배열)
+## How to proceed
+If the argument contains a widget description, use it as the starting point; otherwise start with "What widget should I make?". Agree on the following (don't ask again about what's already clear):
+1. **id** — lowercase/digits/hyphens (e.g., `mail-today`)
+2. **title + icon (emoji)**
+3. **type** (stat/list/text/action)
+4. **data source** (for stat/list/text, from the table above) or static text
+5. **span** — width of 1–3 columns (text/list usually 2, action also recommended 2–3)
+6. **for action type, additionally**: skill (slash command name) + inputs (array of form fields)
 
-## 마무리
-1. 합의 내용을 미리보기로 보여주고 확인받는다.
-2. action 타입이면 `skill_save`를 먼저, 그 다음 `widget_save` 호출 — 둘이 한 쌍.
-3. 확인되면 `widget_save(widget_id, title, type, ...)` 호출.
-4. 저장되면 "Agent View 새로고침하면 보여"라고 알린다.
+## Wrap-up
+1. Show the agreed content as a preview and get confirmation.
+2. For action type, call `skill_save` first, then `widget_save` — the two are a pair.
+3. Once confirmed, call `widget_save(widget_id, title, type, ...)`.
+4. After saving, announce "Refresh the Agent View to see it."
 
-수정은 `widget_save(..., overwrite=true)`, 삭제는 `widget_delete(widget_id)`.
+To edit, use `widget_save(..., overwrite=true)`; to delete, use `widget_delete(widget_id)`.

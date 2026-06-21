@@ -1732,6 +1732,11 @@ button.status-item:hover { background: var(--surface2); color: var(--text); }
   .session-item { padding: 10px 14px; }
   #input-area { padding: 10px 14px calc(10px + env(safe-area-inset-bottom)); }
   #send { padding: 10px 14px; }
+  /* 입력 row 폭 확보: 좁은 폭에선 첨부·마이크 버튼을 +메뉴로 접고(핸들러가 click 프록시)
+     입력창이 남은 폭을 전부 차지하게 한다. field-sizing:content가 좁은 폭에서
+     placeholder를 줄바꿈시켜 입력창이 쪼그라들던 회귀 수정. */
+  #attach-btn, #mic-wrap { display: none; }
+  #input { min-width: 0; }
   /* statusbar: safe-area 반영 */
   #statusbar {
     height: calc(22px + env(safe-area-inset-bottom));
@@ -1878,7 +1883,7 @@ button.status-item:hover { background: var(--surface2); color: var(--text); }
         <button type="button" id="attach-btn" title="파일 첨부" aria-label="파일 첨부">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 17.93 8.8l-8.59 8.57a2 2 0 1 1-2.83-2.83l8.49-8.48"/></svg>
         </button>
-        <div style="position:relative;">
+        <div id="mic-wrap" style="position:relative;">
           <button type="button" id="mic-btn" title="음성 입력 (STT)" aria-label="음성 녹음 시작/중지">
             <svg id="mic-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
           </button>
