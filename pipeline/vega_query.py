@@ -9,10 +9,19 @@ from pathlib import Path
 
 from pipeline.data_paths import db_path as _db_path
 DB_PATH = _db_path()
+_INITIAL_DB_PATH = DB_PATH
+
+
+def _current_db_path() -> Path:
+    # Preserve the historical DB_PATH monkeypatch hook, but do not pin normal runtime
+    # callers to an import-time path when VEGA_DB_FILE/VEGA_DATA_DIR changes.
+    if DB_PATH != _INITIAL_DB_PATH:
+        return Path(DB_PATH)
+    return _db_path()
 
 
 def _conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(_current_db_path())
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys=ON")
     conn.execute("PRAGMA journal_mode=WAL")
@@ -278,6 +287,17 @@ def _ensure_schema() -> None:
             conn.execute("ALTER TABLE events ADD COLUMN era TEXT")
         if "ingested_at" not in ev_cols:
             conn.execute("ALTER TABLE events ADD COLUMN ingested_at TEXT")
+        conn.execute(
+            """CREATE VIRTUAL TABLE IF NOT EXISTS events_fts USING fts5(
+                   title, body, tags,
+                   content='events', content_rowid='id',
+                   tokenize='unicode61'
+               )"""
+        )
+        conn.execute(
+            """INSERT INTO events_fts(events_fts)
+                   VALUES('rebuild')"""
+        )
 
         _ensure_lexical_fts(conn)
 
@@ -321,15 +341,41 @@ def events_by_entity(name: str) -> list[dict]:
         ).fetchall()]
 
 
+def _fts_query(keyword: str) -> str:
+    terms = [t.replace('"', '""') for t in keyword.split() if t]
+    return " OR ".join(f'"{t}"*' for t in terms)
+
+
+def _rebuild_events_fts(conn: sqlite3.Connection) -> None:
+    conn.execute("CREATE VIRTUAL TABLE IF NOT EXISTS events_fts USING fts5(title, body, tags, content='events', content_rowid='id', tokenize='unicode61')")
+    conn.execute("INSERT INTO events_fts(events_fts) VALUES('rebuild')")
+
+
 def search_events(keyword: str, limit: int = 20) -> list[dict]:
-    """Full-text search across event title and body"""
+    """Full-text search across event title/body/tags, ranked by BM25 when FTS5 is available."""
+    q = _fts_query(keyword)
+    if not q:
+        return []
     with _conn() as conn:
-        return [dict(r) for r in conn.execute(
-            """SELECT * FROM events
-               WHERE title LIKE ? OR body LIKE ?
-               ORDER BY event_date LIMIT ?""",
-            (f"%{keyword}%", f"%{keyword}%", limit)
-        ).fetchall()]
+        try:
+            _rebuild_events_fts(conn)
+            rows = conn.execute(
+                """SELECT ev.*, bm25(events_fts) AS rank
+                   FROM events_fts
+                   JOIN events ev ON ev.id = events_fts.rowid
+                   WHERE events_fts MATCH ?
+                   ORDER BY rank, ev.event_date DESC
+                   LIMIT ?""",
+                (q, limit),
+            ).fetchall()
+            return [dict(r) for r in rows]
+        except sqlite3.OperationalError:
+            return [dict(r) for r in conn.execute(
+                """SELECT * FROM events
+                   WHERE title LIKE ? OR body LIKE ? OR tags LIKE ?
+                   ORDER BY event_date DESC LIMIT ?""",
+                (f"%{keyword}%", f"%{keyword}%", f"%{keyword}%", limit)
+            ).fetchall()]
 
 
 # ── Persona queries ────────────────────────────────────────────────────────────
@@ -489,6 +535,13 @@ def event_add(event_date: str, title: str, body: str, tags: str = "") -> dict:
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
             (event_date, event_date, event_date[:7], title, body, tags, now)
         )
+        try:
+            conn.execute(
+                "INSERT INTO events_fts(rowid, title, body, tags) VALUES (?, ?, ?, ?)",
+                (cur.lastrowid, title, body, tags),
+            )
+        except sqlite3.OperationalError:
+            pass
         return {"id": cur.lastrowid, "ok": True}
 
 
