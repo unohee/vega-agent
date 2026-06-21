@@ -1,81 +1,81 @@
-# VEGA 다국어(i18n) 지원 로드맵
+# VEGA Multilingual (i18n) Support Roadmap
 
-## 현재 상태 (Phase 0 — 완료)
+## Current Status (Phase 0 — Complete)
 
-**2026-06-02** 초기 구현 완료.
+**2026-06-02** initial implementation complete.
 
-- `chat.html`, `dashboard.html`에 `VEGA_STRINGS` 객체 기반 i18n 시스템 삽입
-- 헤더에 언어 토글 버튼 추가 (`KO` ↔ `EN`)
-- `localStorage['vega_lang']`으로 선택 언어 지속화
-- `data-i18n`, `data-i18n-title`, `data-i18n-placeholder` 속성 패턴으로 정적 UI 텍스트 마킹
-- 지원 언어: **한국어(ko)**, **영어(en)**
+- Inserted a `VEGA_STRINGS` object-based i18n system into `chat.html`, `dashboard.html`
+- Added a language toggle button to the header (`KO` ↔ `EN`)
+- Persist the selected language via `localStorage['vega_lang']`
+- Mark static UI text with the `data-i18n`, `data-i18n-title`, `data-i18n-placeholder` attribute pattern
+- Supported languages: **Korean (ko)**, **English (en)**
 
 ---
 
-## Phase 1 — 문자열 완전 번역 (우선순위: 높음)
+## Phase 1 — Full String Translation (priority: high)
 
-**목표**: 모든 하드코딩 한국어 텍스트를 `data-i18n` 마킹으로 교체.
+**Goal**: replace all hardcoded Korean text with `data-i18n` markings.
 
-### 남은 작업
-| 파일 | 대상 영역 | 번역 키 수 (추정) |
+### Remaining work
+| File | Target area | Translation key count (estimated) |
 |------|-----------|------------------|
-| `chat.html` | MCP 관리 모달 | ~20개 |
-| `chat.html` | LLM 프로바이더 모달 | ~15개 |
-| `chat.html` | 컨텍스트 메뉴 (동적 생성) | ~10개 |
-| `chat.html` | 토스트 / 에러 메시지 | ~30개 |
-| `chat.html` | 파일 탐색기 패널 | ~8개 |
-| `dashboard.html` | 동적 생성 텍스트 (renderMails 등) | ~15개 |
-| `install_wizard.html` | 설치 마법사 전체 | ~40개 |
+| `chat.html` | MCP management modal | ~20 |
+| `chat.html` | LLM provider modal | ~15 |
+| `chat.html` | Context menu (dynamically generated) | ~10 |
+| `chat.html` | Toast / error messages | ~30 |
+| `chat.html` | File explorer panel | ~8 |
+| `dashboard.html` | Dynamically generated text (renderMails, etc.) | ~15 |
+| `install_wizard.html` | Entire install wizard | ~40 |
 
-**접근 방식**: 동적으로 생성되는 innerHTML 문자열은 `t(key)` 헬퍼 함수로 교체.
+**Approach**: replace dynamically generated innerHTML strings with the `t(key)` helper function.
 
 ```js
-// 권장 패턴 — 동적 문자열용
+// Recommended pattern — for dynamic strings
 function t(key) {
   const lang = localStorage.getItem('vega_lang') || 'ko';
   return (VEGA_STRINGS[lang] || VEGA_STRINGS.ko)[key] || key;
 }
 
-// 사용 예
+// Usage example
 el.innerHTML = `<button>${t('mcp_reload')}</button>`;
 ```
 
 ---
 
-## Phase 2 — 번역 파일 외부화 (우선순위: 중간)
+## Phase 2 — Externalize Translation Files (priority: medium)
 
-**목표**: 번역 문자열을 HTML에서 분리해 유지보수성 향상.
+**Goal**: separate translation strings from HTML to improve maintainability.
 
-### 방안 A: JSON 파일 (`data/i18n/`)
+### Option A: JSON files (`data/i18n/`)
 ```
 data/
   i18n/
     ko.json
     en.json
-    ja.json   (추후 추가)
+    ja.json   (added later)
 ```
 
-서버 엔드포인트 `/api/i18n/{lang}` 추가, 페이지 로드 시 fetch.
+Add a server endpoint `/api/i18n/{lang}`, fetched on page load.
 
-**장점**: 번역자가 HTML 수정 없이 JSON만 편집 가능.  
-**단점**: 추가 HTTP 요청, 초기 렌더링 텍스트 깜빡임(FOUC) 가능성.
+**Pros**: translators can edit only the JSON without modifying HTML.  
+**Cons**: an extra HTTP request, and possible text flicker on initial rendering (FOUC).
 
-### 방안 B: 인라인 유지 + 빌드 시 생성
-`scripts/generate_i18n.py`가 `data/i18n/*.json`을 읽어 HTML에 자동 삽입.
+### Option B: keep inline + generate at build time
+`scripts/generate_i18n.py` reads `data/i18n/*.json` and auto-inserts into the HTML.
 
-**권장**: Phase 2에서는 방안 A, 번들링 도입 시 방안 B로 전환.
+**Recommendation**: use Option A in Phase 2, switch to Option B when bundling is introduced.
 
 ---
 
-## Phase 3 — 추가 언어 (우선순위: 낮음)
+## Phase 3 — Additional Languages (priority: low)
 
-| 언어 | 코드 | 비고 |
+| Language | Code | Notes |
 |------|------|------|
-| 일본어 | `ja` | 한자 공유로 번역 비용 낮음 |
-| 중국어 (간체) | `zh-CN` | 대형 사용자 풀 |
-| 스페인어 | `es` | 글로벌 2위 언어 |
+| Japanese | `ja` | Low translation cost thanks to shared kanji |
+| Chinese (Simplified) | `zh-CN` | Large user pool |
+| Spanish | `es` | World's 2nd-largest language |
 
-**버튼 UI 전환**: 토글 버튼 → 드롭다운(`<select>`)으로 교체 필요.
+**Button UI change**: the toggle button needs to be replaced with a dropdown (`<select>`).
 
 ```html
 <select id="lang-select">
@@ -88,38 +88,38 @@ data/
 
 ---
 
-## Phase 4 — 에이전트 응답 언어 연동 (우선순위: 낮음)
+## Phase 4 — Agent Response Language Linkage (priority: low)
 
-**목표**: UI 언어 설정이 에이전트 시스템 프롬프트에도 반영되어, LLM이 선택 언어로 응답.
+**Goal**: the UI language setting is also reflected in the agent system prompt, so the LLM responds in the selected language.
 
-### 구현 방향
-1. `POST /api/lang` 엔드포인트 — 사용자 언어 설정을 서버에 저장
-2. `pipeline/session_store.py` — 세션 메타에 `preferred_lang` 필드 추가
-3. `llm_gateway.py` — 시스템 프롬프트에 언어 지시 삽입:
+### Implementation direction
+1. `POST /api/lang` endpoint — store the user's language setting on the server
+2. `pipeline/session_store.py` — add a `preferred_lang` field to the session metadata
+3. `llm_gateway.py` — insert a language directive into the system prompt:
    ```
    Respond in English. The user has set their preferred language to English.
    ```
 
-### 고려사항
-- 언어 설정은 세션별이 아닌 사용자 전역 설정
-- `data/user_profile.json`의 `preferred_lang` 필드로 관리
-- `web/routers/onboarding.py`의 프로필 저장 로직에 통합
+### Considerations
+- The language setting is a user-global setting, not per-session
+- Managed via the `preferred_lang` field in `data/user_profile.json`
+- Integrated into the profile-save logic in `web/routers/onboarding.py`
 
 ---
 
-## 기술 부채 및 제약
+## Technical Debt and Constraints
 
-| 항목 | 현재 상태 | 해결책 |
+| Item | Current status | Solution |
 |------|-----------|--------|
-| 동적 생성 텍스트 | 하드코딩 한국어 | `t()` 헬퍼 함수 점진적 도입 |
-| RTL 언어 지원 없음 | CSS `direction` 미적용 | 아랍어·히브리어 추가 시 필요 |
-| 복수형 처리 없음 | "3개 세션" 등 단순 처리 | `Intl.PluralRules` 도입 필요 시 |
-| 날짜/숫자 로케일 | `Intl.DateTimeFormat` 미사용 | Phase 2에서 통합 권장 |
+| Dynamically generated text | Hardcoded Korean | Gradually introduce the `t()` helper function |
+| No RTL language support | CSS `direction` not applied | Needed when adding Arabic·Hebrew |
+| No pluralization handling | Simple handling such as "3개 세션" (3 sessions) | Introduce `Intl.PluralRules` if needed |
+| Date/number locale | `Intl.DateTimeFormat` not used | Recommended to integrate in Phase 2 |
 
 ---
 
-## 참고
+## References
 
-- 현재 구현 위치: `web/static/chat.html:5400~5533`, `web/static/dashboard.html:1030~1083`
-- 번역 키 네이밍 규칙: `{컴포넌트}_{요소}` (예: `ob_title`, `card_events`)
-- `localStorage` 키: `vega_lang` (값: `"ko"` | `"en"`)
+- Current implementation location: `web/static/chat.html:5400~5533`, `web/static/dashboard.html:1030~1083`
+- Translation key naming convention: `{component}_{element}` (e.g. `ob_title`, `card_events`)
+- `localStorage` key: `vega_lang` (value: `"ko"` | `"en"`)

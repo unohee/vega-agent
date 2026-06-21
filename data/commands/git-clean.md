@@ -1,49 +1,49 @@
 ---
 name: git-clean
-description: 현재 작업폴더에서 git의 추적 안 되는 파일을 확인하고 사용자 확인 후 정리한다.
+description: Check for untracked files in the current working folder and clean them up after user confirmation.
 ---
 
 # /git-clean
 
-현재 작업폴더에서 Git이 추적하지 않는(untracked) 파일/디렉터리를 확인하고, 사용자 확인 후 정리한다.
+Check for files/directories that Git is not tracking (untracked) in the current working folder, and clean them up after user confirmation.
 
-## 실행 절차
+## Execution Procedure
 
-1. `bash_exec`로 현재 작업폴더의 Git 상태를 확인한다.
-   - 실행 명령:
+1. Use `bash_exec` to check the Git status of the current working folder.
+   - Command to run:
      ```bash
      git status --short
      ```
-   - 출력에서 `??`로 표시되는 untracked 파일/디렉터리를 식별한다.
+   - Identify the untracked files/directories shown with `??` in the output.
 
-2. untracked 항목이 없으면 사용자에게 "정리할 untracked 파일이 없다"고 알리고 종료한다.
+2. If there are no untracked items, tell the user "There are no untracked files to clean up" and exit.
 
-3. untracked 항목이 있으면 `bash_exec`로 삭제 예정 목록을 dry-run으로 보여준다.
-   - 실행 명령:
+3. If there are untracked items, use `bash_exec` to show the to-be-deleted list as a dry-run.
+   - Command to run:
      ```bash
      git clean -nd
      ```
-   - 삭제 예정 파일/디렉터리를 요약해서 사용자에게 보여준다.
+   - Summarize the files/directories scheduled for deletion and show them to the user.
 
-4. 위험 작업이므로 실제 삭제 전 반드시 사용자 확인을 받는다.
-   - 확인 문구 예:
-     "위 항목들을 `git clean -fd`로 삭제할까?"
+4. Since this is a dangerous operation, always get user confirmation before actually deleting.
+   - Example confirmation prompt:
+     "Shall I delete the items above with `git clean -fd`?"
 
-5. 사용자가 승인하면 `bash_exec`로 실제 정리를 실행한다.
-   - 실행 명령:
+5. Once the user approves, use `bash_exec` to run the actual cleanup.
+   - Command to run:
      ```bash
      git clean -fd
      ```
 
-6. 정리 후 `bash_exec`로 상태를 다시 확인한다.
-   - 실행 명령:
+6. After cleanup, use `bash_exec` to check the status again.
+   - Command to run:
      ```bash
      git status --short
      ```
-   - 결과를 1~3줄로 요약한다.
+   - Summarize the result in 1–3 lines.
 
-## 주의
+## Caution
 
-- tracked 파일 변경사항은 건드리지 않는다.
-- ignored 파일까지 삭제하지 않는다. 즉 `git clean -fdx`는 사용하지 않는다.
-- 삭제 작업은 반드시 사용자 확인 후 실행한다.
+- Do not touch changes to tracked files.
+- Do not delete ignored files either. That is, do not use `git clean -fdx`.
+- Always run the deletion only after user confirmation.

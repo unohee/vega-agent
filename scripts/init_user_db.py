@@ -28,7 +28,7 @@ def init_db() -> Path:
     # persona / events / entities (vega_query 가 import 시 자동 생성하지만 명시 호출)
     from pipeline.vega_query import _ensure_schema as _ensure_kb
     _ensure_kb()
-    print("  ✓ persona_sections, events, entities, event_entities")
+    print("  ✓ persona_sections, events, entities, event_entities, entity_edges")
 
     # contacts
     from pipeline.contact_store import init_schema as _init_contacts, _open_db

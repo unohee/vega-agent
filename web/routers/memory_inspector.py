@@ -8,8 +8,36 @@ import sqlite3
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Query, Request
-from fastapi.responses import JSONResponse
+try:
+    from fastapi import APIRouter, Query, Request
+    from fastapi.responses import JSONResponse
+except ModuleNotFoundError:
+    class APIRouter:
+        def get(self, *_args, **_kwargs):
+            return lambda fn: fn
+
+        def patch(self, *_args, **_kwargs):
+            return lambda fn: fn
+
+        def post(self, *_args, **_kwargs):
+            return lambda fn: fn
+
+        def delete(self, *_args, **_kwargs):
+            return lambda fn: fn
+
+    def Query(default, *_args, **_kwargs):
+        return default
+
+    class Request:
+        pass
+
+    class JSONResponse:
+        def __init__(self, content, status_code=200):
+            import json
+
+            self.status_code = status_code
+            self.body = json.dumps(content).encode("utf-8")
+
 from pydantic import BaseModel
 
 router = APIRouter()
@@ -44,6 +72,26 @@ def _ensure_tables(conn: sqlite3.Connection) -> None:
             canonical_id TEXT, aliases_json TEXT, notes TEXT, first_seen TEXT, last_seen TEXT,
             sensitivity TEXT
         );
+        CREATE TABLE IF NOT EXISTS entity_edges (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source_entity_id INTEGER NOT NULL,
+            target_entity_id INTEGER NOT NULL,
+            relation_type TEXT NOT NULL,
+            evidence TEXT,
+            source_message_id TEXT,
+            confidence REAL NOT NULL DEFAULT 1.0,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (source_entity_id) REFERENCES entities(id) ON DELETE CASCADE,
+            FOREIGN KEY (target_entity_id) REFERENCES entities(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_entity_edges_source ON entity_edges(source_entity_id);
+        CREATE INDEX IF NOT EXISTS idx_entity_edges_target ON entity_edges(target_entity_id);
+        CREATE TABLE IF NOT EXISTS event_entities (
+            event_id INTEGER NOT NULL,
+            entity_id INTEGER NOT NULL,
+            match_text TEXT
+        );
     """)
     # 민감도 태그 마이그레이션 (INT-1404)
     for tbl in ("persona_sections", "events", "entities"):
@@ -58,6 +106,7 @@ def _ensure_tables(conn: sqlite3.Connection) -> None:
 def _conn() -> sqlite3.Connection:
     conn = sqlite3.connect(str(_db()))
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys=ON")
     _ensure_tables(conn)
     return conn
 
@@ -263,6 +312,74 @@ async def list_rules():
 
 # ── Summary ──────────────────────────────────────────────────────
 
+CANONICAL_ID_BASELINE_COVERAGE_PERCENT = 3.4
+
+
+def _canonical_id_coverage_report(conn: sqlite3.Connection) -> dict:
+    total_entities = conn.execute("SELECT count(*) FROM entities").fetchone()[0]
+    canonicalized_entities = conn.execute(
+        "SELECT count(*) FROM entities WHERE canonical_id IS NOT NULL AND trim(canonical_id) != ''"
+    ).fetchone()[0]
+    current_coverage = round((canonicalized_entities / total_entities) * 100, 1) if total_entities else 0.0
+
+    rows = conn.execute(
+        """
+        SELECT id, name, kind, trim(canonical_id) AS canonical_id
+        FROM entities
+        WHERE canonical_id IS NOT NULL AND trim(canonical_id) != ''
+        ORDER BY canonical_id, lower(name), id
+        """
+    ).fetchall()
+    clusters_by_canonical: dict[str, list[dict]] = {}
+    for row in rows:
+        clusters_by_canonical.setdefault(row["canonical_id"], []).append({
+            "id": row["id"],
+            "name": row["name"],
+            "kind": row["kind"],
+        })
+    duplicate_clusters = [
+        {"canonical_id": canonical_id, "count": len(entities), "entities": entities}
+        for canonical_id, entities in clusters_by_canonical.items()
+        if len(entities) > 1
+    ]
+    duplicate_clusters.sort(key=lambda c: (-c["count"], c["canonical_id"]))
+
+    unresolved_rows = conn.execute(
+        """
+        SELECT e.id, e.name, e.kind,
+               count(DISTINCT ee.event_id) AS event_count,
+               count(*) AS mention_count
+        FROM entities e
+        JOIN event_entities ee ON ee.entity_id = e.id
+        WHERE e.canonical_id IS NULL OR trim(e.canonical_id) = ''
+        GROUP BY e.id, e.name, e.kind
+        ORDER BY event_count DESC, mention_count DESC, lower(e.name), e.id
+        LIMIT 20
+        """
+    ).fetchall()
+
+    return {
+        "baseline_coverage_percent": CANONICAL_ID_BASELINE_COVERAGE_PERCENT,
+        "current_coverage_percent": current_coverage,
+        "post_run_coverage_percent": current_coverage,
+        "total_entities": total_entities,
+        "canonicalized_entities": canonicalized_entities,
+        "duplicate_canonical_clusters": {
+            "total": len(duplicate_clusters),
+            "clusters": duplicate_clusters[:20],
+        },
+        "unresolved_high_frequency_entities": [dict(row) for row in unresolved_rows],
+    }
+
+
+@router.get("/api/memory/entity-resolution")
+async def entity_resolution_report():
+    """Entity-resolution coverage and review queues. No implicit merges are performed."""
+    with _conn() as conn:
+        report = _canonical_id_coverage_report(conn)
+    return JSONResponse(report)
+
+
 @router.get("/api/memory/summary")
 async def memory_summary():
     """Overall memory status summary."""
@@ -274,6 +391,7 @@ async def memory_summary():
         entity_kinds = conn.execute(
             "SELECT kind, count(*) as cnt FROM entities GROUP BY kind ORDER BY cnt DESC"
         ).fetchall()
+        entity_resolution = _canonical_id_coverage_report(conn)
         # 세션 메모리(narrative) 카운트도 — 테이블 없을 수 있어 방어적
         try:
             sessions_total = conn.execute("SELECT count(*) FROM session_digest").fetchone()[0]
@@ -282,7 +400,12 @@ async def memory_summary():
     return JSONResponse({
         "persona": {"total": persona_total, "active": persona_active},
         "events": {"total": events_total},
-        "entities": {"total": entities_total, "by_kind": [dict(r) for r in entity_kinds]},
+        "entities": {
+            "total": entities_total,
+            "by_kind": [dict(r) for r in entity_kinds],
+            "entity_resolution": entity_resolution,
+        },
+        "entity_resolution": entity_resolution,
         "sessions": {"total": sessions_total},
     })
 
