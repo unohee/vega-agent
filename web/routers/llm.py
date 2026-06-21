@@ -12,6 +12,8 @@ from pathlib import Path
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
+from pipeline.hybrid_search import hybrid_recall
+
 router = APIRouter()
 
 def _agent_md_dir() -> Path:
@@ -167,6 +169,64 @@ async def gpt_relogin():
 
 # ── Model catalog ────────────────────────────────────────────────────────────
 
+# ChatGPT(Codex) live discovery 실패 시 curated fallback.
+# hermes_cli/codex_models.py DEFAULT_CODEX_MODELS 미러. gpt-5.3-codex-spark는
+# supported_in_api=false지만 OAuth Codex 백엔드에선 유효 — 그 플래그로 필터하지 않는다.
+_CODEX_FALLBACK_MODELS = ["gpt-5.5", "gpt-5.4-mini", "gpt-5.4", "gpt-5.3-codex", "gpt-5.3-codex-spark"]
+
+
+def _fetch_codex_model_slugs(prov: dict) -> list[str]:
+    """ChatGPT(Codex) OAuth 백엔드의 모델 슬러그를 live 조회.
+    표준 OpenAI /models가 아니라 codex 전용 엔드포인트(/backend-api/codex/models)를 쓴다.
+    토큰/네트워크 실패 시 빈 리스트 → 호출부가 fallback 카탈로그로 대체."""
+    import urllib.request as _ur
+    if prov.get("auth_type") != "chatgpt_oauth":
+        return []
+    try:
+        from pipeline.auth.chatgpt import ensure_valid_token
+        token = ensure_valid_token()
+    except Exception:
+        return []
+    if not token:
+        return []
+    base = (prov.get("base_url") or "").rstrip("/")
+    if base.endswith("/responses"):
+        base = base[: -len("/responses")]
+    url = base + "/models?client_version=1.0.0"
+    try:
+        req = _ur.Request(
+            url,
+            headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+            method="GET",
+        )
+        with _ur.urlopen(req, timeout=10) as r:
+            data = json.loads(r.read().decode())
+    except Exception:
+        return []
+    entries = data.get("models", []) if isinstance(data, dict) else []
+    sortable: list[tuple[int, str]] = []
+    for item in entries:
+        if not isinstance(item, dict):
+            continue
+        slug = item.get("slug")
+        if not isinstance(slug, str) or not slug.strip():
+            continue
+        slug = slug.strip()
+        # visibility=hide/hidden만 제외. supported_in_api는 공개 API용 플래그라 무시.
+        vis = item.get("visibility")
+        if isinstance(vis, str) and vis.strip().lower() in {"hide", "hidden"}:
+            continue
+        prio = item.get("priority")
+        rank = int(prio) if isinstance(prio, (int, float)) else 10_000
+        sortable.append((rank, slug))
+    sortable.sort(key=lambda x: (x[0], x[1]))
+    deduped: list[str] = []
+    for _, slug in sortable:
+        if slug not in deduped:
+            deduped.append(slug)
+    return deduped
+
+
 def _fetch_models(provider_name: str) -> list[dict]:
     """Call the provider's /models endpoint and normalize the response. Uses cache."""
     import time as _t
@@ -185,8 +245,12 @@ def _fetch_models(provider_name: str) -> list[dict]:
     kind = prov.get("kind", "chat_completions")
     auth_type = prov.get("auth_type", "none")
     if kind == "responses":
-        models = [{"id": prov.get("default_model", "gpt-5.5"), "name": "GPT-5.5 (Codex)",
-                   "context_length": None, "modalities": ["text"], "pricing": None}]
+        slugs = _fetch_codex_model_slugs(prov) or list(_CODEX_FALLBACK_MODELS)
+        default = prov.get("default_model", "gpt-5.5")
+        if default and default not in slugs:
+            slugs.insert(0, default)
+        models = [{"id": s, "name": s, "context_length": None,
+                   "modalities": ["text"], "pricing": None} for s in slugs]
         _MODELS_CACHE[provider_name] = (now, models)
         return models
 
@@ -324,7 +388,8 @@ async def llm_agent_md_get(name: str):
     """Return data/agents/{name}.md. name='_default' is also valid. Returns empty string if file is absent."""
     if "/" in name or ".." in name:
         return JSONResponse({"error": "invalid name"}, status_code=400)
-    p = _agent_md_dir() / f"{name}.md"
+    from pipeline.data_paths import agent_md_path
+    p = agent_md_path(name)
     if not p.exists():
         return JSONResponse({"name": name, "exists": False, "text": ""})
     try:
@@ -431,6 +496,20 @@ async def mcp_list():
             "raw": explicit.get(name) if is_explicit else None,
         })
     return JSONResponse({"servers": out})
+
+
+@router.get("/tools/memory")
+async def tool_memory_recall(query: str, person_id: str | None = None) -> str:
+    """LLM-accessible memory recall using hybrid RRF search.
+    
+    Falls back to empty string if embedder is unavailable.
+    """
+    try:
+        return hybrid_recall(query, person_id=person_id, limit=5)
+    except Exception as e:
+        # Model load failure or missing embedder
+        logging.warning(f"Hybrid memory recall failed: {e}")
+        return ""
 
 
 @router.post("/api/mcp/servers")

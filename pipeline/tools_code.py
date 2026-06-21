@@ -772,10 +772,9 @@ CODE_TOOL_SCHEMAS: list[dict] = [
         "description": (
             "bash 명령어를 격리된 샌드박스 컨테이너에서 실행한다. "
             "파일 조작, 데이터 처리, 계산 등에 사용. "
-            "경로는 호스트 표기 그대로 쓰면 된다 — ~/dev/VEGA/data, "
-            "/Users/<me>/... 같은 호스트 경로는 컨테이너 경로로 자동 변환된다 "
-            "(VEGA data→/vega_data 읽기/쓰기, 그 외 홈→/host_home 읽기 전용). "
-            "호스트 파일을 가공하려면 /vega_data로 복사한 뒤 작업할 것. "
+            "경로는 호스트 표기 그대로 쓰면 된다 — 호스트 경로는 컨테이너 경로로 자동 변환된다. "
+            "연결된 작업 폴더가 있으면 그 폴더(읽기/쓰기)와 VEGA data(/vega_data)만 접근 가능하다 "
+            "— 연결 폴더 밖 경로는 차단된다. 연결 폴더가 없으면 홈은 /host_home(읽기 전용)으로 접근된다. "
             "인터넷 접근 없음. 호스트 시스템 상태(프로세스·Docker)를 보려면 system_info 사용."
         ),
         "parameters": {
@@ -794,10 +793,9 @@ CODE_TOOL_SCHEMAS: list[dict] = [
             "Python 코드를 격리된 샌드박스 컨테이너에서 실행한다. "
             "데이터 분석, 계산, 파일 처리 등에 사용. "
             "차트가 필요하면 chart_matplotlib 또는 chart_plotly를 대신 사용. "
-            "경로는 호스트 표기 그대로 쓰면 된다 — ~/dev/VEGA/data, "
-            "/Users/<me>/... 같은 호스트 경로는 컨테이너 경로로 자동 변환된다 "
-            "(VEGA data→/vega_data 읽기/쓰기, 그 외 홈→/host_home 읽기 전용). "
-            "호스트 파일을 수정·생성하려면 /vega_data 아래에서 작업할 것."
+            "경로는 호스트 표기 그대로 쓰면 된다 — 호스트 경로는 컨테이너 경로로 자동 변환된다. "
+            "연결된 작업 폴더가 있으면 그 폴더(읽기/쓰기)와 VEGA data(/vega_data)만 접근 가능하다 "
+            "— 연결 폴더 밖 경로는 차단된다. 연결 폴더가 없으면 홈은 /host_home(읽기 전용)으로 접근된다."
         ),
         "parameters": {
             "type": "object",

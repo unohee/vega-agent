@@ -64,17 +64,13 @@ def log_dir() -> Path:
 
 
 def db_path() -> Path:
-    # NOTE: vega-agent 는 기본적으로 자체 agent.db 를 쓴다. 메인(개인) VEGA 의 vega.db
-    # 와 데이터 디렉터리를 공유하더라도 파일을 분리해 스키마 충돌을 피한다
-    # (reference_two_db_fork). 단 개인용으로 실행할 때는 VEGA_DB_FILE 환경변수로
-    # vega.db 등 다른 DB 파일을 가리킬 수 있다 — 공개 배포본 분기는 그대로 유지하면서
-    # 개인 머신에서만 78,800 messages 가 든 개인 DB 를 인식하게 하는 환경 분리 방식.
-    # 절대경로면 그대로, 파일명만 주면 data_dir() 하위로 해석.
+    # Canonical VEGA database path. VEGA_DB_FILE may point at an alternate DB;
+    # absolute paths are used as-is, bare filenames resolve under data_dir().
     override = os.environ.get("VEGA_DB_FILE", "").strip()
     if override:
         p = Path(override).expanduser()
         return p if p.is_absolute() else data_dir() / p
-    return data_dir() / "agent.db"
+    return data_dir() / "vega.db"
 
 
 def contacts_db_path() -> Path:
@@ -165,6 +161,20 @@ def user_commands_dir() -> Path:
 def agents_dir() -> Path:
     """Per-provider agent.md files (bundled with repo)."""
     return _REPO_DATA / "agents"
+
+
+def agent_md_path(name: str) -> Path:
+    """Agent guide markdown 읽기 경로. 사용자가 편집한 런타임본(data_dir/agents)이
+    존재하고 비어있지 않으면 그것을, 아니면 레포 번들 기본본(_REPO_DATA/agents)을 반환.
+    slack/google OAuth override 패턴과 동일. 0바이트 런타임 파일은 레포 번들본으로
+    폴백한다 (시드 누락·빈 파일 사고 방어 — INT-1587). 쓰기는 항상 data_dir/agents."""
+    user_path = data_dir() / "agents" / f"{name}.md"
+    try:
+        if user_path.exists() and user_path.stat().st_size > 0:
+            return user_path
+    except OSError:
+        pass
+    return _REPO_DATA / "agents" / f"{name}.md"
 
 
 def is_first_run() -> bool:

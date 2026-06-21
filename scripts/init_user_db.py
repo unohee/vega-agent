@@ -1,5 +1,5 @@
 # Created: 2026-05-27
-# Purpose: 신규 사용자 DB 부트스트랩 — VEGA_DATA_DIR 아래 agent.db 초기화
+# Purpose: 신규 사용자 DB 부트스트랩 — VEGA_DATA_DIR 아래 vega.db 초기화
 #   서버 첫 실행 전에 실행하거나 install.sh에서 호출.
 #   모든 pipeline 모듈의 CREATE TABLE IF NOT EXISTS를 한 번에 실행.
 # Dependencies: pipeline/*
@@ -28,7 +28,7 @@ def init_db() -> Path:
     # persona / events / entities (vega_query 가 import 시 자동 생성하지만 명시 호출)
     from pipeline.vega_query import _ensure_schema as _ensure_kb
     _ensure_kb()
-    print("  ✓ persona_sections, events, entities, event_entities")
+    print("  ✓ persona_sections, events, entities, event_entities, entity_edges")
 
     # contacts
     from pipeline.contact_store import init_schema as _init_contacts, _open_db

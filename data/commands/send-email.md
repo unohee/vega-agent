@@ -1,60 +1,60 @@
 ---
 name: send-email
-description: Gmail로 이메일 초안을 작성하고 사용자 확인 후 전송한다.
-argument-hint: "[수신자/목적/본문 힌트]"
+description: Compose an email draft with Gmail and send it after user confirmation.
+argument-hint: "[recipient/purpose/body hint]"
 ---
 
 # /send-email
 
-Gmail API로 이메일을 작성하고, 사용자 확인 후 전송한다.
+Compose an email with the Gmail API and send it after user confirmation.
 
-## 입력
-- 사용자 인자: `/send-email` 뒤에 붙은 내용 전체
-- 예: `/send-email alisa@example.com Atlas Cloud 스폰서십 답장 영어로 짧게`
+## Input
+- User argument: everything that follows `/send-email`
+- Example: `/send-email alisa@example.com Atlas Cloud 스폰서십 답장 영어로 짧게`
 
-사용자 인자에 수신자, 목적, 톤, 포함할 내용이 있으면 이를 바탕으로 이메일을 작성한다. 정보가 부족하면 필요한 항목만 짧게 질문한다.
+If the user argument contains a recipient, purpose, tone, or content to include, compose the email based on it. If information is missing, briefly ask only for the items you need.
 
-## 절차
+## Procedure
 
-1. **요구사항 파악**
-   - 사용자 인자에서 아래 정보를 추출한다.
-     - 수신자 이메일
-     - 제목
-     - 본문 목적
-     - 톤: 격식/캐주얼/비즈니스/짧게 등
-   - 수신자 이메일, 제목, 본문 목적 중 핵심 정보가 없으면 사용자에게 추가로 질문한다.
-   - 발신 계정은 설정에서 연결된 Google 계정 하나를 사용한다 (별도 선택 없음).
+1. **Identify requirements**
+   - Extract the following information from the user argument.
+     - Recipient email
+     - Subject
+     - Body purpose
+     - Tone: formal/casual/business/brief, etc.
+   - If any of the core information among recipient email, subject, and body purpose is missing, ask the user for more.
+   - Use the single Google account connected in settings as the sending account (no separate selection).
 
-2. **관련 맥락 확인**
-   - 사용자가 “이전 메일”, “답장”, “아까 온 메일”, “최근 메일” 등을 언급하면 `gmail_search`로 관련 메일을 검색한다.
-   - 필요한 경우 `gmail_read`로 원문을 읽고 답장 맥락을 반영한다.
-   - 검색 결과가 여러 개면 가장 관련 높은 후보를 요약해서 사용자에게 확인받는다.
+2. **Check relevant context**
+   - If the user mentions "the previous email", "reply", "the email that just came", "recent email", etc., search for the relevant email with `gmail_search`.
+   - If needed, read the original with `gmail_read` and reflect the reply context.
+   - If there are multiple search results, summarize the most relevant candidate and confirm it with the user.
 
-3. **이메일 초안 작성**
-   - 사용자의 목적과 맥락에 맞춰 제목과 본문을 작성한다.
-   - 비즈니스 메일은 명확하고 짧게 쓴다.
-   - 협상/제안/민감한 내용은 조건, 범위, 확인사항을 bullet로 정리한다.
-   - 사용자가 한국어/영어를 지정하지 않으면 맥락에 맞는 언어를 선택한다.
+3. **Draft the email**
+   - Write the subject and body to match the user's purpose and context.
+   - Write business emails clearly and concisely.
+   - For negotiations/proposals/sensitive content, organize the conditions, scope, and items to confirm as bullets.
+   - If the user does not specify Korean/English, choose the language that fits the context.
 
-4. **전송 전 확인**
-   - 아래 형식으로 사용자에게 미리보기를 보여준다.
-     - From 계정
+4. **Confirm before sending**
+   - Show the user a preview in the following format.
+     - From account
      - To
      - Subject
      - Body
-   - 반드시 “이대로 보낼까?”라고 확인한다.
+   - Always confirm with "Send it as is?"
 
-5. **전송 또는 임시저장**
-   - 사용자가 명시적으로 승인하면 `gmail_send`를 호출한다.
-   - 승인 전에는 절대 전송하지 않는다.
-   - 사용자가 “임시저장만”, “draft로”, “초안 저장”이라고 하면 `gmail_draft`를 호출한다.
+5. **Send or save as draft**
+   - Call `gmail_send` only after the user explicitly approves.
+   - Never send before approval.
+   - If the user says "just save as draft", "as a draft", "save the draft", call `gmail_draft`.
 
-6. **완료 보고**
-   - 전송 성공 시: “보냈어.”
-   - 임시저장 성공 시: “Gmail 임시보관함에 저장했어.”
-   - 오류 발생 시: 오류 내용을 요약하고 다음 조치를 제안한다.
+6. **Report completion**
+   - On successful send: "Sent."
+   - On successful draft save: "Saved to your Gmail Drafts."
+   - On error: summarize the error and suggest next steps.
 
-## 안전 규칙
-- 이메일 전송(`gmail_send`)은 반드시 사용자 확인 후 실행한다.
-- 수신자/제목/본문이 애매하면 전송하지 말고 확인 질문을 한다.
-- 민감한 협상·계약·금전 조건은 사용자가 준 내용을 임의로 확정하지 않고 “제안/문의” 형태로 작성한다.
+## Safety rules
+- Email sending (`gmail_send`) must only be executed after user confirmation.
+- If the recipient/subject/body is ambiguous, do not send; ask a confirming question instead.
+- For sensitive negotiations, contracts, or financial terms, do not arbitrarily finalize the content the user provided; write it as a "proposal/inquiry" instead.
