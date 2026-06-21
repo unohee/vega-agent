@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import sqlite3
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -41,6 +42,100 @@ except ModuleNotFoundError:
 from pydantic import BaseModel
 
 router = APIRouter()
+
+
+_LEXICAL_TOKEN_RE = re.compile(r"[0-9A-Za-z_가-힣]+", re.UNICODE)
+_SEARCH_FTS_TABLES = {
+    "persona_sections": ("persona_sections_fts", ("section_key", "content", "notes", "source")),
+    "events": ("events_fts", ("title", "body", "tags")),
+    "entities": ("entities_fts", ("name", "kind", "canonical_id", "aliases_json", "notes")),
+}
+
+
+def _build_fts5_prefix_query(query: str, max_tokens: int = 8) -> str:
+    try:
+        from pipeline import vega_query
+        return vega_query.build_fts5_prefix_query(query, max_tokens=max_tokens)
+    except (ImportError, sqlite3.Error):
+        tokens = _LEXICAL_TOKEN_RE.findall((query or "").lower())
+        unique_tokens = list(dict.fromkeys(tokens))[:max_tokens]
+        return " OR ".join(f'"{token.replace(chr(34), chr(34) * 2)}"*' for token in unique_tokens)
+
+
+def _quote_ident(name: str) -> str:
+    return '"' + name.replace('"', '""') + '"'
+
+
+def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_schema WHERE type IN ('table','view') AND name=? LIMIT 1",
+        (table,),
+    ).fetchone()
+    return row is not None
+
+
+def _table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
+    return {r[1] for r in conn.execute(f"PRAGMA table_xinfo({_quote_ident(table)})").fetchall()}
+
+
+def _where_clause(conditions: list[str]) -> str:
+    return f" WHERE {' AND '.join(conditions)}" if conditions else ""
+
+
+def _like_condition(alias: str, columns: tuple[str, ...], params: list, search: str) -> str:
+    pattern = f"%{search}%"
+    params.extend([pattern] * len(columns))
+    return "(" + " OR ".join(f"COALESCE({alias}.{_quote_ident(col)}, '') LIKE ?" for col in columns) + ")"
+
+
+def _ensure_search_indexes(conn: sqlite3.Connection) -> None:
+    """Inspector 검색용 FTS5 미러를 보장한다."""
+    for table, (fts, desired_columns) in _SEARCH_FTS_TABLES.items():
+        table_cols = _table_columns(conn, table)
+        if "id" not in table_cols:
+            continue
+        columns = tuple(col for col in desired_columns if col in table_cols)
+        if not columns:
+            continue
+        try:
+            was_missing = not _table_exists(conn, fts)
+            column_sql = ", ".join(_quote_ident(col) for col in columns)
+            conn.execute(
+                f"CREATE VIRTUAL TABLE IF NOT EXISTS {_quote_ident(fts)} "
+                f"USING fts5({column_sql}, content={table!r}, content_rowid='id', tokenize='unicode61')"
+            )
+            _ensure_search_triggers(conn, table, fts, columns)
+            if was_missing:
+                conn.execute(f"INSERT INTO {_quote_ident(fts)}({_quote_ident(fts)}) VALUES('rebuild')")
+        except sqlite3.OperationalError:
+            continue
+
+
+def _ensure_search_triggers(
+    conn: sqlite3.Connection,
+    table: str,
+    fts: str,
+    columns: tuple[str, ...],
+) -> None:
+    quoted_cols = ", ".join(_quote_ident(c) for c in columns)
+    new_cols = ", ".join(f"new.{_quote_ident(c)}" for c in columns)
+    old_cols = ", ".join(f"old.{_quote_ident(c)}" for c in columns)
+    prefix = f"vega_inspector_{fts}"
+    conn.execute(
+        f"CREATE TRIGGER IF NOT EXISTS {_quote_ident(prefix + '_ai')} AFTER INSERT ON {_quote_ident(table)} BEGIN "
+        f"INSERT INTO {_quote_ident(fts)}(rowid, {quoted_cols}) VALUES (new.id, {new_cols}); END"
+    )
+    conn.execute(
+        f"CREATE TRIGGER IF NOT EXISTS {_quote_ident(prefix + '_ad')} AFTER DELETE ON {_quote_ident(table)} BEGIN "
+        f"INSERT INTO {_quote_ident(fts)}({_quote_ident(fts)}, rowid, {quoted_cols}) "
+        f"VALUES('delete', old.id, {old_cols}); END"
+    )
+    conn.execute(
+        f"CREATE TRIGGER IF NOT EXISTS {_quote_ident(prefix + '_au')} AFTER UPDATE ON {_quote_ident(table)} BEGIN "
+        f"INSERT INTO {_quote_ident(fts)}({_quote_ident(fts)}, rowid, {quoted_cols}) "
+        f"VALUES('delete', old.id, {old_cols}); "
+        f"INSERT INTO {_quote_ident(fts)}(rowid, {quoted_cols}) VALUES (new.id, {new_cols}); END"
+    )
 
 
 def _db() -> Path:
@@ -101,6 +196,7 @@ def _ensure_tables(conn: sqlite3.Connection) -> None:
                 conn.execute(f"ALTER TABLE {tbl} ADD COLUMN sensitivity TEXT")
         except Exception:
             pass
+    _ensure_search_indexes(conn)
 
 
 def _conn() -> sqlite3.Connection:
@@ -120,18 +216,31 @@ async def list_persona(
 ):
     """List persona sections."""
     with _conn() as conn:
-        sql = "SELECT * FROM persona_sections"
+        base_query = "SELECT p.* FROM persona_sections p"
+        count_query = "SELECT count(*) FROM persona_sections p"
+        joins = []
+        conditions: list[str] = []
         params: list = []
-        conditions = []
-        if active_only:
-            conditions.append("is_active = 1")
+        order_by = "ORDER BY p.scope, p.section_key"
         if search:
-            conditions.append("(content LIKE ? OR section_key LIKE ?)")
-            params += [f"%{search}%", f"%{search}%"]
-        if conditions:
-            sql += " WHERE " + " AND ".join(conditions)
-        sql += " ORDER BY scope, section_key"
-        rows = conn.execute(sql, params).fetchall()
+            fts_query = _build_fts5_prefix_query(search)
+            if fts_query and _table_exists(conn, "persona_sections_fts"):
+                joins.append("JOIN persona_sections_fts ON p.id = persona_sections_fts.rowid")
+                conditions.append("persona_sections_fts MATCH ?")
+                params.append(fts_query)
+                order_by = "ORDER BY bm25(persona_sections_fts), p.scope, p.section_key"
+            else:
+                conditions.append(_like_condition("p", ("section_key", "content", "notes"), params, search))
+        if active_only:
+            conditions.append("p.is_active = 1")
+        join_sql = " " + " ".join(joins) if joins else ""
+        where = _where_clause(conditions)
+        total_query = count_query + join_sql + where
+        total = conn.execute(total_query, params).fetchone()[0]
+        rows = conn.execute(
+            f"{base_query}{join_sql}{where} {order_by}",
+            params
+        ).fetchall()
     return JSONResponse({"rows": [dict(r) for r in rows], "count": len(rows)})
 
 
@@ -179,19 +288,36 @@ async def list_events(
 ):
     """List events."""
     with _conn() as conn:
-        conditions = []
+        base_query = "SELECT e.* FROM events e"
+        count_query = "SELECT count(*) FROM events e"
+        joins = []
+        conditions: list[str] = []
         params: list = []
-        if search:
-            conditions.append("(title LIKE ? OR body LIKE ?)")
-            params += [f"%{search}%", f"%{search}%"]
-        if tag:
-            conditions.append("tags LIKE ?")
-            params.append(f"%{tag}%")
-        where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
-        total = conn.execute(f"SELECT count(*) FROM events {where}", params).fetchone()[0]
+        order_by = "ORDER BY e.event_date DESC, e.id DESC"
+        fts_conditions = []
+        search_q = _build_fts5_prefix_query(search) if search else ""
+        tag_q = _build_fts5_prefix_query(tag) if tag else ""
+        if search_q:
+            fts_conditions.append(f"({search_q})")
+        if tag_q:
+            fts_conditions.append(f"tags : ({tag_q})")
+        if fts_conditions and _table_exists(conn, "events_fts"):
+            joins.append("JOIN events_fts ON e.id = events_fts.rowid")
+            conditions.append("events_fts MATCH ?")
+            params.append(" AND ".join(fts_conditions))
+            order_by = "ORDER BY bm25(events_fts), e.event_date DESC, e.id DESC"
+        else:
+            if search:
+                conditions.append(_like_condition("e", ("title", "body", "tags"), params, search))
+            if tag:
+                conditions.append(_like_condition("e", ("tags",), params, tag))
+        join_sql = " " + " ".join(joins) if joins else ""
+        where = _where_clause(conditions)
+        total_query = count_query + join_sql + where
+        total = conn.execute(total_query, params).fetchone()[0]
         rows = conn.execute(
-            f"SELECT * FROM events {where} ORDER BY event_date DESC, id DESC LIMIT ? OFFSET ?",
-            params + [limit, offset],
+            f"{base_query}{join_sql}{where} {order_by} LIMIT ? OFFSET ?",
+            params + [limit, offset]
         ).fetchall()
     return JSONResponse({"rows": [dict(r) for r in rows], "total": total, "offset": offset})
 
@@ -221,18 +347,48 @@ async def list_entities(
 ):
     """List entities."""
     with _conn() as conn:
-        conditions = []
+        conditions: list[str] = []
         params: list = []
-        if kind:
-            conditions.append("kind=?"); params.append(kind)
+        select_query = "SELECT e.*"
+        base_query = " FROM entities e"
+        count_query = "SELECT count(*) FROM entities e"
+        joins = []
+        order_params: list = []
+        order_by = "ORDER BY e.last_seen DESC, e.id DESC"
         if search:
-            conditions.append("(name LIKE ? OR notes LIKE ?)")
-            params += [f"%{search}%", f"%{search}%"]
-        where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
-        total = conn.execute(f"SELECT count(*) FROM entities {where}", params).fetchone()[0]
+            fts_query = _build_fts5_prefix_query(search)
+            if fts_query and _table_exists(conn, "entities_fts"):
+                select_query += ", bm25(entities_fts) AS search_rank"
+                joins.append("JOIN entities_fts ON e.id = entities_fts.rowid")
+                conditions.append("entities_fts MATCH ?")
+                params.append(fts_query)
+            else:
+                select_query += ", 0.0 AS search_rank"
+                conditions.append(_like_condition("e", ("name", "kind", "canonical_id", "aliases_json", "notes"), params, search))
+            order_params = [
+                search,
+                search,
+                f'%"{search.lower()}"%',
+                f"{search}%",
+            ]
+            order_by = (
+                "ORDER BY CASE "
+                "WHEN lower(e.name) = lower(?) THEN 0 "
+                "WHEN lower(COALESCE(e.canonical_id, '')) = lower(?) THEN 1 "
+                "WHEN lower(COALESCE(e.aliases_json, '')) LIKE ? THEN 2 "
+                "WHEN lower(e.name) LIKE lower(?) THEN 3 "
+                "ELSE 4 END, search_rank, e.last_seen DESC, e.id DESC"
+            )
+        if kind:
+            conditions.append("e.kind=?")
+            params.append(kind)
+        join_sql = " " + " ".join(joins) if joins else ""
+        where = _where_clause(conditions)
+        total_query = count_query + join_sql + where
+        total = conn.execute(total_query, params).fetchone()[0]
         rows = conn.execute(
-            f"SELECT * FROM entities {where} ORDER BY last_seen DESC, id DESC LIMIT ? OFFSET ?",
-            params + [limit, offset],
+            f"{select_query}{base_query}{join_sql}{where} {order_by} LIMIT ? OFFSET ?",
+            params + order_params + [limit, offset]
         ).fetchall()
     return JSONResponse({"rows": [dict(r) for r in rows], "total": total})
 
@@ -327,7 +483,7 @@ def _canonical_id_coverage_report(conn: sqlite3.Connection) -> dict:
         SELECT id, name, kind, trim(canonical_id) AS canonical_id
         FROM entities
         WHERE canonical_id IS NOT NULL AND trim(canonical_id) != ''
-        ORDER BY canonical_id, lower(name), id
+        ORDER BY canonical_id, name, id
         """
     ).fetchall()
     clusters_by_canonical: dict[str, list[dict]] = {}
