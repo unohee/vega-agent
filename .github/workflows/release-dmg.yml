@@ -192,18 +192,28 @@ jobs:
             --cache-control "no-cache, max-age=0" --remote
           echo "✓ R2 업로드 완료 — https://download.intrect.io/${PREFIX}/latest.json"
 
-      - name: 자동 업데이트 매니페스트 검증 (배포된 latest.json — 전 플랫폼)
-        # 업로드 직후 공개 도메인에서 darwin+windows 자산이 올바른 버전·서명·HTTP 200 으로
-        # 서빙되는지 확인 — "업데이트가 안 받아짐" 회귀를 릴리즈 시점에 잡는다.
-        # latest.json 은 darwin/windows 빌드가 공유하는 단일 파일이라, self-hosted darwin
-        # (집 IP — CF 통과)이 windows-x86_64 항목까지 한 번에 검증한다. GitHub-hosted Windows
-        # runner 는 datacenter IP 가 CF Bot Fight Mode 에 403 으로 막혀(INT-1582, qemu-win10
-        # 실측: qemu/macOS=200, GitHub Windows runner=403) 자체 verify 가 불가하므로 여기로 통합.
-        # (windows 빌드 11분 < darwin 15분이라 darwin verify 시점에 windows 항목이 보통 머지돼
-        # 있음 — 경쟁 시 재실행.) 표준 urllib 은 CF 봇 보호에 막혀 verify script 가 requests 사용.
+      - name: 자동 업데이트 매니페스트 검증 (배포된 latest.json — darwin)
+        # 업로드 직후 공개 도메인에서 darwin 자산이 올바른 버전·서명·HTTP 200 으로 서빙되는지
+        # 확인 — "업데이트가 안 받아짐" 회귀를 릴리즈 시점에 잡는다. 표준 urllib 은 CF 봇
+        # 보호에 막혀 verify script 가 requests 사용.
+        #
+        # windows-x86_64 는 darwin 게이트에서 분리(INT-1681). 이전엔 darwin job 이 windows
+        # 항목까지 hard-require 했으나(GitHub-hosted Windows runner 가 CF 403 으로 자체 verify
+        # 불가해 통합), build-windows.yml 이 만성 startup 실패라 windows 항목이 영영 안 머지돼
+        # macOS Release 가 영구 차단됐다. darwin 릴리즈는 windows CI 건강도와 독립이어야 하므로
+        # darwin 만 hard-gate 하고, windows 항목 존재 여부는 아래 비차단(warn) 스텝으로 노출한다.
         run: |
           "$HOME/dev/arm64_vega_env/bin/python3" scripts/verify_update_manifest.py \
-            "${{ steps.version.outputs.version }}" --platforms darwin-aarch64,darwin-x86_64,windows-x86_64
+            "${{ steps.version.outputs.version }}" --platforms darwin-aarch64,darwin-x86_64
+
+      - name: windows-x86_64 매니페스트 존재 확인 (비차단 — 누락 시 경고만)
+        # windows 빌드가 latest.json 에 항목을 머지했는지 확인. 누락이어도 macOS Release 를
+        # 막지 않는다 — build-windows.yml 이 복구되면 다음 푸시에서 머지된다.
+        continue-on-error: true
+        run: |
+          "$HOME/dev/arm64_vega_env/bin/python3" scripts/verify_update_manifest.py \
+            "${{ steps.version.outputs.version }}" --platforms windows-x86_64 --no-version-match \
+            || echo "::warning::windows-x86_64 가 latest.json 에 없음 — build-windows.yml 복구 후 머지 필요 (INT-1681)"
 
       - name: GitHub Release 생성/갱신
         uses: softprops/action-gh-release@v2
