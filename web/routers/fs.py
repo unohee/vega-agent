@@ -205,7 +205,11 @@ async def fs_download(path: str):
         ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
         ".gif": "image/gif", ".svg": "image/svg+xml", ".webp": "image/webp",
     }.get(ext, "application/octet-stream")
-    return FileResponse(str(p), media_type=media_type, filename=p.name)
+    # 미리보기 뷰어(PDF iframe 등) 전용 — content_disposition_type="inline" 으로 서빙해야
+    # WebView/브라우저가 다운로드 대신 인라인 렌더한다. 기존엔 filename= 만 줘서 Starlette 가
+    # Content-Disposition: attachment 를 붙였고, iframe 이 이를 다운로드로 취급 → 빈 화면이었다
+    # (PDF 안 보임의 직접 원인). filename 은 유지하되 type 을 inline 으로 명시.
+    return FileResponse(str(p), media_type=media_type, filename=p.name, content_disposition_type="inline")
 
 
 @router.post("/api/fs/reveal")
@@ -238,6 +242,9 @@ _IMG_MEDIA = {
     ".heic": "image/heic", ".heif": "image/heif",
     ".tiff": "image/tiff", ".tif": "image/tiff",
     ".avif": "image/avif",
+    # 프론트 _IMG_EXTS(chat.html)엔 있었으나 여기 누락돼 svg/ico 미리보기가 400 나던 것 보강.
+    # <img> data-URI 표시라 SVG 내 스크립트는 실행되지 않음(passive).
+    ".svg": "image/svg+xml", ".ico": "image/x-icon",
 }
 _MAX_IMG_BYTES = 20 * 1024 * 1024
 
