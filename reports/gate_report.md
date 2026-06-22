@@ -1,5 +1,15 @@
 # Retrieval Method Gate Report
 
+> ⚠️ **INVALID — DO NOT ACT ON THIS GATE DECISION (B5 / INT-1686).**
+> This benchmark never actually ran the BGE-M3 side. BGE-M3 scored 0/75 because
+> the embedding path failed with `ModuleNotFoundError: TrainerCallback` and the
+> LanceDB vector table was empty (`loaded_text_rows=1` vs `sqlite_rows=45807`),
+> not because semantic retrieval underperformed. The query set below is also
+> blank. The "FAIL → stop later implementation subtasks" conclusion is therefore
+> meaningless and must NOT be used to remove or halt BGE-M3 / hybrid search work.
+> Re-run only after fixing the embedding dependency (INT-1690/H1) and the bench
+> dimension config (INT-1696/H7), then replace this file with the real result.
+
 ## Query Set
 - 
 - 
