@@ -12,8 +12,6 @@ from pathlib import Path
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from pipeline.hybrid_search import hybrid_recall
-
 router = APIRouter()
 
 def _agent_md_dir() -> Path:
@@ -496,20 +494,6 @@ async def mcp_list():
             "raw": explicit.get(name) if is_explicit else None,
         })
     return JSONResponse({"servers": out})
-
-
-@router.get("/tools/memory")
-async def tool_memory_recall(query: str, person_id: str | None = None) -> str:
-    """LLM-accessible memory recall using hybrid RRF search.
-    
-    Falls back to empty string if embedder is unavailable.
-    """
-    try:
-        return hybrid_recall(query, person_id=person_id, limit=5)
-    except Exception as e:
-        # Model load failure or missing embedder
-        logging.warning(f"Hybrid memory recall failed: {e}")
-        return ""
 
 
 @router.post("/api/mcp/servers")
