@@ -395,6 +395,8 @@ TOOL_SCHEMAS: list[dict] = [
             "로컬 파일 읽기.\n"
             "- xlsx/xls/csv/tsv: 마크다운 테이블로 변환. sheet로 시트 지정.\n"
             "- db/sqlite/sqlite3: 스키마 + 샘플 데이터 반환. sheet로 특정 테이블 지정.\n"
+            "- pdf: 텍스트 추출(pypdf).\n"
+            "- 이미지(png/jpg/heic 등): 텍스트로는 못 읽음 — 사용자에게 채팅 첨부를 안내(비전 분석).\n"
             "- txt/md/json/py/yaml 등 텍스트 파일: 원문 반환.\n"
             "경로는 절대경로 또는 ~/... 형태. "
             "암호화된 엑셀은 password 인자로 복호화. "
