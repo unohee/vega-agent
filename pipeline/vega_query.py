@@ -166,7 +166,12 @@ def lexical_search(table: str, query: str, top_k: int = 5) -> list[dict]:
     fts = cfg["fts"]
     with _conn() as conn:
         if not _table_exists(conn, fts):
-            return []
+            # FTS가 아직 없으면(예: vega_query가 source 테이블 생성보다 먼저 import된 경우)
+            # 여기서 멱등적으로 생성한다. 이 가드가 없으면 import 순서가 뒤집힐 때 messages_fts가
+            # 영영 안 만들어져 memory_search가 항상 빈 결과였다 (INT-1827, INT-1688 잔재).
+            _ensure_lexical_fts(conn)
+            if not _table_exists(conn, fts):
+                return []
         fts_cols = _table_columns(conn, fts)
         columns = [c for c in cfg["columns"] if c in fts_cols]
         if not columns:
