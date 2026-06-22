@@ -14,6 +14,7 @@ from pipeline.compaction import (
     COMPACT_THRESHOLD,
     COMPACT_TOKEN_THRESHOLD,
     KEEP_RECENT,
+    _call_compact_sync,
     _estimate_tokens,
     _needs_compaction,
     compact_history,
@@ -181,3 +182,39 @@ class TestSpliceCompacted:
         splice_compacted(live, {"role": "assistant", "content": "s"}, 2)
         assert ref is live
         assert ref[0]["content"] == "s"
+
+
+class TestCallCompactSyncBuildRequest:
+    """회귀: _build_request 는 (Request, kind) 튜플을 반환한다.
+    compaction 이 언패킹하지 않으면 _stream_sse 가 튜플을 받아
+    `'tuple' object has no attribute 'full_url'` 로 매 압축마다 조용히 깨진다.
+    (INT-1564 계열 — vega-agent 로 역이식 누락되어 회귀했던 버그)
+    """
+
+    def test_unpacks_build_request_tuple_and_passes_kind(self):
+        fake_req = object()  # Request 대역 — 튜플이면 안 된다
+        captured: dict = {}
+
+        def fake_stream_sse(req, token_q, tool_q, kind="responses", **kw):
+            captured["req"] = req
+            captured["kind"] = kind
+            token_q.put(None)  # sentinel — 드레인 루프 종료
+            tool_q.put(None)
+
+        with patch(
+            "pipeline.compaction._build_request",
+            return_value=(fake_req, "chat_completions"),
+        ), patch(
+            "pipeline.compaction._stream_sse", side_effect=fake_stream_sse
+        ):
+            summary, calls = _call_compact_sync(
+                [{"role": "user", "content": "x"}], "sys"
+            )
+
+        # req 는 튜플 전체가 아니라 _build_request()[0] 그 자체여야 한다.
+        assert captured["req"] is fake_req
+        assert not isinstance(captured["req"], tuple)
+        # kind 도 전달돼야 chat_completions 파싱 분기가 맞는다 (안 넘기면 'responses' 기본값).
+        assert captured["kind"] == "chat_completions"
+        assert summary == ""
+        assert calls == []
