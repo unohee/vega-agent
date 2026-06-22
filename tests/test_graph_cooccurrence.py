@@ -42,7 +42,7 @@ def _edge_rows(db_path):
     rows = [dict(r) for r in conn.execute(
         """
         SELECT source_entity_key, target_entity_key, relation, weight, evidence_json, builder
-        FROM entity_edges
+        FROM entity_cooccurrence_edges
         ORDER BY source_entity_key, target_entity_key
         """
     ).fetchall()]
