@@ -28,7 +28,7 @@ Core product principles:
 Core components:
 - **Agent loop** (`pipeline/streaming.py`): SSE tool-use multi-round loop
 - **Multi-provider** (`pipeline/llm_gateway.py`): ChatGPT/OpenRouter/LM Studio
-- **Persistent memory** (`pipeline/session_store.py`, `vega_query.py`, `memory_store.py`)
+- **Persistent memory** (`pipeline/session_store.py`, `vega_query.py` — lexical FTS5 + persona SQL)
 - **Three-layer self-evolution** (`pipeline/compaction.py`): persona, rules, skills
 - **Entry channels** (`web/server.py` FastAPI/SSE, `pipeline/channels/` Telegram/Slack bots)
 - **External tool integration** (`pipeline/mcp_client.py`): MCP servers (e.g., kyte-portal work tools)
@@ -44,8 +44,7 @@ pipeline/
   discord_bridge.py — Discord no-op stub (vega-agent uses Telegram/Slack)
   compaction.py     — 20-turn compaction + memory/rule update
   session_store.py  — session/message persistence (SQLite, conversations/messages)
-  vega_query.py     — persona/event/entity queries + schema auto-generation
-  memory_store.py   — vector memory (LanceDB)
+  vega_query.py     — persona/event/entity queries + lexical FTS5 memory search
   mcp_client.py     — MCP server integration (stdio/sse), init_mcp_tools
   data_paths.py     — user data dir resolution (single source for all DB/config paths)
   self_improve.py   — tool failure → patch → verify
