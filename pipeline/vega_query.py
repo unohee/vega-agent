@@ -30,29 +30,37 @@ def _conn() -> sqlite3.Connection:
 
 _LEXICAL_TOKEN_RE = re.compile(r"[0-9A-Za-z_가-힣]+", re.UNICODE)
 _LEXICAL_MAX_TOKENS = 8
+# rowid_col: the integer column FTS5 external content keys on. Most tables use
+# an INTEGER PRIMARY KEY named "id"; `messages` uses a TEXT uuid PK, so SQLite's
+# implicit integer "rowid" is the content_rowid instead. Using "id" there left
+# messages_fts uncreated and memory_search silently empty (B7 / INT-1688).
 _LEXICAL_TABLES = {
     "messages": {
         "fts": "messages_fts",
         "source_table": "messages",
         "columns": ("text",),
+        "rowid_col": "rowid",
         "create": True,
     },
     "events": {
         "fts": "events_fts",
         "source_table": "events",
         "columns": ("title", "body", "tags"),
+        "rowid_col": "id",
         "create": True,
     },
     "persona_sections": {
         "fts": "persona_sections_fts",
         "source_table": "persona_sections",
         "columns": ("section_key", "content", "notes", "source"),
+        "rowid_col": "id",
         "create": True,
     },
     "entities": {
         "fts": "entities_fts",
         "source_table": "entities",
         "columns": ("name", "kind", "canonical_id", "aliases_json", "notes"),
+        "rowid_col": "id",
         "create": True,
     },
 }
@@ -82,8 +90,13 @@ def _ensure_lexical_fts(conn: sqlite3.Connection) -> None:
         table = cfg["source_table"]
         fts = cfg["fts"]
         columns = tuple(cfg["columns"])
+        rowid_col = cfg.get("rowid_col", "id")
         existing_cols = _table_columns(conn, table)
-        required_cols = {"id", *columns}
+        # The implicit "rowid" is never listed by PRAGMA table_info, so only
+        # require a named rowid column (e.g. "id") to exist.
+        required_cols = set(columns)
+        if rowid_col != "rowid":
+            required_cols.add(rowid_col)
         if not required_cols.issubset(existing_cols):
             # Legacy partial schemas are kept backward-compatible; skip FTS until migrated.
             continue
@@ -92,32 +105,36 @@ def _ensure_lexical_fts(conn: sqlite3.Connection) -> None:
         column_sql = ", ".join(columns)
         conn.execute(
             f"CREATE VIRTUAL TABLE IF NOT EXISTS {_quote_ident(fts)} "
-            f"USING fts5({column_sql}, content={table!r}, content_rowid='id', tokenize='unicode61')"
+            f"USING fts5({column_sql}, content={table!r}, content_rowid={rowid_col!r}, tokenize='unicode61')"
         )
-        _ensure_fts_triggers(conn, table, fts, columns)
+        _ensure_fts_triggers(conn, table, fts, columns, rowid_col)
         if was_missing:
             conn.execute(f"INSERT INTO {_quote_ident(fts)}({_quote_ident(fts)}) VALUES('rebuild')")
 
 
-def _ensure_fts_triggers(conn: sqlite3.Connection, table: str, fts: str, columns: tuple[str, ...]) -> None:
+def _ensure_fts_triggers(
+    conn: sqlite3.Connection, table: str, fts: str, columns: tuple[str, ...], rowid_col: str = "id"
+) -> None:
     quoted_cols = ", ".join(_quote_ident(c) for c in columns)
     new_cols = ", ".join(f"new.{_quote_ident(c)}" for c in columns)
     old_cols = ", ".join(f"old.{_quote_ident(c)}" for c in columns)
+    new_rowid = f"new.{_quote_ident(rowid_col)}"
+    old_rowid = f"old.{_quote_ident(rowid_col)}"
     prefix = f"vega_{fts}"
     conn.execute(
         f"CREATE TRIGGER IF NOT EXISTS {_quote_ident(prefix + '_ai')} AFTER INSERT ON {_quote_ident(table)} BEGIN "
-        f"INSERT INTO {_quote_ident(fts)}(rowid, {quoted_cols}) VALUES (new.id, {new_cols}); END"
+        f"INSERT INTO {_quote_ident(fts)}(rowid, {quoted_cols}) VALUES ({new_rowid}, {new_cols}); END"
     )
     conn.execute(
         f"CREATE TRIGGER IF NOT EXISTS {_quote_ident(prefix + '_ad')} AFTER DELETE ON {_quote_ident(table)} BEGIN "
         f"INSERT INTO {_quote_ident(fts)}({_quote_ident(fts)}, rowid, {quoted_cols}) "
-        f"VALUES('delete', old.id, {old_cols}); END"
+        f"VALUES('delete', {old_rowid}, {old_cols}); END"
     )
     conn.execute(
         f"CREATE TRIGGER IF NOT EXISTS {_quote_ident(prefix + '_au')} AFTER UPDATE ON {_quote_ident(table)} BEGIN "
         f"INSERT INTO {_quote_ident(fts)}({_quote_ident(fts)}, rowid, {quoted_cols}) "
-        f"VALUES('delete', old.id, {old_cols}); "
-        f"INSERT INTO {_quote_ident(fts)}(rowid, {quoted_cols}) VALUES (new.id, {new_cols}); END"
+        f"VALUES('delete', {old_rowid}, {old_cols}); "
+        f"INSERT INTO {_quote_ident(fts)}(rowid, {quoted_cols}) VALUES ({new_rowid}, {new_cols}); END"
     )
 
 
@@ -347,6 +364,8 @@ def _fts_query(keyword: str) -> str:
 
 
 def _rebuild_events_fts(conn: sqlite3.Connection) -> None:
+    """Full reindex of events_fts. Expensive (O(corpus)); use only for explicit
+    rebuilds, never on the per-query hot path — triggers keep the index fresh."""
     conn.execute("CREATE VIRTUAL TABLE IF NOT EXISTS events_fts USING fts5(title, body, tags, content='events', content_rowid='id', tokenize='unicode61')")
     conn.execute("INSERT INTO events_fts(events_fts) VALUES('rebuild')")
 
@@ -358,7 +377,10 @@ def search_events(keyword: str, limit: int = 20) -> list[dict]:
         return []
     with _conn() as conn:
         try:
-            _rebuild_events_fts(conn)
+            # Ensure events_fts exists + is trigger-maintained; rebuilds only on
+            # first creation. Previously this called _rebuild_events_fts on EVERY
+            # query, reindexing the whole corpus per chat turn (B8 / INT-1689).
+            _ensure_lexical_fts(conn)
             rows = conn.execute(
                 """SELECT ev.*, bm25(events_fts) AS rank
                    FROM events_fts

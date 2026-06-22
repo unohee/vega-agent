@@ -260,7 +260,10 @@ def suggest_todos(_unused=None) -> list[dict]:
 
 # --- Google freshness heartbeat sync (incremental orchestration) ---
 import contextlib
-import fcntl
+try:
+    import fcntl  # POSIX-only; Windows has no advisory file locking here
+except ImportError:  # pragma: no cover - exercised on Windows builds
+    fcntl = None
 import os
 import threading
 import time
@@ -304,17 +307,21 @@ def _google_sync_nonblocking_lock():
     lock_file = None
     try:
         lock_file = open(_google_sync_lock_path(), "a+", encoding="utf-8")
-        try:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            print("[heartbeat][google] skip: incremental sync already running in another process")
-            yield False
-            return
+        if fcntl is not None:
+            try:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                print("[heartbeat][google] skip: incremental sync already running in another process")
+                yield False
+                return
+        # Without fcntl (Windows) the in-process thread lock above is the only
+        # cross-run guard; that is acceptable for the single-instance desktop app.
         yield True
     finally:
         if lock_file is not None:
             try:
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+                if fcntl is not None:
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
             finally:
                 lock_file.close()
         _GOOGLE_SYNC_THREAD_LOCK.release()
