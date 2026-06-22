@@ -64,13 +64,17 @@ def log_dir() -> Path:
 
 
 def db_path() -> Path:
-    # Canonical VEGA database path. VEGA_DB_FILE may point at an alternate DB;
-    # absolute paths are used as-is, bare filenames resolve under data_dir().
+    # vega-agent (the distributed/public build) defaults to its own agent.db so it
+    # never collides with a personal VEGA vega.db sharing the same data dir
+    # (reference_two_db_fork). Personal runs point VEGA_DB_FILE at vega.db etc.
+    # Absolute paths are used as-is; bare filenames resolve under data_dir().
+    # NOTE: do NOT change this default to vega.db — existing installs keep their
+    # state in agent.db and switching the default silently orphans all of it.
     override = os.environ.get("VEGA_DB_FILE", "").strip()
     if override:
         p = Path(override).expanduser()
         return p if p.is_absolute() else data_dir() / p
-    return data_dir() / "vega.db"
+    return data_dir() / "agent.db"
 
 
 def contacts_db_path() -> Path:

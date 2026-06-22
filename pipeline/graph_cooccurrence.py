@@ -47,7 +47,7 @@ def connect(db_path: str | Path | None = None) -> sqlite3.Connection:
 def ensure_entity_edge_schema(conn: sqlite3.Connection) -> None:
     conn.execute(
         """
-        CREATE TABLE IF NOT EXISTS entity_edges (
+        CREATE TABLE IF NOT EXISTS entity_cooccurrence_edges (
             id                INTEGER PRIMARY KEY AUTOINCREMENT,
             source_entity_key TEXT NOT NULL,
             target_entity_key TEXT NOT NULL,
@@ -62,8 +62,8 @@ def ensure_entity_edge_schema(conn: sqlite3.Connection) -> None:
     )
     conn.execute(
         """
-        CREATE INDEX IF NOT EXISTS idx_entity_edges_builder_weight
-        ON entity_edges(builder, weight DESC)
+        CREATE INDEX IF NOT EXISTS idx_entity_cooccurrence_edges_builder_weight
+        ON entity_cooccurrence_edges(builder, weight DESC)
         """
     )
 
@@ -192,7 +192,7 @@ def build_entity_cooccurrence_edges(db_path: str | Path | None = None) -> BuildR
         existing = conn.execute(
             """
             SELECT source_entity_key, target_entity_key
-            FROM entity_edges
+            FROM entity_cooccurrence_edges
             WHERE builder=? AND relation=?
             """,
             (BUILDER, RELATION),
@@ -204,14 +204,14 @@ def build_entity_cooccurrence_edges(db_path: str | Path | None = None) -> BuildR
         ]
         conn.executemany(
             """
-            DELETE FROM entity_edges
+            DELETE FROM entity_cooccurrence_edges
             WHERE source_entity_key=? AND target_entity_key=? AND relation=? AND builder=?
             """,
             stale,
         )
         conn.executemany(
             """
-            INSERT INTO entity_edges (
+            INSERT INTO entity_cooccurrence_edges (
                 source_entity_key, target_entity_key, relation, weight, evidence_json, builder
             ) VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(source_entity_key, target_entity_key, relation, builder)
@@ -219,8 +219,8 @@ def build_entity_cooccurrence_edges(db_path: str | Path | None = None) -> BuildR
                 weight=excluded.weight,
                 evidence_json=excluded.evidence_json,
                 updated_at=CURRENT_TIMESTAMP
-            WHERE entity_edges.weight <> excluded.weight
-               OR entity_edges.evidence_json <> excluded.evidence_json
+            WHERE entity_cooccurrence_edges.weight <> excluded.weight
+               OR entity_cooccurrence_edges.evidence_json <> excluded.evidence_json
             """,
             rows,
         )
