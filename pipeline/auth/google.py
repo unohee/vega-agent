@@ -53,6 +53,11 @@ _FALLBACK_SCOPES = [
     "https://www.googleapis.com/auth/gmail.modify",
     "https://www.googleapis.com/auth/calendar",
     "https://www.googleapis.com/auth/drive.readonly",
+    # 문서 생성/편집 (INT-1885: docs_create 가 documents scope 없어 403 이던 것).
+    "https://www.googleapis.com/auth/documents",
+    # 앱이 만든 파일 생성·관리 (KOMCA 가이드라인 등 문서 저장). drive.file 은 앱 생성
+    # 파일만 접근하는 non-restricted scope라 full drive 보다 동의·검증이 가볍다.
+    "https://www.googleapis.com/auth/drive.file",
 ]
 
 _pending_state: dict[str, str] = {}
