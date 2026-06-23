@@ -58,3 +58,14 @@ def test_exec_cwd_is_workspace(monkeypatch, tmp_path):
     monkeypatch.setenv("VEGA_DATA_DIR", str(tmp_path))
     r = python_exec("import os; print(os.getcwd())")
     assert r.get("stdout", "").strip().endswith("workspace"), r
+
+
+def test_self_improve_patch_test_runs_on_host(monkeypatch, tmp_path):
+    """self_improve 패치 테스트가 Docker 없이 호스트에서 동작 — L6 갭(자기개선 Docker 의존) 해소(INT-1870)."""
+    monkeypatch.setenv("VEGA_DATA_DIR", str(tmp_path))
+    monkeypatch.delenv("VEGA_USE_DOCKER", raising=False)
+    from pipeline import self_improve as si
+    patch = 'def _vega_probe(x):\n    return {"ok": True, "doubled": x * 2}\n'
+    r = si._test_patch("_vega_probe", patch, {"x": 5})
+    assert r.get("ok") is True, r
+    assert r.get("result", {}).get("doubled") == 10, r
