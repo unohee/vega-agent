@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>VEGA</title>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<!-- 코드블록 구문 강조 — 로컬 vendor(오프라인 자립, CDN 무의존), INT-1846 -->
+<script src="/static/vendor/highlightjs/highlight.min.js"></script>
+<link rel="stylesheet" href="/static/vendor/highlightjs/styles/github-dark.min.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
 <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
@@ -1037,6 +1040,8 @@ header button, header button *, header a, header a * { -webkit-app-region: no-dr
   margin: .6em 0;
 }
 .bubble pre code { background: none; padding: 0; }
+/* highlight.js 테마는 토큰 색만 쓰고 배경/패딩은 VEGA pre 스타일을 유지 (INT-1846) */
+.bubble pre code.hljs, .preview-code code.hljs { background: none; padding: 0; }
 .bubble table { border-collapse: collapse; margin: .6em 0; font-size: 13px; }
 .bubble th, .bubble td {
   border: 1px solid var(--border); padding: 5px 10px;
@@ -2368,6 +2373,18 @@ const fileInput  = document.getElementById('file-input');
 
 marked.setOptions({ breaks: true, gfm: true });
 
+// 코드블록 구문 강조 — marked가 낸 <pre><code>를 highlight.js로 후처리 (INT-1846).
+// 언어 클래스(language-xx)가 있으면 그 언어, 없으면 hljs 자동 감지.
+// dataset.hl 가드로 중복 강조 방지(스트리밍 진행중 같은 블록 재방문 대비).
+function highlightWithin(root) {
+  if (!root || !window.hljs) return;
+  root.querySelectorAll('pre code').forEach(block => {
+    if (block.dataset.hl) return;
+    try { hljs.highlightElement(block); } catch (e) { /* 강조 실패는 무시 — plain 코드 유지 */ }
+    block.dataset.hl = '1';
+  });
+}
+
 // ── 유틸 ──
 function esc(str) {
   return String(str)
@@ -2934,6 +2951,7 @@ function addAssistantMessage(text, usage, events) {
   } else {
     // 폴백: events 없는 (구) 메시지는 텍스트 통째 렌더.
     bub.innerHTML = marked.parse(text);
+    highlightWithin(bub);
   }
   if (usage && typeof usage === 'object' && Object.keys(usage).length > 0) {
     _renderUsageMeta(bub, usage);
@@ -2950,6 +2968,7 @@ function renderEventsInto(bub, events) {
       // 새 텍스트 세그먼트를 버블 끝에 만들어 마크다운 렌더.
       const seg = getStreamContent(bub);
       seg.innerHTML = marked.parse(ev.data);
+      highlightWithin(seg);
       closeStreamSegment(bub);  // 다음 도구/텍스트가 새 세그먼트에서 시작되게 닫음
     } else if (ev.type === 'tool') {
       addToolBadge(bub, ev.name, ev.label, ev.call_id || '', ev.step, ev.args);
@@ -3934,6 +3953,7 @@ function closeStreamSegment(bub) {
 function renderMarkdown(bub, text) {
   const el = getStreamContent(bub);
   el.innerHTML = marked.parse(text);
+  highlightWithin(el);
   scrollBottom();
 }
 
@@ -3981,6 +4001,7 @@ function makeTyper(bub) {
       // 빈 줄 경계의 마크다운 블록은 독립 파싱해도 결과가 같고,
       // 어긋나는 드문 케이스는 최종 renderMarkdown 전체 파싱이 바로잡는다.
       el._stableEl.insertAdjacentHTML('beforeend', marked.parse(displayed.slice(stableLen, cut + 2)));
+      highlightWithin(el._stableEl);  // 확정된 코드블록만 강조 (tail은 안정화 후)
       stableLen = cut + 2;
     }
     el._tailEl.innerHTML = marked.parse(displayed.slice(stableLen));
@@ -4078,6 +4099,7 @@ function showCompactionNotice(summary) {
   const body = document.createElement('div');
   body.className = 'compact-body';
   body.innerHTML = marked.parse(summary);
+  highlightWithin(body);
   toggle.appendChild(title);
   toggle.appendChild(body);
   banner.appendChild(toggle);
@@ -6475,12 +6497,20 @@ async function openFilePreview(path, name) {
     const renderMd = data.kind === 'markdown' || _MD_EXTS.has(dotExt);
     if (renderMd) {
       previewBody.innerHTML = `<div class="preview-md">${marked.parse(data.text || '')}</div>${truncated}`;
+      highlightWithin(previewBody);
     } else {
+      // 코드 파일 — <code>로 감싸 highlight.js 강조. 확장자→언어(hljs 별칭 해석),
+      // 미등록 확장자는 무클래스로 두어 hljs 자동 감지에 맡긴다 (INT-1846).
       const pre = document.createElement('pre');
       pre.className = 'preview-code';
-      pre.textContent = data.text || '(빈 파일)';
+      const code = document.createElement('code');
+      const _lang = dotExt ? dotExt.slice(1).toLowerCase() : '';
+      if (window.hljs && _lang && hljs.getLanguage(_lang)) code.className = 'language-' + _lang;
+      code.textContent = data.text || '(빈 파일)';
+      pre.appendChild(code);
       previewBody.innerHTML = '';
       previewBody.appendChild(pre);
+      highlightWithin(previewBody);
       if (truncated) previewBody.insertAdjacentHTML('beforeend', truncated);
     }
   } catch (e) {
