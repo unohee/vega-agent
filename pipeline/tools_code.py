@@ -958,8 +958,8 @@ def _docker_or_host(sandboxed, host):
     """
     def _dispatch(*args, **kwargs):
         try:
-            from pipeline.sandbox import docker_available
-            use_docker = docker_available()
+            from pipeline.sandbox import docker_enabled
+            use_docker = docker_enabled()  # 호스트 우선 — Docker 는 VEGA_USE_DOCKER opt-in 시만 (INT-1870)
         except Exception:
             use_docker = False
         return sandboxed(*args, **kwargs) if use_docker else host(*args, **kwargs)

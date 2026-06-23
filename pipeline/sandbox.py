@@ -143,6 +143,24 @@ def docker_available() -> bool:
     return docker_state() == "ok"
 
 
+def docker_opt_in() -> bool:
+    """Docker 격리는 명시 opt-in 일 때만 사용한다 — 호스트 우선이 기본 (INT-1870).
+
+    VEGA_USE_DOCKER 가 1/true/yes/on 이면 활성. 미설정(기본)이면 코드 실행은
+    호스트 동봉 인터프리터로 직행한다 — Docker가 떠 있어도 자동으로 끌려가지 않는다
+    (데몬이 home 을 /host_home 읽기전용으로 마운트해 ~/ 쓰기가 깨지던 문제 방지)."""
+    import os
+    return os.environ.get("VEGA_USE_DOCKER", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def docker_enabled() -> bool:
+    """실행 라우팅 결정용 — opt-in 됐고 데몬도 살아있을 때만 True.
+
+    라우팅 분기(_docker_or_host / _office_exec)는 이 함수를 쓴다. docker_available 은
+    상태 표시·설치 마법사 등 비라우팅 용도로 남긴다."""
+    return docker_opt_in() and docker_available()
+
+
 def _docker_error(state: str) -> dict:
     """missing/down 상태를 사용자 친화 에러 dict로 (도구 결과 포맷과 동일 스키마)."""
     msg = _DOCKER_MISSING_MSG if state == "missing" else _DOCKER_DOWN_MSG
