@@ -342,13 +342,23 @@ def enrich_usage_stats(stats: dict) -> None:
 
 
 @router.get("/api/llm/models")
-async def llm_models_list(provider: str = ""):
-    """Available models for a provider. Defaults to the active provider if omitted."""
+async def llm_models_list(provider: str = "", curated: bool = True):
+    """Available models for a provider. Defaults to the active provider if omitted.
+
+    curated=True(기본)이면 OpenRouter 전체 카탈로그를 선정 기준(≤$1/Mtok·prompt caching)으로
+    좁혀 노출한다 — 선택 과부하 방지(INT-1888). curated=false 로 전체를 받을 수 있다.
+    OpenRouter 외 프로바이더는 모델 수가 적어 큐레이션을 적용하지 않는다."""
     from pipeline.llm_gateway import get_active_name
     name = provider or get_active_name()
     loop = asyncio.get_event_loop()
     models = await loop.run_in_executor(None, _fetch_models, name)
-    return JSONResponse({"provider": name, "count": len(models), "models": models})
+    total = len(models)
+    applied = bool(curated and name == "openrouter")
+    if applied:
+        from pipeline.model_catalog import curate_models
+        models = curate_models(models)
+    return JSONResponse({"provider": name, "count": len(models), "total": total,
+                         "curated": applied, "models": models})
 
 
 # ── Tool groups ───────────────────────────────────────────────────────────────
