@@ -53,6 +53,33 @@ def _slack_api(method: str, params: dict | None = None) -> dict:
     return data
 
 
+def _call_post(method: str, body: dict, *, token: str) -> dict:
+    data = json.dumps(body).encode()
+    req = urllib.request.Request(
+        f"{_API_BASE}/{method}", data=data, method="POST",
+        headers={"Authorization": f"Bearer {token}",
+                 "Content-Type": "application/json; charset=utf-8"},
+    )
+    with urllib.request.urlopen(req, timeout=20, context=_ssl_context()) as r:
+        return json.loads(r.read().decode())
+
+
+def _slack_api_post(method: str, body: dict) -> dict:
+    """쓰기 계열 Slack API(POST). token_expired 면 rotation 갱신 1회 재시도 (INT-1882)."""
+    token = _auth.user_token()
+    if not token:
+        raise RuntimeError(_RECONNECT_MSG)
+    data = _call_post(method, body, token=token)
+    if not data.get("ok") and data.get("error") in ("token_expired", "invalid_auth", "token_revoked"):
+        fresh = _auth.refresh_user_token()
+        if not fresh:
+            raise RuntimeError(f"{_RECONNECT_MSG} (Slack: {data.get('error')})")
+        data = _call_post(method, body, token=fresh)
+    if not data.get("ok"):
+        raise RuntimeError(f"Slack API {method} 오류: {data.get('error')}")
+    return data
+
+
 def _name_of(user_id: str) -> str:
     if not user_id:
         return "?"
@@ -123,7 +150,28 @@ def slack_search(query: str, count: int = 10) -> list[dict]:
     return out
 
 
+def slack_send_message(channel: str, text: str) -> dict:
+    """Slack 채널/DM에 메시지를 전송한다 (user token 으로, 사용자 본인 명의). chat:write scope 필요.
+
+    channel: 채널 ID(C…/D…). #이름은 conversations.list 로 ID 해석 후 사용 권장."""
+    data = _slack_api_post("chat.postMessage", {"channel": channel, "text": text})
+    return {"ok": True, "channel": data.get("channel", channel), "ts": data.get("ts", "")}
+
+
 SLACK_TOOL_SCHEMAS: list[dict] = [
+    {
+        "type": "function",
+        "name": "slack_send_message",
+        "description": "Slack 채널/DM에 메시지를 직접 전송한다(사용자 명의). 정리한 내용을 복붙 안내하지 말고 이 도구로 바로 보낸다. channel 은 ID(C…/D…) — 모르면 slack_list_channels 로 먼저 찾는다. (chat:write scope 필요 — 미연결 시 재인증 안내.)",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "channel": {"type": "string", "description": "채널/DM ID (C…/D…)"},
+                "text": {"type": "string", "description": "보낼 메시지 본문 (Slack mrkdwn)"},
+            },
+            "required": ["channel", "text"],
+        },
+    },
     {
         "type": "function",
         "name": "slack_search",
@@ -168,6 +216,7 @@ SLACK_TOOL_SCHEMAS: list[dict] = [
 ]
 
 SLACK_TOOL_FUNCTIONS: dict[str, Any] = {
+    "slack_send_message": slack_send_message,
     "slack_search": slack_search,
     "slack_list_channels": slack_list_channels,
     "slack_read_channel": slack_read_channel,
