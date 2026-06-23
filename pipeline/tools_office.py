@@ -589,6 +589,53 @@ def pdf_create(path: str, content: str, title: str | None = None) -> dict:
     return {"ok": True, "path": str(out), "pages": pages["n"], "bytes": out.stat().st_size}
 
 
+# ─── 이미지 포맷/크기 변환 (Pillow — AI 재생성 아님, INT-1883) ─────────────────
+
+def image_convert(src: str, dst: str, fmt: str = "", width: int = 0,
+                  height: int = 0, quality: int = 95) -> dict:
+    """이미지 포맷/크기 변환 (Pillow, 결정적 — AI 재생성 아님).
+
+    'PNG를 JPG로(같은 크기)' 같은 단순 변환에 쓴다. AI 편집/생성은 image_generate.
+    JPEG 변환 시 알파(RGBA/P)는 흰 배경에 합성. width·height 둘 다 주면 리사이즈.
+    """
+    try:
+        from pipeline.path_guard import guard_path
+        guard_path(dst)
+    except PermissionError as e:
+        return {"error": f"[SAFEGUARD] {e}"}
+    except Exception:
+        pass
+    try:
+        from PIL import Image
+    except Exception as e:
+        return {"error": f"Pillow 미설치 — 이미지 변환 불가: {e}"}
+    sp = Path(src).expanduser()
+    dp = Path(dst).expanduser()
+    if not sp.exists():
+        return {"error": f"원본 이미지 없음: {src}"}
+    try:
+        img = Image.open(sp)
+        target = (fmt or dp.suffix.lstrip(".")).upper()
+        if target == "JPG":
+            target = "JPEG"
+        if target == "JPEG" and img.mode in ("RGBA", "P", "LA"):
+            rgba = img.convert("RGBA")
+            bg = Image.new("RGB", rgba.size, (255, 255, 255))
+            bg.paste(rgba, mask=rgba.split()[-1])
+            img = bg
+        elif target == "JPEG":
+            img = img.convert("RGB")
+        if width and height:
+            img = img.resize((int(width), int(height)))
+        dp.parent.mkdir(parents=True, exist_ok=True)
+        save_kw = {"quality": int(quality)} if target == "JPEG" else {}
+        img.save(dp, format=target, **save_kw)
+        return {"ok": True, "path": str(dp), "format": target,
+                "size": list(img.size), "bytes": dp.stat().st_size}
+    except Exception as e:
+        return {"error": f"이미지 변환 실패: {e}"}
+
+
 # ─── Tool schemas ─────────────────────────────────────────────────────────────
 
 OFFICE_TOOL_SCHEMAS: list[dict] = [
@@ -797,6 +844,23 @@ OFFICE_TOOL_SCHEMAS: list[dict] = [
     },
     {
         "type": "function",
+        "name": "image_convert",
+        "description": "이미지 포맷/크기 변환 (Pillow, 결정적 — AI 재생성 아님). 'PNG를 JPG로(같은 크기)' 같은 단순 변환·리사이즈에 사용. AI 편집/생성이 필요하면 image_generate 를 써라.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "src": {"type": "string", "description": "원본 이미지 경로(~/... 또는 절대경로)"},
+                "dst": {"type": "string", "description": "저장 경로 — 확장자로 출력 포맷 결정(.jpg/.png/.webp)"},
+                "fmt": {"type": "string", "description": "출력 포맷 강제(선택: PNG/JPEG/WEBP). 생략 시 dst 확장자."},
+                "width": {"type": "integer", "description": "리사이즈 너비(선택, height와 함께 줘야 적용)"},
+                "height": {"type": "integer", "description": "리사이즈 높이(선택)"},
+                "quality": {"type": "integer", "description": "JPEG 품질 1~100 (기본 95)"},
+            },
+            "required": ["src", "dst"],
+        },
+    },
+    {
+        "type": "function",
         "name": "pdf_create",
         "description": "markdown/텍스트 내용을 PDF로 생성 (한글 지원, Docker·TeX 불필요). 제목·헤딩·**굵게**/*기울임*/`코드`·목록·표·코드블록·구분선 지원. LLM이 만든 보고서·문서를 PDF로 저장할 때 사용. (고품질 조판이 필요하면 latex_compile.)",
         "parameters": {
@@ -826,4 +890,5 @@ OFFICE_TOOL_FUNCTIONS: dict[str, Any] = {
     "latex_compile":     latex_compile,
     "latex_template":    latex_template,
     "pdf_create":        pdf_create,
+    "image_convert":     image_convert,
 }
