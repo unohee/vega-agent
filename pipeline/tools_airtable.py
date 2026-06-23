@@ -48,6 +48,13 @@ def airtable_list_tables(base_id: str) -> list[dict]:
         headers={"Authorization": f"Bearer {_require_pat()}"},
         timeout=20,
     )
+    if r.status_code in (401, 403):
+        raise RuntimeError(
+            "Airtable 권한 부족(스키마 읽기 거부) — PAT에 "
+            "`schema.bases:read` · `data.records:read` 스코프와 해당 base 접근 권한이 "
+            "있어야 합니다. 설정 → 워크스페이스에서 Airtable PAT를 그 스코프로 재연결하세요. "
+            f"(HTTP {r.status_code})"
+        )
     if r.status_code >= 400:
         raise RuntimeError(f"Airtable meta API HTTP {r.status_code}: {r.text[:200]}")
     out = []
