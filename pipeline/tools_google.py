@@ -484,7 +484,9 @@ def calendar_delete_event(event_id: str, account: str = "") -> dict:
 
 # ── Google Drive ───────────────────────────────────────────────────────────────
 
-def drive_search(query: str, max_results: int = 10, account: str = "") -> list[dict]:
+def _build_drive_query(query: str, folder_id: str = "") -> str:
+    """검색 문자열 → Drive q. 자연어는 fullText 검색으로 감싸고, folder_id 지정 시
+    해당 폴더 안으로 스코프('<id>' in parents) — 폴더 밖 과다 스캔 방지 (INT-1884)."""
     import re as _re2
     q = query.strip()
     is_drive_syntax = bool(_re2.search(
@@ -493,6 +495,15 @@ def drive_search(query: str, max_results: int = 10, account: str = "") -> list[d
     if not is_drive_syntax:
         safe = q.replace("'", "\\'")
         q = f"fullText contains '{safe}' and trashed = false"
+    if folder_id:
+        fid = folder_id.strip().replace("'", "\\'")
+        q = f"({q}) and '{fid}' in parents"
+    return q
+
+
+def drive_search(query: str, max_results: int = 10, account: str = "",
+                 folder_id: str = "") -> list[dict]:
+    q = _build_drive_query(query, folder_id)
 
     data = _gapi(
         "www.googleapis.com/drive/v3/files",

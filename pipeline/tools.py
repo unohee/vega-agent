@@ -367,13 +367,14 @@ TOOL_SCHEMAS: list[dict] = [
     {
         "type": "function",
         "name": "drive_search",
-        "description": "Google Drive에서 파일을 검색한다.",
+        "description": "Google Drive에서 파일을 검색한다. **특정 폴더 안에서만** 찾아야 하면 folder_id를 반드시 지정해 폴더 밖 파일까지 스캔하지 않게 한다.",
         "parameters": {
             "type": "object",
             "properties": {
-                "query": {"type": "string", "description": "Drive 검색 쿼리 (예: name contains 'ArtifactNet')"},
+                "query": {"type": "string", "description": "Drive 검색 쿼리 (예: name contains 'ArtifactNet'). 자연어를 주면 전체 텍스트 검색으로 처리."},
                 "max_results": {"type": "integer", "default": 10},
                 "account": {"type": "string", "default": "", "description": "사용할 Google 계정 이메일. 미지정 시 기본 계정."},
+                "folder_id": {"type": "string", "default": "", "description": "지정하면 이 폴더 안에서만 검색('<id>' in parents). 사용자가 특정 폴더의 파일만 보라고 하면 그 폴더 ID를 여기 넣어 범위를 한정한다."},
             },
             "required": ["query"],
         },
