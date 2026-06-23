@@ -623,7 +623,14 @@ async def stream_gpt(
     else:
         input_items: list = [{"role": "user", "content": user_content}]
     full_text = ""
-    max_rounds = 40 if research_mode else 20
+    # 부하별 라운드 상한 — 단순 조회/보고가 과도한 툴 라운드를 쓰지 않게 (INT-1893).
+    # research_mode=40, light=10, standard=20, heavy=24. user_content 가 문자열일 때만 분류.
+    try:
+        from pipeline.tier_router import rounds_for_load
+        _route_text = user_content if isinstance(user_content, str) else ""
+        max_rounds = rounds_for_load(_route_text, research_mode=research_mode)
+    except Exception:
+        max_rounds = 40 if research_mode else 20
     first_round = True
 
     # for timing measurement

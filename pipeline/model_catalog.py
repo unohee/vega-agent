@@ -50,3 +50,24 @@ def curate_models(models: list[dict]) -> list[dict]:
         out.append({**m, "caching": True, "curated": True})
     out.sort(key=lambda m: (m.get("price_out_per_mtok") or 0.0))
     return out
+
+
+def select_model_for_load(load: str, curated: list[dict]) -> dict | None:
+    """업무 부하별 모델 선택 — 큐레이션 카탈로그에서 고른다 (INT-1892 1차 휴리스틱).
+
+    벤치 데이터(INT-1889 run) 확보 전 1차 규칙:
+    - light : 최저가(out) — 단순 조회/보고는 싸고 빠른 모델로.
+    - heavy : 최고 능력 근사 — params_b 큰 순, 동률이면 비싼 순(능력 proxy).
+    - standard: 가격 중앙값.
+    벤치 점수가 나오면 정렬 키를 점수 기반으로 교체(여기 한 곳만 수정).
+    라이브 per-turn 모델 오버라이드 배선은 벤치 데이터 후속 — 현재는 선택 로직만 제공.
+    """
+    if not curated:
+        return None
+    by_price = sorted(curated, key=lambda m: (m.get("price_out_per_mtok") or 0.0))
+    if load == "light":
+        return by_price[0]
+    if load == "heavy":
+        return sorted(curated, key=lambda m: (m.get("num_params_b") or 0,
+                                              m.get("price_out_per_mtok") or 0.0))[-1]
+    return by_price[len(by_price) // 2]
