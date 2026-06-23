@@ -44,6 +44,7 @@ class El {
 }
 const document = { createElement: (t) => new El(t) };
 function scrollBottom() {}
+function highlightWithin() {}  // 구문강조 후처리 — 인터리빙 로직 테스트엔 무관 (INT-1846 stub)
 const marked = { parse: (t) => '<p>' + t + '</p>' };
 const TYPING_SPEED = 0, CHUNK_SIZE = 9999, CATCHUP_AT = 99999;
 
