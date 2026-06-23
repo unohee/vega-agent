@@ -291,6 +291,8 @@ async def _remote_access_gate(request: Request, call_next):
 
 
 app.mount("/api/charts", StaticFiles(directory=str(CHART_DIR)), name="charts")
+# /static — chat.html 등이 번들 자산(vendor/pdfjs 등)을 로드 (INT-1831)
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 # 공유 런타임 상태 — web/state.py에서 관리. 모두 같은 객체를 참조함.
 from web.state import (  # noqa: E402
