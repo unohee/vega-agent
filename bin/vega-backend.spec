@@ -65,6 +65,7 @@ hiddenimports += ["mcp", "mcp.types"]
 hiddenimports += [
     "openpyxl", "pypdf", "docx", "pptx", "msoffcrypto",
     "xlrd", "PIL", "numpy", "pandas", "matplotlib", "plotly", "mammoth",
+    "hwpkit", "olefile", "lxml",  # 한글 문서(HWP=olefile / HWPX=lxml) — INT-1843
 ]
 # 데이터 파일 의존(matplotlib mpl-data, pptx 기본 템플릿)은 명시 수집.
 # pandas 는 pyarrow 등 optional 백엔드를 데이터로 끌어올 수 있어 제외.

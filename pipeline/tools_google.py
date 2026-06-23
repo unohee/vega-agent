@@ -1036,6 +1036,16 @@ def file_read(path: str, sheet: str | None = None, max_rows: int = 500,
     elif suffix == ".pdf":
         # 호스트 번들 pypdf로 텍스트 추출 (Docker 무관, dev/배포 동일) — INT-1832.
         return _pdf_bytes_to_text(p.read_bytes(), p.name)
+    elif suffix in (".hwp", ".hwpx"):
+        # 한글 문서 — hwpkit(순수 파이썬, olefile 의존)로 텍스트 추출. HWP5·HWPX 자동 감지.
+        # Node/Hancom/COM 무관이라 frozen 배포본 자립 (INT-1843).
+        try:
+            from hwpkit import extract_text_from_file
+            return f"[{p.name}]\n\n" + (extract_text_from_file(str(p)) or "")[:8000]
+        except ImportError:
+            return f"[{p.name}] 한글 문서 — hwpkit 미설치"
+        except Exception as e:
+            return f"[{p.name}] 한글 파싱 실패: {e}"
     elif suffix in (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp",
                     ".heic", ".heif", ".tiff", ".tif", ".avif", ".svg", ".ico"):
         # file_read는 텍스트 도구라 이미지 픽셀을 못 읽는다. 비전 분석은 채팅 첨부 경로로
