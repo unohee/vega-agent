@@ -3391,7 +3391,7 @@ function addImprovementBox(bub, payload) {
   const patch = {tool_name: payload.tool_name, patch_code: payload.patch_code};
   box.innerHTML = `
     <div class="improvement-header">🔧 자기개선 제안 — <code>${esc(payload.tool_name)}</code></div>
-    <div class="improvement-meta">${payload.failures}회 연속 실패 · sandbox 검증 통과 · 테스트 출력: ${esc((payload.test_output||'').slice(0,80))}</div>
+    <div class="improvement-meta">${payload.failures}회 연속 실패 · 검증 통과 · 테스트 출력: ${esc((payload.test_output||'').slice(0,80))}</div>
     <div class="improvement-diff">${diffHtml}</div>
     <div class="approval-actions">
       <button class="approval-btn confirm">✓ 패치 적용</button>
@@ -7211,17 +7211,7 @@ async function init() {
       headerAuth.classList.remove('ok'); headerAuth.classList.add('warn');
     }
     document.getElementById('status-server').classList.add('ok');
-
-    // sandbox 경고 — docker_off / container_down 이면 status-auth에 추가 힌트
-    if (data.sandbox === 'docker_off') {
-      const hint = document.createElement('span');
-      hint.id = 'status-sandbox-warn';
-      hint.className = 'status-item';
-      hint.style.color = 'var(--error)';
-      hint.title = 'Docker가 꺼져 있어 bash/python 도구가 작동하지 않습니다. Docker Desktop을 실행하세요.';
-      hint.textContent = '⚠ Docker';
-      document.getElementById('status-server').after(hint);
-    }
+    // (Docker 샌드박스 경고 제거 — 코드 실행은 호스트에서 직접 동작, INT-1870 Phase C)
   } catch {}
 
   await checkOnboarding();  // 첫 실행이면 온보딩 모달 표시
