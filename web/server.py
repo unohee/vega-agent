@@ -218,6 +218,7 @@ from web.routers import stt as _stt_router  # noqa: E402
 from web.routers import sessions as _sessions_router  # noqa: E402
 from web.routers import admin as _admin_router  # noqa: E402
 from web.routers import spawn as _spawn_router  # noqa: E402
+from web.routers import network as _network_router  # noqa: E402
 app.include_router(_llm_router.router)
 app.include_router(_fs_router.router)
 app.include_router(_dashboard_router.router)
@@ -234,6 +235,7 @@ app.include_router(_stt_router.router)
 app.include_router(_sessions_router.router)
 app.include_router(_admin_router.router)
 app.include_router(_spawn_router.router)
+app.include_router(_network_router.router)
 
 # CORS — allow Tauri app origin + localhost only. Wildcard removed to block cross-origin CSRF.
 from fastapi.middleware.cors import CORSMiddleware
