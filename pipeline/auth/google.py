@@ -104,11 +104,15 @@ def _builtin_client() -> dict | None:
     csec = (data.get("client_secret") or "").strip()
     if not cid or not csec:
         return None
+    stored = data.get("scopes") or []
+    # Merge stored scopes with fallback so newly-added required scopes (e.g.
+    # documents, drive.file) are always included even on older client.json files.
+    merged = list(dict.fromkeys(stored + _FALLBACK_SCOPES))
     return {
         "client_id": cid,
         "client_secret": csec,
         "redirect_uri": data.get("redirect_uri") or _DEFAULT_REDIRECT,
-        "scopes": data.get("scopes") or _FALLBACK_SCOPES,
+        "scopes": merged,
         "_source": "builtin",
     }
 

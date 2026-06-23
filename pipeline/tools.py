@@ -149,12 +149,17 @@ TOOL_SCHEMAS: list[dict] = [
     {
         "type": "function",
         "name": "web_search",
-        "description": "인터넷에서 정보를 검색한다. 최신 뉴스, 기술 문서, 일반 지식 조회에 사용.",
+        "description": "인터넷에서 정보를 검색한다. 최신 뉴스, 기술 문서, 가격 비교, 일반 지식 조회에 사용.",
         "parameters": {
             "type": "object",
             "properties": {
                 "query": {"type": "string", "description": "검색 키워드 또는 문장"},
                 "max_results": {"type": "integer", "default": 5, "description": "최대 결과 수"},
+                "engines": {
+                    "type": "string",
+                    "default": "google,bing",
+                    "description": "쉼표로 구분된 검색 엔진 목록 (기본: google,bing). 가격 비교·쇼핑: shopping 카테고리 엔진 추가 가능.",
+                },
             },
             "required": ["query"],
         },
