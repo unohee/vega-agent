@@ -121,13 +121,16 @@ jobs:
           }
 
       - name: Python 의존성 설치
-        # macOS DMG 빌드 venv(arm64_vega_env)와 동일한 최소 패키지 집합 — pandas/playwright
-        # 등 무거운 선택 의존성은 frozen 앱에서 lazy import 실패를 감수하고 제외한다.
+        # requirements.txt 전체 설치 — 백엔드 런타임 의존(numpy/pandas/pypdf/openpyxl 등)이
+        # 누락되면 frozen vega-backend.exe 가 ModuleNotFoundError 로 기동 실패한다 (numpy 누락으로
+        # /api/health smoke test 실패한 만성 장애의 진짜 원인 — INT-1697). 이전엔 "최소 집합"이라며
+        # 인라인 목록을 쓰다 numpy 를 빠뜨렸다. 무거운 ML(torch/transformers 등)은 vega-backend.spec
+        # 의 excludes 가 번들 단계에서 제외하므로 설치해도 frozen 바이너리엔 안 들어간다.
         run: |
           python -m pip install --upgrade pip
           # tzdata: Windows 엔 시스템 tz DB 가 없어 ZoneInfo("Asia/Seoul") 에 필수
-          # markdown: Superthread 카드 content HTML 변환 (INT-1571). pyairtable: Airtable 도구 (INT-1498/1570).
-          pip install pyinstaller uvicorn fastapi starlette sse-starlette fastmcp httpx httpx-sse openai anthropic tenacity aiosqlite aiofiles aiohttp tiktoken certifi pydantic pydantic-settings python-multipart python-dotenv keyring requests rich pyyaml websockets tzdata markdown pyairtable
+          pip install pyinstaller tzdata
+          pip install -r requirements.txt
 
       - name: PyInstaller — vega-backend.exe
         run: |
