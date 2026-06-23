@@ -36,6 +36,16 @@ def data_dir() -> Path:
     return p
 
 
+def workspace_dir() -> Path:
+    """VEGA 코드 실행·자작 도구의 영속 워크스페이스 (App Support 하위). INT-1870 §4b.
+
+    누적되는 '개발 카탈로그' — VEGA가 만든 모듈/스크립트가 여기 쌓여 다음 실행에서
+    재사용된다(중복 도구 양산 방지, 메모리 큐레이션과 같은 원리). data_dir() 하위라
+    Docker opt-in 시에도 컨테이너에 /vega_data/workspace 로 그대로 보인다.
+    """
+    return data_dir() / "workspace"
+
+
 def repo_data_dir() -> Path:
     """Repo-committed code-level data (commands/, agents/, mcp.json, etc.) — do NOT confuse with user data root."""
     return _REPO_DATA

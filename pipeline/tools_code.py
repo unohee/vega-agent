@@ -60,12 +60,43 @@ def set_session_working_dir(path: str | None) -> None:
     _WORKING_DIR.set(path or None)
 
 
+def _ensure_workspace() -> Path:
+    """App Support 워크스페이스(영속 개발 카탈로그) 보장 — 하위 디렉터리 + CATALOG seed.
+
+    누적 카탈로그(INT-1870 §4b): VEGA가 만든 skills 모듈이 여기 쌓여 다음 실행에서 import 된다."""
+    from pipeline.data_paths import workspace_dir
+    ws = workspace_dir()
+    for sub in ("skills", "site-packages", "history", "projects"):
+        (ws / sub).mkdir(parents=True, exist_ok=True)
+    cat = ws / "CATALOG.md"
+    if not cat.exists():
+        cat.write_text(
+            "# VEGA Development Catalog\n\n"
+            "VEGA가 만든 재사용 모듈/스크립트 목록. **새 도구를 만들기 전에 먼저 여기를 확인**하고\n"
+            "이미 있으면 재사용한다(중복 양산 금지 — 메모리 큐레이션과 같은 원리).\n"
+            "`skills/<name>.py` 는 코드 실행 시 `import <name>` 으로 불러올 수 있다.\n\n"
+            "| module | 설명 | 추가일 |\n|---|---|---|\n",
+            encoding="utf-8",
+        )
+    return ws
+
+
 def _base_cwd() -> str:
-    """Returns the session working directory if set and exists, otherwise home."""
+    """Code execution working dir — session override > App Support workspace (catalog) > home.
+
+    기본을 home 대신 워크스페이스로 둬서 VEGA의 실행·개발 산출물이 home 에 흩어지지 않고
+    App Support 카탈로그에 누적된다 (INT-1870 §4b). 사용자 file_read/office 등은 명시 경로라
+    영향 없음. 사용자가 working dir 를 명시하면 그게 우선."""
     wd = _WORKING_DIR.get()
     if wd and Path(wd).expanduser().is_dir():
         return str(Path(wd).expanduser())
-    return str(Path.home())
+    try:
+        from pipeline.data_paths import workspace_dir
+        ws = workspace_dir()
+        ws.mkdir(parents=True, exist_ok=True)
+        return str(ws)
+    except Exception:
+        return str(Path.home())
 
 # ── Safeguards ────────────────────────────────────────────────────────────────
 
@@ -316,6 +347,10 @@ sys.path.insert(0, '{vega_root}')
 for _p in ['{home}/dev/STONKS', '{home}/dev/ArtifactNet', '{home}/dev/template-crawler']:
     if _p not in sys.path and os.path.exists(_p):
         sys.path.insert(0, _p)
+# VEGA 개발 카탈로그 — 이전 실행에서 만든 자작 모듈을 import 가능 (INT-1870 §4b)
+for _p in ['{workspace}/skills', '{workspace}/site-packages']:
+    if _p not in sys.path and os.path.exists(_p):
+        sys.path.insert(0, _p)
 os.chdir('{cwd}')
 """.strip()
 
@@ -361,8 +396,10 @@ def python_exec(code: str, timeout: int = 60) -> dict:
 
     # 2차(진짜 경계): 런타임 파일접근 가드 prelude. open/os.remove/shutil.rmtree 후킹으로
     # 난독화 우회 코드도 실제 파일 접근 시점에 차단. Docker 격리 없는 호스트 실행의 방어선.
+    from pipeline.data_paths import workspace_dir
     prelude = _guard_prelude() + "\n" + _PYTHON_PRELUDE.format(
-        vega_root=str(VEGA_ROOT), home=str(Path.home()), cwd=_base_cwd()
+        vega_root=str(VEGA_ROOT), home=str(Path.home()),
+        cwd=_base_cwd(), workspace=str(workspace_dir())
     )
     full_code = prelude + "\n" + textwrap.dedent(code)
 
@@ -883,14 +920,52 @@ CODE_TOOL_SCHEMAS: list[dict] = [
 ]
 
 
+def _catalog_add(ws: Path, name: str, code: str) -> None:
+    """CATALOG.md 에 모듈 1줄 추가(이미 있으면 생략). 설명은 코드 첫 docstring/주석에서 추출."""
+    cat = ws / "CATALOG.md"
+    desc = ""
+    for line in code.splitlines():
+        s = line.strip().strip('"').strip("'").lstrip("#").strip()
+        if s:
+            desc = s[:80]
+            break
+    try:
+        existing = cat.read_text(encoding="utf-8") if cat.exists() else ""
+        if f"| `{name}` " in existing:
+            return
+        from datetime import date
+        with cat.open("a", encoding="utf-8") as f:
+            f.write(f"| `{name}` | {desc or '—'} | {date.today().isoformat()} |\n")
+    except Exception:
+        pass
+
+
 def _sandboxed_save_module(module_name: str, code: str) -> dict:
-    from pipeline.sandbox import sandbox_save_module
-    return sandbox_save_module(module_name, code)
+    """자작 모듈을 App Support 워크스페이스 카탈로그(skills/)에 영속 저장 — 다음 실행에서
+    import 가능. 호스트 영속(컨테이너 휘발 볼륨 아님), Docker 의존 없음 (INT-1870 §4b)."""
+    safe = _re.sub(r"[^A-Za-z0-9_]", "", module_name) or "module"
+    try:
+        ws = _ensure_workspace()
+        path = ws / "skills" / f"{safe}.py"
+        path.write_text(code, encoding="utf-8")
+        _catalog_add(ws, safe, code)
+        return {"ok": True, "module": safe, "path": str(path)}
+    except Exception as e:
+        return {"error": str(e)}
 
 
 def _sandboxed_list_skills() -> dict:
-    from pipeline.sandbox import sandbox_list_skills
-    return sandbox_list_skills()
+    """워크스페이스 카탈로그 조회 — skills 모듈·CATALOG·history. '만들기 전 먼저 확인' 용 (INT-1870 §4b)."""
+    try:
+        ws = _ensure_workspace()
+        skills = sorted(p.stem for p in (ws / "skills").glob("*.py"))
+        history = sorted(p.name for p in (ws / "history").glob("*.jsonl"))
+        cat = ws / "CATALOG.md"
+        catalog = cat.read_text(encoding="utf-8")[:4000] if cat.exists() else ""
+        return {"ok": True, "workspace": str(ws), "skills": skills,
+                "history": history, "catalog": catalog}
+    except Exception as e:
+        return {"error": str(e)}
 
 
 def vega_reload_tools() -> dict:
