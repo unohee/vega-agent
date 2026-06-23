@@ -134,11 +134,14 @@ from pipeline.tools_google import (
 from pipeline.tools_web import web_search, web_fetch
 from pipeline.spawn import dispatch_agent
 from pipeline.discord_bridge import discord_notify
-# NOTE: vega-agent 공개판은 office/browser/things/kis/imessage 개인 도구 모듈을 싣지 않는다.
-# OFFICE_TOOL_SCHEMAS / OFFICE_TOOL_FUNCTIONS 는 빈 값으로 스텁한다.
-# (개인 VEGA 에서 이식하려면 pipeline/tools_office.py 를 추가하고 이 두 줄을 import 로 교체)
-OFFICE_TOOL_SCHEMAS: list[dict] = []
-OFFICE_TOOL_FUNCTIONS: dict[str, Any] = {}
+# office 도구(xlsx/docx/pptx 생성·편집·읽기 + latex) — _office_exec 가 Docker→호스트 폴백
+# (INT-1840)이라 Docker 없는 배포본에서도 동봉 인터프리터로 동작. 모듈이 없으면 빈 값 폴백.
+# (browser/things/kis/imessage 개인 도구는 여전히 공개판 미탑재) — INT-1843.
+try:
+    from pipeline.tools_office import OFFICE_TOOL_SCHEMAS, OFFICE_TOOL_FUNCTIONS
+except Exception:
+    OFFICE_TOOL_SCHEMAS: list[dict] = []
+    OFFICE_TOOL_FUNCTIONS: dict[str, Any] = {}
 
 # ── Tool schemas (GPT tool-use format) ───────────────────────────────────────
 

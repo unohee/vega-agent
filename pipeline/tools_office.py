@@ -438,6 +438,169 @@ def latex_template(template: str, variables: dict[str, str]) -> str:
     return result
 
 
+# ─── PDF 생성 (reportlab — 한글 CID 폰트 내장, Docker·TeX 불필요) ────────────────
+
+_PDF_FONTS_READY = False
+
+
+def _ensure_pdf_fonts() -> None:
+    """한글 CID 폰트 1회 등록(HYGothic=고딕 본문, HYSMyeongJo=명조). 멱등.
+    reportlab 내장 Adobe CJK CMap을 쓰므로 TTF 번들이 필요 없다."""
+    global _PDF_FONTS_READY
+    if _PDF_FONTS_READY:
+        return
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+    for fn in ("HYGothic-Medium", "HYSMyeongJo-Medium"):
+        try:
+            pdfmetrics.registerFont(UnicodeCIDFont(fn))
+        except Exception:
+            pass
+    _PDF_FONTS_READY = True
+
+
+def _md_inline(text: str) -> str:
+    """markdown 인라인(굵게/기울임/코드/링크)을 reportlab Paragraph 마크업으로 변환.
+    XML escape 를 먼저 한 뒤 마크업 태그를 삽입한다(주입 방지)."""
+    import re
+    s = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    s = re.sub(r"`([^`]+)`", r'<font face="Courier">\1</font>', s)
+    s = re.sub(r"\*\*([^*]+)\*\*", r"<b>\1</b>", s)
+    s = re.sub(r"__([^_]+)__", r"<b>\1</b>", s)
+    s = re.sub(r"(?<!\*)\*([^*]+)\*(?!\*)", r"<i>\1</i>", s)
+    s = re.sub(r"\[([^\]]+)\]\((https?://[^)]+)\)", r'<link href="\2" color="blue">\1</link>', s)
+    return s
+
+
+def pdf_create(path: str, content: str, title: str | None = None) -> dict:
+    """markdown/일반텍스트 content 를 PDF 로 생성 (한글 지원).
+
+    동봉 reportlab 으로 in-process 렌더 — Docker·TeX 불필요라 비개발자 배포본 자립.
+    지원: 제목·헤딩(#~###), 문단, **굵게**/*기울임*/`코드`/[링크], 글머리·번호 목록,
+    코드펜스(```), 표(| a | b |), 구분선(---). 코드/인라인코드는 Courier(ASCII).
+    """
+    try:
+        from pipeline.path_guard import guard_path
+        guard_path(path)
+    except PermissionError as e:
+        return {"error": f"[SAFEGUARD] {e}"}
+    except Exception:
+        pass  # path_guard 로드 실패 시 렌더는 진행(아래 mkdir/쓰기에서 실패 처리)
+    try:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.styles import ParagraphStyle
+        from reportlab.lib.units import mm
+        from reportlab.lib import colors
+        from reportlab.platypus import (
+            SimpleDocTemplate, Paragraph, Spacer, Preformatted,
+            ListFlowable, ListItem, Table, TableStyle, HRFlowable,
+        )
+    except Exception as e:
+        return {"error": f"reportlab 미설치 — PDF 생성 불가: {e}"}
+
+    import re
+    import shutil as _sh
+
+    _ensure_pdf_fonts()
+    BODY = "HYGothic-Medium"
+    out = Path(path).expanduser()
+    try:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        if out.exists():
+            _sh.copy2(out, out.with_suffix(out.suffix + ".bak"))
+    except Exception as e:
+        return {"error": f"경로 준비 실패: {e}"}
+
+    body = ParagraphStyle("body", fontName=BODY, fontSize=10.5, leading=16, spaceAfter=6)
+    h1 = ParagraphStyle("h1", fontName=BODY, fontSize=20, leading=26, spaceBefore=6, spaceAfter=10)
+    h2 = ParagraphStyle("h2", fontName=BODY, fontSize=15, leading=21, spaceBefore=6, spaceAfter=8)
+    h3 = ParagraphStyle("h3", fontName=BODY, fontSize=12.5, leading=18, spaceBefore=4, spaceAfter=6)
+    code_st = ParagraphStyle("code", fontName="Courier", fontSize=9, leading=12,
+                             backColor=colors.HexColor("#f2f2f2"), borderPadding=6, spaceAfter=6)
+
+    flow: list = []
+    if title:
+        flow.append(Paragraph(_md_inline(title), h1))
+        flow.append(Spacer(1, 4))
+
+    lines = content.split("\n")
+    i = 0
+    bullets: list[str] = []
+
+    def _flush_bullets() -> None:
+        nonlocal bullets
+        if bullets:
+            flow.append(ListFlowable(
+                [ListItem(Paragraph(_md_inline(b), body)) for b in bullets],
+                bulletType="bullet", leftIndent=14))
+            bullets = []
+
+    while i < len(lines):
+        st = lines[i].strip()
+        if st.startswith("```"):                                   # 코드펜스
+            _flush_bullets()
+            buf, i = [], i + 1
+            while i < len(lines) and not lines[i].strip().startswith("```"):
+                buf.append(lines[i]); i += 1
+            i += 1
+            flow.append(Preformatted("\n".join(buf) or " ", code_st))
+            continue
+        if st.startswith("|") and st.endswith("|"):                # 표
+            _flush_bullets()
+            rows = []
+            while i < len(lines) and lines[i].strip().startswith("|"):
+                cells = [c.strip() for c in lines[i].strip().strip("|").split("|")]
+                if not all(set(c) <= set("-: ") for c in cells):   # 구분행 스킵
+                    rows.append([Paragraph(_md_inline(c), body) for c in cells])
+                i += 1
+            if rows:
+                tbl = Table(rows, hAlign="LEFT")
+                tbl.setStyle(TableStyle([
+                    ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cccccc")),
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f2f2f2")),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 6), ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                    ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                ]))
+                flow.append(tbl); flow.append(Spacer(1, 6))
+            continue
+        if st.startswith("### "):
+            _flush_bullets(); flow.append(Paragraph(_md_inline(st[4:]), h3)); i += 1; continue
+        if st.startswith("## "):
+            _flush_bullets(); flow.append(Paragraph(_md_inline(st[3:]), h2)); i += 1; continue
+        if st.startswith("# "):
+            _flush_bullets(); flow.append(Paragraph(_md_inline(st[2:]), h1)); i += 1; continue
+        if st in ("---", "***", "___"):
+            _flush_bullets()
+            flow.append(HRFlowable(width="100%", color=colors.HexColor("#cccccc"),
+                                   spaceBefore=4, spaceAfter=8)); i += 1; continue
+        m = re.match(r"[-*+]\s+(.*)", st) or re.match(r"\d+\.\s+(.*)", st)
+        if m:
+            bullets.append(m.group(1)); i += 1; continue
+        if not st:
+            _flush_bullets(); flow.append(Spacer(1, 4)); i += 1; continue
+        _flush_bullets(); flow.append(Paragraph(_md_inline(st), body)); i += 1
+
+    _flush_bullets()
+    if not flow:
+        flow.append(Paragraph(" ", body))
+
+    pages = {"n": 0}
+
+    def _count(canvas, d):
+        pages["n"] += 1
+
+    try:
+        doc = SimpleDocTemplate(
+            str(out), pagesize=A4,
+            leftMargin=20 * mm, rightMargin=20 * mm, topMargin=20 * mm, bottomMargin=20 * mm,
+            title=title or out.stem)
+        doc.build(flow, onFirstPage=_count, onLaterPages=_count)
+    except Exception as e:
+        return {"error": f"PDF 렌더 실패: {e}"}
+    return {"ok": True, "path": str(out), "pages": pages["n"], "bytes": out.stat().st_size}
+
+
 # ─── Tool schemas ─────────────────────────────────────────────────────────────
 
 OFFICE_TOOL_SCHEMAS: list[dict] = [
@@ -644,6 +807,20 @@ OFFICE_TOOL_SCHEMAS: list[dict] = [
             "required": ["template", "variables"],
         },
     },
+    {
+        "type": "function",
+        "name": "pdf_create",
+        "description": "markdown/텍스트 내용을 PDF로 생성 (한글 지원, Docker·TeX 불필요). 제목·헤딩·**굵게**/*기울임*/`코드`·목록·표·코드블록·구분선 지원. LLM이 만든 보고서·문서를 PDF로 저장할 때 사용. (고품질 조판이 필요하면 latex_compile.)",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "저장할 PDF 경로 (~/... 또는 절대경로, .pdf)"},
+                "content": {"type": "string", "description": "PDF 본문 (markdown 또는 일반 텍스트)"},
+                "title": {"type": "string", "description": "문서 제목 (선택 — 첫 페이지 상단 + PDF 메타데이터)"},
+            },
+            "required": ["path", "content"],
+        },
+    },
 ]
 
 OFFICE_TOOL_FUNCTIONS: dict[str, Any] = {
@@ -660,4 +837,5 @@ OFFICE_TOOL_FUNCTIONS: dict[str, Any] = {
     "pptx_append_slide": pptx_append_slide,
     "latex_compile":     latex_compile,
     "latex_template":    latex_template,
+    "pdf_create":        pdf_create,
 }

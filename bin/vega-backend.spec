@@ -67,9 +67,9 @@ hiddenimports += [
     "xlrd", "PIL", "numpy", "pandas", "matplotlib", "plotly", "mammoth",
     "hwpkit", "olefile", "lxml",  # 한글 문서(HWP=olefile / HWPX=lxml) — INT-1843
 ]
-# 데이터 파일 의존(matplotlib mpl-data, pptx 기본 템플릿)은 명시 수집.
+# 데이터 파일 의존(matplotlib mpl-data, pptx 기본 템플릿, reportlab 폰트)은 명시 수집.
 # pandas 는 pyarrow 등 optional 백엔드를 데이터로 끌어올 수 있어 제외.
-for pkg in ("matplotlib", "pptx", "openpyxl"):
+for pkg in ("matplotlib", "pptx", "openpyxl", "reportlab"):
     try:
         datas += collect_data_files(pkg)
     except Exception:
@@ -83,6 +83,13 @@ for pkg in ("markdown", "pyairtable"):
         hiddenimports += collect_submodules(pkg)
     except Exception:
         pass
+
+# reportlab(pdf_create) — import 가 전부 함수 내부 lazy 라 정적 그래프가 일부 서브모듈
+# (_cidfontdata 등 한글 CID 데이터)을 놓칠 수 있어 전체 수집. 순수 파이썬이라 폭발 없음 (INT-1843).
+try:
+    hiddenimports += collect_submodules("reportlab")
+except Exception:
+    pass
 
 # fastmcp 데이터 파일(스키마 등) 동봉
 datas += collect_data_files("fastmcp", include_py_files=True)
