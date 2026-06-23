@@ -1,83 +1,91 @@
 # Created: 2026-06-20
-# Purpose: heartbeat-owned Google freshness sync orchestration tests; no credentials/network.
+# Purpose: heartbeat-owned Google incremental freshness sync orchestration tests; no credentials/network.
 
 from __future__ import annotations
+
+import sys
+import types
 
 import pipeline.heartbeat as heartbeat
 
 
-def test_google_freshness_lock_held_skips_without_ingest():
+def test_google_incremental_sync_lock_held_skips_without_ingest(monkeypatch):
+    """When the thread lock is already held, sync skips without touching auth or sources."""
     calls: list[str] = []
-    source = heartbeat.GoogleFreshnessSource(
-        name="gmail",
-        ingest=lambda _token, _cursor: calls.append("ingest"),
-    )
+    monkeypatch.setattr(heartbeat, "_check_google_auth_for_heartbeat", lambda: calls.append("auth") or True)
+    monkeypatch.setattr(heartbeat, "_google_sources", lambda: calls.append("sources") or [])
 
-    assert heartbeat._GOOGLE_FRESHNESS_LOCK.acquire(blocking=False)
+    assert heartbeat._GOOGLE_SYNC_THREAD_LOCK.acquire(blocking=False)
     try:
-        result = heartbeat.run_google_freshness_sync(
-            sources=(source,),
-            token_getter=lambda: "token",
-        )
+        heartbeat.heartbeat_google_incremental_sync(force=True)
     finally:
-        heartbeat._GOOGLE_FRESHNESS_LOCK.release()
+        heartbeat._GOOGLE_SYNC_THREAD_LOCK.release()
 
-    assert result == {"ok": True, "skipped": "lock_held", "sources": []}
     assert calls == []
 
 
-def test_google_freshness_auth_missing_skips_without_crashing():
+def test_google_incremental_sync_auth_missing_skips_without_crashing(monkeypatch):
+    """When auth check returns False, no sources are called."""
     calls: list[str] = []
-    source = heartbeat.GoogleFreshnessSource(
-        name="gmail",
-        ingest=lambda _token, _cursor: calls.append("ingest"),
-    )
+    monkeypatch.setattr(heartbeat, "_check_google_auth_for_heartbeat", lambda: False)
+    monkeypatch.setattr(heartbeat, "_google_sources", lambda: calls.append("sources") or [])
 
-    result = heartbeat.run_google_freshness_sync(
-        sources=(source,),
-        token_getter=lambda: None,
-    )
+    heartbeat.heartbeat_google_incremental_sync(force=True)
 
-    assert result == {"ok": True, "skipped": "auth_missing", "sources": []}
     assert calls == []
 
 
-def test_google_freshness_source_failure_does_not_block_later_sources():
+def test_google_incremental_sync_default_auth_uses_get_access_token(monkeypatch):
+    """Auth path imports get_access_token, not the removed ensure_valid_token symbol.
+
+    Regression guard: the original ImportError was caused by importing the non-existent
+    ensure_valid_token from pipeline.auth.google. This test provides only get_access_token
+    on the mock module — any attempt to access ensure_valid_token would raise AttributeError.
+    """
+    google_auth = types.ModuleType("pipeline.auth.google")
+    google_auth.stored_refresh_token = lambda: "refresh-tok"
+    google_auth.get_access_token = lambda: "access-tok"
+    monkeypatch.setitem(sys.modules, "pipeline.auth.google", google_auth)
+    monkeypatch.setattr(heartbeat, "_google_sources", lambda: [])
+
+    # Should complete without AttributeError or ImportError
+    heartbeat.heartbeat_google_incremental_sync(force=True)
+
+
+def test_google_incremental_sync_source_failure_does_not_block_later_sources(monkeypatch, tmp_path):
+    """A failing source is logged and skipped; subsequent sources still run."""
     calls: list[str] = []
     advanced: list[str] = []
 
-    def fail_ingest(_token: str, cursor: str) -> str:
-        calls.append(f"fail:{cursor}")
+    def fail_ingest(cursor):
+        calls.append("fail")
         raise RuntimeError("boom")
 
-    def ok_ingest(_token: str, cursor: str) -> str:
-        calls.append(f"ok:{cursor}")
-        return "next-ok"
+    def ok_ingest(cursor):
+        calls.append("ok")
+        return {"syncedAt": "2026-01-01"}
 
-    sources = (
-        heartbeat.GoogleFreshnessSource(
+    sources = [
+        heartbeat._GoogleSource(
             name="gmail",
-            load_cursor=lambda: "old-fail",
+            read_cursor=lambda name: None,
+            write_cursor=lambda name, cur: advanced.append("fail-write"),
             ingest=fail_ingest,
-            advance_cursor=lambda cursor: advanced.append(f"fail:{cursor}"),
         ),
-        heartbeat.GoogleFreshnessSource(
+        heartbeat._GoogleSource(
             name="calendar",
-            load_cursor=lambda: "old-ok",
+            read_cursor=lambda name: None,
+            write_cursor=lambda name, cur: advanced.append("ok-write"),
             ingest=ok_ingest,
-            advance_cursor=lambda cursor: advanced.append(f"ok:{cursor}"),
         ),
-    )
+    ]
 
-    result = heartbeat.run_google_freshness_sync(
-        sources=sources,
-        token_getter=lambda: "token",
-    )
+    monkeypatch.setattr(heartbeat, "_check_google_auth_for_heartbeat", lambda: True)
+    monkeypatch.setattr(heartbeat, "_google_sources", lambda: sources)
+    monkeypatch.setattr(heartbeat, "_GOOGLE_SYNC_DELAY_SEC", 0)
+    monkeypatch.setattr(heartbeat, "_google_sync_lock_path", lambda: tmp_path / "test.lock")
 
-    assert calls == ["fail:old-fail", "ok:old-ok"]
-    assert advanced == ["ok:next-ok"]
-    assert result["ok"] is False
-    assert result["sources"][0]["source"] == "gmail"
-    assert result["sources"][0]["ok"] is False
-    assert "boom" in result["sources"][0]["error"]
-    assert result["sources"][1] == {"source": "calendar", "ok": True}
+    heartbeat.heartbeat_google_incremental_sync(force=True)
+
+    assert calls == ["fail", "ok"]
+    assert advanced == ["ok-write"]  # failing source cursor not advanced; ok source cursor is
