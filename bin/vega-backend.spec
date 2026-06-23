@@ -22,9 +22,7 @@ datas += [
     (os.path.join(REPO_ROOT, "data", "tool_groups.json"), "data"),
     (os.path.join(REPO_ROOT, "data", "mcp.json"), "data"),
     (os.path.join(REPO_ROOT, "data", "slack_oauth_client.json"), "data"),
-    # Docker 코드 샌드박스 정의 — 설치본에서 ensure_sandbox_ready 가 compose build/up 하려면 필요
-    (os.path.join(REPO_ROOT, "sandbox", "Dockerfile"), "sandbox"),
-    (os.path.join(REPO_ROOT, "sandbox", "docker-compose.yml"), "sandbox"),
+    # (Docker 샌드박스 정의 제거 — 코드 실행은 호스트 동봉 인터프리터로 일원화, INT-1870 Phase C)
 ]
 
 # Google OAuth 내장 client — gitignore라 CI(release-dmg.yml)가 GOOGLE_OAUTH_CLIENT_JSON
@@ -55,8 +53,8 @@ for pkg in ("uvicorn", "fastapi", "starlette", "anyio", "sse_starlette",
         pass
 hiddenimports += ["mcp", "mcp.types"]
 
-# 사무 문서 / 데이터 처리 라이브러리 — VEGA.app 단독(Docker 없이) PDF/XLS/DOCX/PPTX·차트 처리.
-# tools_office.py 는 함수 안 + sandbox 문자열 코드에서 import 하므로 정적 분석이 못 잡는다.
+# 사무 문서 / 데이터 처리 라이브러리 — VEGA.app 단독 PDF/XLS/DOCX/PPTX·차트 처리(호스트 실행).
+# tools_office.py 는 함수 안에서 import 하므로 정적 분석이 못 잡는다.
 #
 # 주의: collect_submodules 는 쓰지 않는다. 빌드 환경(mlx_env)에 torch/transformers/
 # tensorflow/pyarrow 등 거대 ML 패키지가 깔려 있어, pandas 등의 optional 백엔드를

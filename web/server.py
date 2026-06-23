@@ -181,25 +181,7 @@ async def lifespan(app: FastAPI):
     # Cron loop — run scheduled prompts at their due time in the background (INT-1407)
     _cron_task = asyncio.create_task(_cron_loop())
 
-    # Docker 코드 샌드박스 자동 확보 (백그라운드) — 기동 시 컨테이너를 띄워두어
-    # 첫 bash_exec/python_exec 호출 시 빌드/기동 지연을 없앤다. Docker 없으면 조용히 skip.
-    async def _warmup_sandbox():
-        try:
-            from pipeline.sandbox import ensure_sandbox_ready, low_memory_host
-            if low_memory_host():
-                # 저사양(<16GB)에서는 Docker Desktop VM 상주 점유(수 GB)가 스왑 주범 —
-                # 선기동을 생략하고 sandbox_* 첫 호출 시 온디맨드 기동(INT-1430)
-                print("[Sandbox] 저사양 머신(<16GB) — 선기동 생략, sandbox_* 첫 호출 시 기동")
-                return
-            result = await asyncio.get_event_loop().run_in_executor(None, ensure_sandbox_ready)
-            if result.get("ready"):
-                print(f"[Sandbox] ready ({result.get('reason')})")
-            else:
-                print(f"[Sandbox] skipped ({result.get('reason')}) — 코드 실행 도구는 Docker 기동 후 사용 가능")
-        except Exception as e:
-            print(f"[Sandbox] warmup warning: {e}")
-
-    asyncio.create_task(_warmup_sandbox())
+    # 코드 실행은 호스트 동봉 인터프리터로 직접 동작(Docker 제거, INT-1870) — 샌드박스 warmup 불필요.
 
     # heartbeat은 이 repo(agent.db 분기)에서 테이블 사전생성 함수 없음 — 생략
 
@@ -1039,20 +1021,8 @@ async def health():
     from pipeline.mcp_client import _tool_server
     mcp_tools = len(_tool_server)
 
-    # 샌드박스(Docker) 가용성 — 꺼져 있으면 bash_exec/python_exec/sandbox 가
-    # 등록돼 있어도 실제 실행이 안 된다. "도구가 몇 개 안 보인다"의 흔한 원인이라
-    # health 에 노출해 진단을 쉽게 한다.
-    sandbox_status = "unknown"
-    try:
-        from pipeline.sandbox import docker_available, _container_running
-        if not docker_available():
-            sandbox_status = "docker_off"   # Docker Desktop 미기동/미설치
-        elif _container_running():
-            sandbox_status = "ok"
-        else:
-            sandbox_status = "container_down"  # Docker 는 떠 있으나 컨테이너 미기동
-    except Exception:
-        sandbox_status = "unknown"
+    # 코드 실행은 호스트 동봉 인터프리터로 직접 동작(Docker 제거, INT-1870). 별도 가용성 진단 불필요.
+    sandbox_status = "host"
 
     # 전체 도구 개수(office/sandbox 포함) — TOOL_SCHEMAS 기준.
     try:

@@ -1,11 +1,10 @@
 # Created: 2026-06-23
-# Purpose: 호스트 우선 실행(Docker opt-in) + App Support 워크스페이스 누적 카탈로그 회귀 (INT-1870 Phase A).
-# Dependencies: pipeline.sandbox, pipeline.tools_code, pipeline.data_paths
+# Purpose: 호스트 실행 + App Support 워크스페이스 누적 카탈로그 회귀 (INT-1870 Phase A/C).
+# Dependencies: pipeline.tools_code, pipeline.data_paths
 # Test Status: green (2026-06-23)
 
 from __future__ import annotations
 
-import pipeline.sandbox as sb
 from pipeline.data_paths import workspace_dir
 from pipeline.tools_code import (
     _sandboxed_list_skills,
@@ -13,23 +12,8 @@ from pipeline.tools_code import (
     python_exec,
 )
 
-
-def test_docker_opt_in_default_off(monkeypatch):
-    """기본(VEGA_USE_DOCKER 미설정)은 Docker opt-out — 라우팅이 호스트로 간다(INT-1870 Phase A.1)."""
-    monkeypatch.delenv("VEGA_USE_DOCKER", raising=False)
-    assert sb.docker_opt_in() is False
-    # enabled = opt_in AND available → opt_in False 면 Docker 설치 여부와 무관하게 False
-    assert sb.docker_enabled() is False
-
-
-def test_docker_opt_in_env(monkeypatch):
-    """VEGA_USE_DOCKER 로만 Docker 활성 — 값 파싱 확인."""
-    monkeypatch.setenv("VEGA_USE_DOCKER", "1")
-    assert sb.docker_opt_in() is True
-    monkeypatch.setenv("VEGA_USE_DOCKER", "false")
-    assert sb.docker_opt_in() is False
-    monkeypatch.setenv("VEGA_USE_DOCKER", "on")
-    assert sb.docker_opt_in() is True
+# (docker_opt_in/docker_enabled 테스트 제거 — Docker 자체를 제거함, INT-1870 Phase C.
+#  코드 실행은 항상 호스트 동봉 인터프리터로 동작한다.)
 
 
 def test_workspace_catalog_accumulates(monkeypatch, tmp_path):

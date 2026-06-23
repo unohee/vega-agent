@@ -271,26 +271,14 @@ class TestSessionsRouter:
         resp = client.post("/api/sessions/perm-sid-c/permission-mode", json={"mode": "yolo"})
         assert resp.status_code == 400
 
-    def test_system_check_docker_available(self, client):
-        """INT-1453: Docker 가용 시 hint 없이 available=True."""
-        with patch("pipeline.sandbox.docker_available", return_value=True):
-            resp = client.get("/api/onboarding/system-check")
+    def test_system_check_host_exec(self, client):
+        """INT-1870 Phase C: 코드 실행은 호스트 모드 — Docker 의존 없음."""
+        resp = client.get("/api/onboarding/system-check")
         assert resp.status_code == 200
-        d = resp.json()["docker"]
-        assert d["available"] is True
-        assert d["hint"] is None
-
-    def test_system_check_docker_missing(self, client):
-        """INT-1453: Docker 미설치 시 비차단 안내(hint+install_url)를 내려준다."""
-        # windows_docker_backend 도 patch — CI Windows 에서 VT-x 진단이 hint 를 덮어쓰는 걸 방지
-        with patch("pipeline.sandbox.docker_available", return_value=False), \
-             patch("pipeline.sandbox.windows_docker_backend", return_value={}):
-            resp = client.get("/api/onboarding/system-check")
-        assert resp.status_code == 200
-        d = resp.json()["docker"]
-        assert d["available"] is False
-        assert "코드 실행" in d["hint"]
-        assert d["install_url"].startswith("https://")
+        body = resp.json()
+        assert body["code_exec"]["mode"] == "host"
+        assert body["code_exec"]["available"] is True
+        assert "docker" not in body  # Docker 블록 제거됨
 
     def test_permission_mode_default_clears_global_yolo(self, client):
         """전역 YOLO 가 켜진 상태에서 default 로 내리면 전역 플래그도 꺼져야 한다."""

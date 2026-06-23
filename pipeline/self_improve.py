@@ -1,6 +1,6 @@
 # Created: 2026-05-20
 # Purpose: VEGA semi-autonomous self-improvement — detect tool failures → generate patch → sandbox verify → user approval
-# Dependencies: pipeline.sandbox, pipeline.streaming (GPT calls), pipeline.tools
+# Dependencies: pipeline.tools_code (host exec), pipeline.streaming (GPT calls), pipeline.tools
 # Test Status: under review
 
 from __future__ import annotations
