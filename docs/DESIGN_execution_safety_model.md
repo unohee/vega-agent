@@ -13,10 +13,13 @@ removal (Phase C).
 
 Safety is provided by, in order of reliance:
 **system-wide allow/deny policy → runtime guardrails → system-prompt constraints → permission/approval modes →
-reversibility + visibility → an LLM auditor for unattended (autonomous) runs.**
+reversibility + visibility → deterministic gates for unattended (autonomous) runs.**
 
-This is the model VEGA already chose elsewhere (`project_self_modification`: "Claude Code-level freedom, block only
-destruction/jailbreak, gemma-26B auditor gate") — Docker is an inconsistent leftover, not the chosen mechanism.
+The gates are **deterministic, not an LLM auditor** (decision 2026-06-23): VEGA's self-modification is already
+gated by a protected-tool list + static safety check + runtime test + explicit user approval (`self_improve.py`),
+which is the Claude-Code model — approval and reversibility, not probabilistic review. (An earlier design note
+proposed a "gemma-26B auditor"; it was never built and is explicitly rejected — deterministic gates suffice.)
+Docker is an inconsistent leftover, not the chosen mechanism.
 
 ## 2. Rationale
 
@@ -72,9 +75,11 @@ Defense in depth. Most layers already exist (see §5).
 - **L5 — Reversibility + visibility.** Trash instead of `rm`, `.bak` before overwrite, git for code; every tool
   call, terminal output, and approval prompt is rendered in chat. This is what lets a non-developer recover from
   a mistake — the actual antidote to "fear".
-- **L6 — Autonomous auditor.** Unattended runs (heartbeat, `self_improve`) lack the human-in-the-loop that
-  interactive sessions have. The gemma-26B auditor gate (already the chosen mechanism for self-modification)
-  is the substitute reviewer; strengthen it rather than relying on Docker for unattended safety.
+- **L6 — Deterministic gates for autonomous runs.** Unattended runs (heartbeat, `self_improve`) lack the
+  human-in-the-loop that interactive sessions have. The substitute is **deterministic** (not an LLM auditor):
+  the existing `self_improve` chain — protected-tool list + static safety check (`_check_patch_safety`) +
+  runtime test (`_test_patch`) + explicit user approval before `apply_patch`. Strengthen these (dry-run, diff,
+  reversibility) rather than adding probabilistic review or relying on Docker for unattended safety.
 
 ## 4b. Persistent development workspace — an accumulating catalog
 
@@ -114,7 +119,7 @@ development catalog rather than spawning another one-off tool.
 | L2 guardrails | `_guard_prelude` (python), `_check_python_safeguards`, bash safeguard, trash-not-rm | Bash guard weaker than python; not all paths share one guard |
 | L4 permission | `sessions.py` modes (ask/plan/auto/yolo) | Not wired to a per-tool risk classification |
 | L5 reversibility/visibility | trash, `.bak`, git, chat rendering of tool calls/outputs | — |
-| L6 autonomous | gemma-26B auditor for self-modification | `self_improve` + persistent skills are **Docker-only, no host path** → resolved by the App Support workspace (§4b) |
+| L6 autonomous | deterministic gates: protected-list + static check + runtime test + user approval (`self_improve`) | `self_improve` + persistent skills were **Docker-only, no host path** → resolved by the App Support workspace (§4b). (No LLM auditor — the earlier "gemma auditor" note was never built, explicitly dropped.) |
 
 ## 6. Migration phases
 
@@ -134,7 +139,7 @@ development catalog rather than spawning another one-off tool.
 - Unify the runtime guard so bash and python share one enforcement path.
 - Surface the active mode in the UI ("host execution — policy-guarded"), and wire permission modes to a per-tool
   risk classification.
-- Strengthen the autonomous auditor gate (dry-run + diff + reversibility checks) for unattended runs.
+- Strengthen the deterministic gates for unattended runs (dry-run + diff + reversibility on `self_improve`). No LLM auditor.
 
 **Phase C — Docker removal (deferred, optional).**
 - Once A/B are proven, delete `sandbox.py`, Docker management, and `sandbox_*` tools. Large, deliberate change;
@@ -142,11 +147,16 @@ development catalog rather than spawning another one-off tool.
 
 Order: A → B; C only after A/B are stable. Phase A alone resolves the "harness looks broken" problem.
 
-## 7. Open decisions
+## 7. Decisions (resolved 2026-06-23)
 
-- **Opt-in vs removal.** Keep Docker as a dormant opt-in (A/B only), or remove it entirely (C)?
-- **Command/network policy scope.** How strict by default — allowlist of commands, or denylist + warn?
-- **Autonomous strictness.** How aggressive should the auditor gate be for unattended self-modification?
+- **Opt-in vs removal.** → **Full removal (Phase C).** Docker is removed, not kept as a dormant opt-in — the
+  policy+guardrail layer is the sandbox. (Power users who truly want container isolation can re-add it from git
+  history when a real need appears.)
+- **Command/network policy scope.** → **Denylist + warn** by default (usable for a personal agent), with the
+  secret/key denylist remaining immutable. Not a strict command allowlist.
+- **Autonomous strictness.** → **No LLM auditor.** Deterministic gates (protected-list + static check + runtime
+  test + user approval). Open sub-question: how much `self_improve` approval can be safely automated for truly
+  unattended runs (heartbeat) without a human.
 
 ## 8. Non-goals
 
