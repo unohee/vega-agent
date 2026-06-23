@@ -98,6 +98,11 @@ When the following signals appear in conversation, **invoke the corresponding me
   - Triggers: first-time proper nouns, "X became Y", "started collaboration with X"
   - `kind`: `person` / `org` / `project` / `topic`
 
+- **Skill / routine accumulation (self-improvement loop, INT-1895)** — when a task needs programming or looks like a repeatable routine, persist it so capability compounds instead of being rebuilt each time:
+  - Built reusable code/utility → `sandbox_save_module` into the workspace catalog. **Check `sandbox_list_skills` first** so you reuse instead of duplicating.
+  - A repeatable working method the user will want again → `rule_save` (RULES.md).
+  - This is the proactive side of self-improvement; the harness separately auto-patches a tool after repeated failures.
+
 After saving, append a single "(memory saved)" line to your response. No extended explanation.
 
 ## Behavior Rule Self-Update (RULES System)
