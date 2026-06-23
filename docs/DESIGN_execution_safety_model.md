@@ -76,6 +76,35 @@ Defense in depth. Most layers already exist (see §5).
   interactive sessions have. The gemma-26B auditor gate (already the chosen mechanism for self-modification)
   is the substitute reviewer; strengthen it rather than relying on Docker for unattended safety.
 
+## 4b. Persistent development workspace — an accumulating catalog
+
+**Decision.** VEGA's code execution and self-authored tooling live in a **persistent workspace under
+Application Support**: `data_dir()/workspace/` (`~/Library/Application Support/VEGA/workspace/`, already a
+path_guard-allowed root; overridable via `VEGA_DATA_DIR`). Not a temp dir, not a Docker volume, not the
+developer's `~/dev`.
+
+**Rationale — same principle as memory curation.** An agent that recreates scratch tooling every run accumulates
+redundant, throwaway scripts (the tool-equivalent of duplicate memories). A durable, host-visible workspace turns
+that into a **catalog that accrues**: each module/script VEGA builds is kept and *consulted before building a new
+one*, so capability compounds instead of duplicating. This is the user's explicit intent: every build grows the
+development catalog rather than spawning another one-off tool.
+
+**Structure (proposed).**
+- `workspace/skills/` — reusable modules VEGA authors (persistent skills; replaces the Docker `sandbox_sandbox_lib` volume)
+- `workspace/site-packages/` — packages VEGA installs for its own use (replaces the Docker packages volume)
+- `workspace/history/` — execution history (replaces the in-container `/workspace/history`)
+- `workspace/projects/` — multi-file development work
+- `workspace/CATALOG.md` — an index VEGA maintains and **reads first** ("list before create")
+
+**Consequences.**
+- `python_exec`/`bash_exec` default their CWD and `PYTHONPATH` to this workspace, so VEGA's own modules are
+  importable across runs **without Docker**.
+- Persistent skills (`sandbox_save_module` / `sandbox_list_skills`) read/write here on the host — this is precisely
+  what removes their Docker dependency (the L6 gap in §5). Today these artifacts are trapped in opaque Docker
+  volumes (`sandbox_sandbox_lib`, `/workspace/history`), invisible to the user and lost without the container.
+- "List before create" is enforced by system-prompt instruction + a catalog-read affordance, mirroring memory
+  dedup curation.
+
 ## 5. Current state — what exists vs gaps
 
 | Layer | Exists | Gap |
@@ -85,13 +114,15 @@ Defense in depth. Most layers already exist (see §5).
 | L2 guardrails | `_guard_prelude` (python), `_check_python_safeguards`, bash safeguard, trash-not-rm | Bash guard weaker than python; not all paths share one guard |
 | L4 permission | `sessions.py` modes (ask/plan/auto/yolo) | Not wired to a per-tool risk classification |
 | L5 reversibility/visibility | trash, `.bak`, git, chat rendering of tool calls/outputs | — |
-| L6 autonomous | gemma-26B auditor for self-modification | `self_improve` + persistent skills are **Docker-only, no host path** |
+| L6 autonomous | gemma-26B auditor for self-modification | `self_improve` + persistent skills are **Docker-only, no host path** → resolved by the App Support workspace (§4b) |
 
 ## 6. Migration phases
 
 **Phase A — Host-first flip (immediate, low-risk, reversible).**
 - Default all execution to host. Use Docker *only* on explicit opt-in (e.g. `VEGA_USE_DOCKER=1` or a settings
   toggle), instead of auto-routing whenever the daemon happens to be up.
+- Establish `data_dir()/workspace/` (App Support) as the execution CWD + `PYTHONPATH` (§4b). Migrate persistent
+  skills/history out of Docker volumes into this host workspace; seed `CATALOG.md`.
 - Give `self_improve` and persistent skills a host execution path (remove their hard Docker dependency).
 - Clean up error surfacing so an absent/!ok Docker never makes a normal task "look broken".
 - *Verify:* with Docker running, `office`/`pdf_create`/`python_exec` write to `~/` successfully (no `/host_home`
