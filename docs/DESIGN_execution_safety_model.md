@@ -1,0 +1,123 @@
+# Design — Execution & Safety Model: Host-First, Policy-Sandboxed (Docker-Optional)
+
+> Status: **Proposed** (2026-06-23). Supersedes the implicit "Docker-preferred" execution assumption.
+> Builds on `docs/plan_docker_free_local_exec.md` (host fallback — now largely implemented via INT-1840/1843)
+> and `ARCHITECTURE.md`. Related memory: `project_self_modification`, `project_positioning_fear_not_terminal`,
+> `reference_frozen_interpreter_local_exec`.
+
+## 1. Decision
+
+Make **host execution the single default path**. Reconstruct "the sandbox" as a **policy + guardrail layer,
+not a container**. Demote Docker from default-when-present to an explicit opt-in (Phase A), and a candidate for
+removal (Phase C).
+
+Safety is provided by, in order of reliance:
+**system-wide allow/deny policy → runtime guardrails → system-prompt constraints → permission/approval modes →
+reversibility + visibility → an LLM auditor for unattended (autonomous) runs.**
+
+This is the model VEGA already chose elsewhere (`project_self_modification`: "Claude Code-level freedom, block only
+destruction/jailbreak, gemma-26B auditor gate") — Docker is an inconsistent leftover, not the chosen mechanism.
+
+## 2. Rationale
+
+**Empirical.** A coding agent (Claude Code) has been run on this machine for a long time with **no container
+sandbox**. The effective safety boundary in practice was never isolation — it was *approval + guards + reversibility
++ visibility*. The accident rate from "no container" was lower than the cost of the Docker dependency.
+
+**Docker is net technical debt here.** Verified this session:
+- **"Looks broken" routing.** When the Docker daemon is up, `_docker_or_host` / `_office_exec` route through
+  Docker. Docker mounts the user's home as `/host_home` **read-only** (only `/vega_data` is writable), so
+  `office`/`pdf_create` writes to `~/` *fail* — a working task appears broken. Cold-start and missing-image add
+  more spurious failure surface.
+- **Hard dependency remnants.** `self_improve` patch testing and persistent skills
+  (`sandbox_save_module` / `sandbox_list_skills`) call `sandbox_python` directly with **no host fallback**.
+- **Maintenance + fragility.** `sandbox.py` owns image pull, `compose up`, and even `brew install --cask docker` /
+  Docker Desktop installation flows — the most cross-platform-fragile surface in the app (esp. Windows).
+
+**Product fit.** VEGA targets non-developer power users; principles are local-first, no-setup-tax, power-with-control.
+Preferring or requiring Docker contradicts all three. The barrier for this audience is *fear* (breaking the system,
+not knowing what happened) — the answer is **visible boundaries + reversibility**, not a container they can't see.
+
+## 3. Threat model (what the sandbox is actually for)
+
+The goal is **accident prevention + secret protection + reversibility**, not adversarial containment.
+
+- A local personal agent executing code the user requested is not an untrusted multi-tenant workload.
+- Even Docker-with-no-network still allowed home read access; it was never a true adversarial boundary here.
+- Defending against a determined attacker who already has arbitrary code execution *and* intent is out of scope
+  for a personal-agent sandbox (and Docker did not achieve it either).
+
+So we optimize for: never leak secrets/keys, never make irreversible destructive changes without approval, always
+be able to undo, always show what happened.
+
+## 4. The Docker-less Sandbox = layered policy + guardrails
+
+Defense in depth. Most layers already exist (see §5).
+
+- **L1 — System-wide allow/deny policy** (`pipeline/path_guard.py`). The core of the user's proposal, already real
+  for filesystem paths:
+  - *Immutable* secret denylist the user cannot unblock: `.ssh`/`.gnupg`/`.aws`/keychains (dirs), `.env*`,
+    `id_rsa`/`id_ed25519`, `*.pem`/`*.key`, `client_secret`/`service_account`/`refresh_token` substrings.
+  - Default allowed roots + a **user-editable policy** (`access_policy.json`, settings UI): add allow roots,
+    add extra deny paths. Priority: **hard deny > user deny > allow**. mtime-cached for instant effect.
+  - *Gap to close:* extend the same policy idea beyond paths to a **command allowlist** and a **network-egress
+    policy** so `bash_exec`/`host_exec` are governed by the same model the file layer already uses.
+- **L2 — Runtime guardrails.** `_guard_prelude` hooks `open`/`os.remove`/`shutil.rmtree` in `python_exec`;
+  `_check_python_safeguards` and the bash safeguard statically block destructive patterns; `rm` is rewritten to
+  trash. *Gap:* the bash path's guard is weaker than python's — unify.
+- **L3 — System-prompt constraints.** The model is told the boundaries (what not to touch, prefer trash, ask before
+  irreversible actions). The prompt sets intent; L1/L2 are the hard stop when the model errs.
+- **L4 — Permission / approval modes** (`web/sessions.py`). ask / plan / auto / yolo. Risky or irreversible actions
+  gate on user approval in interactive sessions.
+- **L5 — Reversibility + visibility.** Trash instead of `rm`, `.bak` before overwrite, git for code; every tool
+  call, terminal output, and approval prompt is rendered in chat. This is what lets a non-developer recover from
+  a mistake — the actual antidote to "fear".
+- **L6 — Autonomous auditor.** Unattended runs (heartbeat, `self_improve`) lack the human-in-the-loop that
+  interactive sessions have. The gemma-26B auditor gate (already the chosen mechanism for self-modification)
+  is the substitute reviewer; strengthen it rather than relying on Docker for unattended safety.
+
+## 5. Current state — what exists vs gaps
+
+| Layer | Exists | Gap |
+|---|---|---|
+| L1 path allow/deny | `path_guard` immutable denylist + user policy (`access_policy.json`) + settings UI | No command allowlist / network-egress policy |
+| L1 routing | Host fallback in `_docker_or_host`, `_office_exec` (INT-1840); frozen interpreter re-entry (INT-1843) | **Docker still preferred when present** → should flip to host-first / opt-in |
+| L2 guardrails | `_guard_prelude` (python), `_check_python_safeguards`, bash safeguard, trash-not-rm | Bash guard weaker than python; not all paths share one guard |
+| L4 permission | `sessions.py` modes (ask/plan/auto/yolo) | Not wired to a per-tool risk classification |
+| L5 reversibility/visibility | trash, `.bak`, git, chat rendering of tool calls/outputs | — |
+| L6 autonomous | gemma-26B auditor for self-modification | `self_improve` + persistent skills are **Docker-only, no host path** |
+
+## 6. Migration phases
+
+**Phase A — Host-first flip (immediate, low-risk, reversible).**
+- Default all execution to host. Use Docker *only* on explicit opt-in (e.g. `VEGA_USE_DOCKER=1` or a settings
+  toggle), instead of auto-routing whenever the daemon happens to be up.
+- Give `self_improve` and persistent skills a host execution path (remove their hard Docker dependency).
+- Clean up error surfacing so an absent/!ok Docker never makes a normal task "look broken".
+- *Verify:* with Docker running, `office`/`pdf_create`/`python_exec` write to `~/` successfully (no `/host_home`
+  read-only failure); self_improve patch test runs without Docker.
+
+**Phase B — Policy hardening (the real "sandbox without Docker").**
+- Extend `path_guard` policy to a **command allowlist** and **network-egress policy**; apply uniformly to
+  `bash_exec`/`host_exec`/`python_exec`.
+- Unify the runtime guard so bash and python share one enforcement path.
+- Surface the active mode in the UI ("host execution — policy-guarded"), and wire permission modes to a per-tool
+  risk classification.
+- Strengthen the autonomous auditor gate (dry-run + diff + reversibility checks) for unattended runs.
+
+**Phase C — Docker removal (deferred, optional).**
+- Once A/B are proven, delete `sandbox.py`, Docker management, and `sandbox_*` tools. Large, deliberate change;
+  do in its own PR/session. Skip if keeping Docker as a pure opt-in is judged worthwhile.
+
+Order: A → B; C only after A/B are stable. Phase A alone resolves the "harness looks broken" problem.
+
+## 7. Open decisions
+
+- **Opt-in vs removal.** Keep Docker as a dormant opt-in (A/B only), or remove it entirely (C)?
+- **Command/network policy scope.** How strict by default — allowlist of commands, or denylist + warn?
+- **Autonomous strictness.** How aggressive should the auditor gate be for unattended self-modification?
+
+## 8. Non-goals
+
+- True adversarial containment (Docker did not provide it here either).
+- Removing the ability of a power user to opt into stronger isolation if they want it.
