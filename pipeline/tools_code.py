@@ -948,12 +948,30 @@ def vega_reload_tools() -> dict:
     }
 
 
+def _docker_or_host(sandboxed, host):
+    """코드실행 디스패처 — Docker 있으면 격리 샌드박스, 없으면 호스트 직접 (INT-1561 후속).
+
+    비개발자 배포본은 Docker가 없어 python_exec/bash_exec/chart 가 막혀 있었다
+    (_office_exec 만 폴백이 돼 있었고 code 경로는 Docker 전용이었다). 호스트 경로는
+    동봉 인터프리터 재진입 + 기존 안전가드(_guard_prelude 등)를 그대로 쓴다.
+    두 경로 모두 {stdout,stderr,returncode,error} 계약 동일.
+    """
+    def _dispatch(*args, **kwargs):
+        try:
+            from pipeline.sandbox import docker_available
+            use_docker = docker_available()
+        except Exception:
+            use_docker = False
+        return sandboxed(*args, **kwargs) if use_docker else host(*args, **kwargs)
+    return _dispatch
+
+
 CODE_TOOL_FUNCTIONS: dict = {
     "host_exec":           host_exec,
-    "bash_exec":           _sandboxed_bash,
-    "python_exec":         _sandboxed_python,
-    "chart_matplotlib":    _sandboxed_matplotlib,
-    "chart_plotly":        _sandboxed_plotly,
+    "bash_exec":           _docker_or_host(_sandboxed_bash, bash_exec),
+    "python_exec":         _docker_or_host(_sandboxed_python, python_exec),
+    "chart_matplotlib":    _docker_or_host(_sandboxed_matplotlib, chart_matplotlib),
+    "chart_plotly":        _docker_or_host(_sandboxed_plotly, chart_plotly),
     "system_info":         system_info,
     "sandbox_save_module": _sandboxed_save_module,
     "sandbox_list_skills": _sandboxed_list_skills,
