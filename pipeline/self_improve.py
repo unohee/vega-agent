@@ -183,18 +183,9 @@ Current implementation:
 # ── Patch verification in sandbox ─────────────────────────────────────────────
 
 def _improve_exec(code: str, timeout: int = 30) -> dict:
-    """self_improve 코드 실행 — 호스트 우선, Docker 는 VEGA_USE_DOCKER opt-in 시만 (INT-1870).
+    """self_improve 코드 실행 — 호스트 동봉 인터프리터 (Docker 제거, INT-1870 Phase C).
 
-    호스트 경로는 python_exec 가 워크스페이스 skills/ 를 PYTHONPATH 에 올려 저장된 패치
-    모듈을 import 한다. 두 경로 모두 {stdout,stderr,returncode} 계약 동일."""
-    try:
-        from pipeline.sandbox import docker_enabled
-        use_docker = docker_enabled()
-    except Exception:
-        use_docker = False
-    if use_docker:
-        from pipeline.sandbox import sandbox_python
-        return sandbox_python(code, timeout=timeout)
+    python_exec 가 워크스페이스 skills/ 를 PYTHONPATH 에 올려 저장된 패치 모듈을 import 한다."""
     from pipeline.tools_code import python_exec
     return python_exec(code, timeout=timeout)
 
@@ -325,19 +316,10 @@ def apply_patch(tool_name: str, patch_code: str) -> dict:
     if violations:
         return {"ok": False, "error": f"금지 패턴: {violations}"}
 
-    # Save the patch module — host-first(워크스페이스 skills/), Docker opt-in 시 /workspace/lib (INT-1870)
-    try:
-        from pipeline.sandbox import docker_enabled
-        use_docker = docker_enabled()
-    except Exception:
-        use_docker = False
-    if use_docker:
-        from pipeline.sandbox import sandbox_save_module as _save
-        skills_path = "/workspace/lib"
-    else:
-        from pipeline.tools_code import _sandboxed_save_module as _save
-        from pipeline.data_paths import workspace_dir
-        skills_path = str(workspace_dir() / "skills")
+    # Save the patch module — 호스트 워크스페이스 skills/ (Docker 제거, INT-1870 Phase C)
+    from pipeline.tools_code import _sandboxed_save_module as _save
+    from pipeline.data_paths import workspace_dir
+    skills_path = str(workspace_dir() / "skills")
 
     module_name = f"patch_{tool_name}"
     save_result = _save(module_name, patch_code)

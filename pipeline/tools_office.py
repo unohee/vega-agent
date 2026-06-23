@@ -15,23 +15,11 @@ from typing import Any
 # ─── Sandbox execution helper ─────────────────────────────────────────────────
 
 def _office_exec(code: str) -> dict:
-    """Office 코드 실행 디스패처 — 호스트 우선, Docker 는 opt-in 시만 (INT-1870).
+    """Office 코드 실행 — 호스트 동봉 인터프리터로 직접 실행 (Docker 제거, INT-1870 Phase C).
 
-    기본은 동봉 인터프리터로 호스트에서 직접 실행 → Docker 없이도(또는 떠 있어도)
-    xlsx/docx/pptx 생성·편집이 ~/ 에 정상 기록된다. VEGA_USE_DOCKER opt-in 시에만
-    sandbox_python(격리)으로 보낸다. 두 경로 모두 {stdout,stderr,returncode,error}
-    계약 동일. 검증: reference_frozen_interpreter_local_exec.md (2026-06-15).
+    xlsx/docx/pptx 생성·편집이 ~/ 에 정상 기록된다. office 작업은 정해진 라이브러리
+    호출이라 무한루프 위험이 없고, path_guard + python_exec 가드가 안전을 담당한다.
     """
-    try:
-        from pipeline.sandbox import docker_enabled
-        use_docker = docker_enabled()  # 호스트 우선 — Docker 는 VEGA_USE_DOCKER opt-in 시만 (INT-1870)
-    except Exception:
-        use_docker = False
-
-    if use_docker:
-        from pipeline.sandbox import sandbox_python
-        return sandbox_python(code, timeout=60)
-    # 호스트 직접 실행 — office 작업은 정해진 라이브러리 호출이라 무한루프 위험 없음.
     from pipeline.tools_code import python_exec
     return python_exec(code, timeout=60)
 

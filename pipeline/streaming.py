@@ -756,15 +756,12 @@ async def stream_gpt(
 
             try:
                 # Set working directory before tool execution in the thread
-                # - tools_code: cwd for host_exec/file_read
-                # - sandbox: routes bash_exec/python_exec to container with /project rw mount
+                # - tools_code: cwd for host_exec/file_read/bash_exec/python_exec
                 def _dispatch_with_cwd():
                     from pipeline.tools_code import set_session_working_dir
-                    from pipeline.sandbox import set_sandbox_project_dir
                     from pipeline.tools import set_plan_mode, set_ce_mode
                     from pipeline.spawn import clear_dispatch_context, set_dispatch_context
                     set_session_working_dir(working_dir)
-                    set_sandbox_project_dir(working_dir)
                     set_plan_mode(plan_mode)
                     set_ce_mode(ce_mode)
                     if spawn_context:

@@ -713,35 +713,6 @@ def host_exec(command: str, ask: str = "on-miss", timeout: int = 300) -> dict:
         return {"error": str(e)}
 
 
-# ── Sandbox wrappers (tools exposed to the LLM) ───────────────────────────────
-
-def _sandboxed_bash(command: str, timeout: int = 60) -> dict:
-    """
-    Runs bash inside an isolated container.
-    /host_home (ro) = host home, /vega_data (rw) = VEGA data.
-    """
-    from pipeline.sandbox import sandbox_bash
-    return sandbox_bash(command, timeout=timeout)
-
-
-def _sandboxed_python(code: str, timeout: int = 60) -> dict:
-    """Runs Python inside an isolated container."""
-    from pipeline.sandbox import sandbox_python
-    return sandbox_python(code, timeout=timeout)
-
-
-def _sandboxed_matplotlib(code: str) -> dict:
-    """Runs matplotlib inside an isolated container and returns PNG."""
-    from pipeline.sandbox import sandbox_matplotlib
-    return sandbox_matplotlib(code)
-
-
-def _sandboxed_plotly(code: str) -> dict:
-    """Runs plotly inside an isolated container and returns HTML."""
-    from pipeline.sandbox import sandbox_plotly
-    return sandbox_plotly(code)
-
-
 # ── Schemas ───────────────────────────────────────────────────────────────────
 
 # host_exec 안내는 플랫폼에 맞춰야 한다 — Windows 에 "bash 명령"이라 안내하면
@@ -1023,30 +994,15 @@ def vega_reload_tools() -> dict:
     }
 
 
-def _docker_or_host(sandboxed, host):
-    """코드실행 디스패처 — Docker 있으면 격리 샌드박스, 없으면 호스트 직접 (INT-1561 후속).
-
-    비개발자 배포본은 Docker가 없어 python_exec/bash_exec/chart 가 막혀 있었다
-    (_office_exec 만 폴백이 돼 있었고 code 경로는 Docker 전용이었다). 호스트 경로는
-    동봉 인터프리터 재진입 + 기존 안전가드(_guard_prelude 등)를 그대로 쓴다.
-    두 경로 모두 {stdout,stderr,returncode,error} 계약 동일.
-    """
-    def _dispatch(*args, **kwargs):
-        try:
-            from pipeline.sandbox import docker_enabled
-            use_docker = docker_enabled()  # 호스트 우선 — Docker 는 VEGA_USE_DOCKER opt-in 시만 (INT-1870)
-        except Exception:
-            use_docker = False
-        return sandboxed(*args, **kwargs) if use_docker else host(*args, **kwargs)
-    return _dispatch
-
-
+# 코드 실행은 호스트 동봉 인터프리터로 일원화 (Docker 제거 — INT-1870 Phase C).
+# 안전은 컨테이너 격리가 아니라 path_guard + _check_*_safeguards + _guard_prelude(런타임
+# 파일접근 후킹) + trash 치환 + permission mode 로 보장한다.
 CODE_TOOL_FUNCTIONS: dict = {
     "host_exec":           host_exec,
-    "bash_exec":           _docker_or_host(_sandboxed_bash, bash_exec),
-    "python_exec":         _docker_or_host(_sandboxed_python, python_exec),
-    "chart_matplotlib":    _docker_or_host(_sandboxed_matplotlib, chart_matplotlib),
-    "chart_plotly":        _docker_or_host(_sandboxed_plotly, chart_plotly),
+    "bash_exec":           bash_exec,
+    "python_exec":         python_exec,
+    "chart_matplotlib":    chart_matplotlib,
+    "chart_plotly":        chart_plotly,
     "system_info":         system_info,
     "sandbox_save_module": _sandboxed_save_module,
     "sandbox_list_skills": _sandboxed_list_skills,
