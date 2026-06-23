@@ -2064,8 +2064,12 @@ button.status-item:hover { background: var(--surface2); color: var(--text); }
 <div id="onboarding-modal" class="modal hidden" role="dialog" aria-labelledby="ob-title">
   <div class="modal-backdrop"></div>
   <div class="modal-window" style="width:500px; max-width:96vw">
-    <div class="modal-header">
+    <div class="modal-header" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
       <h2 id="ob-title" data-i18n="ob_title">VEGA 시작하기</h2>
+      <div id="ob-lang" style="display:flex;gap:4px;flex-shrink:0">
+        <button type="button" data-lang="ko" style="padding:3px 10px;font-size:12px;border-radius:6px;border:1px solid var(--border);background:transparent;color:inherit;cursor:pointer">한국어</button>
+        <button type="button" data-lang="en" style="padding:3px 10px;font-size:12px;border-radius:6px;border:1px solid var(--border);background:transparent;color:inherit;cursor:pointer">English</button>
+      </div>
     </div>
     <div class="modal-body" style="padding:20px 22px 24px">
       <p style="font-size:12px;color:var(--muted);margin:0 0 18px" data-i18n="ob_subtitle">기본 정보를 입력하면 VEGA가 더 잘 도와드릴 수 있어요. 나중에 설정에서 변경 가능합니다.</p>
@@ -7461,12 +7465,27 @@ function applyLang(lang) {
 }
 
 (function initLang() {
-  // 언어 토글 버튼은 제거됨(헤더 정리). 저장된 언어만 적용한다.
-  // 언어 전환이 필요하면 localStorage.vega_lang 을 'en'/'ko'로 설정 후 새로고침.
   // 저장된 선택이 없으면 브라우저/OS 언어 환경을 따른다 (한국어 환경만 ko, 그 외 en).
   const saved = localStorage.getItem('vega_lang')
     || ((navigator.language || '').toLowerCase().startsWith('ko') ? 'ko' : 'en');
   applyLang(saved);
+  // 온보딩 언어 토글 (INT-1825) — 첫 실행 사용자가 설치 단계에서 언어를 고를 수 있게.
+  // applyLang 이 data-i18n 을 즉시 갱신하므로 새로고침 불필요.
+  const obLang = document.getElementById('ob-lang');
+  if (obLang) {
+    const syncActive = (lang) => obLang.querySelectorAll('button').forEach(b => {
+      const on = b.dataset.lang === lang;
+      b.style.background = on ? 'var(--accent, #3b82f6)' : 'transparent';
+      b.style.color = on ? '#fff' : 'inherit';
+    });
+    obLang.querySelectorAll('button').forEach(btn => btn.addEventListener('click', () => {
+      const lang = btn.dataset.lang;
+      localStorage.setItem('vega_lang', lang);
+      applyLang(lang);
+      syncActive(lang);
+    }));
+    syncActive(saved);
+  }
 })();
 </script>
 </body>
