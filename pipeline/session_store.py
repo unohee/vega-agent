@@ -19,7 +19,8 @@ SOURCE = "vega"
 
 
 def _conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
+    # timeout=30: wait up to 30 s for concurrent writers (xdist parallel workers on Windows).
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
