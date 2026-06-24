@@ -108,3 +108,39 @@ def rounds_for_load(user_text: str, research_mode: bool = False) -> int:
     if research_mode:
         return 40
     return _ROUNDS_BY_LOAD.get(route_load(user_text), 20)
+
+
+def user_content_blob_from_messages(messages: list[dict], preamble: str = "") -> str:
+    """stream_gpt 가 LLM 에 보내는 user_content 재구성 — before/after 측정·회귀용 (INT-1893)."""
+    if not messages:
+        return preamble.strip()
+    if len(messages) == 1:
+        user_content = messages[-1].get("content", "")
+    else:
+        turns = []
+        for m in messages[:-1]:
+            label = "User" if m.get("role") in ("user", "human") else "VEGA"
+            turns.append(f"[{label}]: {m.get('content', '')}")
+        history_block = "\n".join(turns)
+        user_content = (
+            f"[대화 히스토리]\n{history_block}\n\n[현재 메시지]\n{messages[-1].get('content', '')}"
+        )
+    if preamble.strip():
+        user_content = f"{preamble.strip()}\n\n---\n\n{user_content}"
+    return user_content
+
+
+def resolve_load_routing(messages: list[dict], *, research_mode: bool = False) -> dict:
+    """현재 턴 부하·라운드 상한 — streaming telemetry 입력 (INT-1893)."""
+    route_text = routing_text_from_messages(messages)
+    load = route_load(route_text)
+    return {
+        "route_text": route_text,
+        "load": load,
+        "max_rounds": rounds_for_load(route_text, research_mode=research_mode),
+    }
+
+
+def legacy_load_from_user_blob(messages: list[dict], preamble: str = "") -> str:
+    """구버그 재현 — preamble+히스토리 전체 blob 으로 route_load (before 측정용)."""
+    return route_load(user_content_blob_from_messages(messages, preamble=preamble))
