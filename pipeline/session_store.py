@@ -16,28 +16,39 @@ from pipeline.data_paths import db_path as _db_path
 # Compatibility alias — other modules that import session_store.DB_PATH still work
 DB_PATH = _db_path()
 SOURCE = "vega"
+_schema_initialized = False
 
 
 def _conn() -> sqlite3.Connection:
     # timeout=30: wait up to 30 s for concurrent writers (xdist parallel workers on Windows).
+    global _schema_initialized
     conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
+    # Lazy init: create schema on first connection (avoids parallel import lock on pytest-xdist)
+    # Set flag first to prevent recursive calls to _ensure_schema() from _conn()
+    if not _schema_initialized:
+        _schema_initialized = True
+        try:
+            _ensure_schema()
+        except Exception:
+            # Connection already has timeout for retries; if schema fails, let actual usage fail
+            _schema_initialized = False
     return conn
 
 
 def _ensure_schema() -> None:
     """Create tables + migrate missing columns (idempotent). Safe for new user DBs."""
     with _conn() as conn:
-        # NOTE: 컬럼명은 CRUD 함수(create_session/append_message/load_history 등)가
-        # 실제로 INSERT/SELECT 하는 것과 일치해야 한다. conversations 는 uuid 를 PK 로,
-        # messages 는 conv_uuid/sender/text/char_len/updated_at 를 쓴다.
+        # NOTE:  CRUD (create_session/append_message/load_history )
+        # to INSERT/SELECT  and  . conversations  uuid  PK to,
+        # messages  conv_uuid/sender/text/char_len/updated_at  .
         conn.execute("""
             CREATE TABLE IF NOT EXISTS conversations (
                 uuid        TEXT PRIMARY KEY,
                 source      TEXT NOT NULL DEFAULT 'vega',
-                name        TEXT NOT NULL DEFAULT 'VEGA 세션',
+                name        TEXT NOT NULL DEFAULT 'VEGA session',
                 created_at  TEXT NOT NULL,
                 updated_at  TEXT NOT NULL,
                 msg_count   INTEGER NOT NULL DEFAULT 0,
@@ -71,13 +82,12 @@ def _ensure_schema() -> None:
         msg_cols = {r[1] for r in conn.execute("PRAGMA table_info(messages)").fetchall()}
         if "usage_meta" not in msg_cols:
             conn.execute("ALTER TABLE messages ADD COLUMN usage_meta TEXT")
-        # events: assistant 메시지의 인터리빙 구조(텍스트 세그먼트 + 도구 호출)를
-        # JSON으로 저장 → 재방문 시 라이브와 동일한 시간순 복원. 구 메시지는 NULL(텍스트 폴백).
+        # events: assistant message of   (  + tool )
+        # JSONto save →   and  time restore.  message NULL( ).
         if "events" not in msg_cols:
             conn.execute("ALTER TABLE messages ADD COLUMN events TEXT")
 
 
-_ensure_schema()
 # Restrict DB file to owner only — prevent access by other users on the same machine
 try:
     Path(DB_PATH).chmod(0o600)
@@ -91,7 +101,7 @@ def _now() -> str:
 
 # ── Session (conversation) management ────────────────────────────────────────
 
-def create_session(title: str = "VEGA 세션") -> str:
+def create_session(title: str = "VEGA session") -> str:
     """Create a new session and return the session_uuid."""
     sid = str(uuid.uuid4())
     now = _now()
@@ -179,11 +189,11 @@ def append_message(
     """
     Save a message and return the message_uuid.
     role: 'human' | 'assistant'
-    usage_meta: assistant 메시지의 LLM usage stats (model/tokens/cost/tok_per_sec/ttft_sec).
-                None이면 컬럼은 NULL로 저장.
-    events: assistant 메시지의 인터리빙 구조 — [{"type":"text","data":...},
-            {"type":"tool", "name", "label", "summary", "args", "status", ...}] 순서 배열.
-            재방문 시 라이브와 동일한 시간순 복원에 사용. None이면 텍스트 폴백.
+    usage_meta: assistant message of  LLM usage stats (model/tokens/cost/tok_per_sec/ttft_sec).
+                None  NULLto save.
+    events: assistant message of    — [{"type":"text","data":...},
+            {"type":"tool", "name", "label", "summary", "args", "status", ...}]  .
+              and  time restore at  . None  .
     """
     import json as _json
     mid = str(uuid.uuid4())
@@ -224,8 +234,8 @@ def load_history(session_uuid: str) -> list[dict]:
 
 
 def load_history_with_meta(session_uuid: str) -> list[dict]:
-    """UI용 히스토리. usage_meta·events JSON 파싱해서 함께 반환.
-    events가 있으면 재방문 시 인터리빙(텍스트↔도구 시간순) 복원, 없으면 텍스트 폴백."""
+    """UI . usage_metaevents JSON   return.
+    events have   (↔tool time) restore, not  ."""
     import json as _json
     with _conn() as conn:
         rows = conn.execute(
