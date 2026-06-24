@@ -2064,8 +2064,12 @@ button.status-item:hover { background: var(--surface2); color: var(--text); }
 <div id="onboarding-modal" class="modal hidden" role="dialog" aria-labelledby="ob-title">
   <div class="modal-backdrop"></div>
   <div class="modal-window" style="width:500px; max-width:96vw">
-    <div class="modal-header">
+    <div class="modal-header" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
       <h2 id="ob-title" data-i18n="ob_title">VEGA 시작하기</h2>
+      <div id="ob-lang" style="display:flex;gap:4px;flex-shrink:0">
+        <button type="button" data-lang="ko" style="padding:3px 10px;font-size:12px;border-radius:6px;border:1px solid var(--border);background:transparent;color:inherit;cursor:pointer">한국어</button>
+        <button type="button" data-lang="en" style="padding:3px 10px;font-size:12px;border-radius:6px;border:1px solid var(--border);background:transparent;color:inherit;cursor:pointer">English</button>
+      </div>
     </div>
     <div class="modal-body" style="padding:20px 22px 24px">
       <p style="font-size:12px;color:var(--muted);margin:0 0 18px" data-i18n="ob_subtitle">기본 정보를 입력하면 VEGA가 더 잘 도와드릴 수 있어요. 나중에 설정에서 변경 가능합니다.</p>
@@ -6382,6 +6386,30 @@ function _formatBytes(n) {
 
 const _IMG_EXTS = new Set(['.png','.jpg','.jpeg','.gif','.webp','.svg','.bmp','.ico','.heic','.heif','.tiff','.tif','.avif']);
 const _PDF_EXTS = new Set(['.pdf']);
+
+// pdf.js 캔버스 렌더 — WebView 네이티브 iframe PDF가 불안정(빈 화면)한 환경을
+// 우회한다. 번들된 /static/vendor/pdfjs 에서 lazy import (INT-1831).
+let _pdfjsLib = null;
+async function renderPdfPreview(path) {
+  if (!_pdfjsLib) {
+    _pdfjsLib = await import('/static/vendor/pdfjs/pdf.min.mjs');
+    _pdfjsLib.GlobalWorkerOptions.workerSrc = '/static/vendor/pdfjs/pdf.worker.min.mjs';
+  }
+  const url = `/api/fs/download?path=${encodeURIComponent(path)}`;
+  const pdf = await _pdfjsLib.getDocument(url).promise;
+  previewBody.innerHTML = '<div class="pdf-pages" style="overflow:auto;height:100%;background:#525659;padding:8px;box-sizing:border-box"></div>';
+  const container = previewBody.querySelector('.pdf-pages');
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const viewport = page.getViewport({ scale: 1.5 });
+    const canvas = document.createElement('canvas');
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    canvas.style.cssText = 'display:block;margin:0 auto 8px;max-width:100%;background:white;box-shadow:0 1px 6px rgba(0,0,0,.4)';
+    container.appendChild(canvas);
+    await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+  }
+}
 const _MD_EXTS  = new Set(['.md','.markdown','.rst']);
 
 async function openFilePreview(path, name) {
@@ -6414,10 +6442,14 @@ async function openFilePreview(path, name) {
     return;
   }
 
-  // PDF — iframe
+  // PDF — pdf.js 캔버스 렌더 (실패 시 iframe 폴백)
   if (_PDF_EXTS.has(dotExt)) {
-    previewBody.innerHTML = `<iframe src="/api/fs/download?path=${encodeURIComponent(path)}" style="width:100%;height:100%;border:none;background:white"></iframe>`;
     previewMeta.textContent = 'PDF';
+    try {
+      await renderPdfPreview(path);
+    } catch (e) {
+      previewBody.innerHTML = `<iframe src="/api/fs/download?path=${encodeURIComponent(path)}" style="width:100%;height:100%;border:none;background:white"></iframe>`;
+    }
     return;
   }
 
@@ -7439,6 +7471,23 @@ function applyLang(lang) {
   const saved = localStorage.getItem('vega_lang')
     || ((navigator.language || '').toLowerCase().startsWith('ko') ? 'ko' : 'en');
   applyLang(saved);
+  // 온보딩 언어 토글 (INT-1825) — 첫 실행 사용자가 설치 단계에서 언어를 고를 수 있게.
+  // applyLang 이 data-i18n 을 즉시 갱신하므로 새로고침 불필요.
+  const obLang = document.getElementById('ob-lang');
+  if (obLang) {
+    const syncActive = (lang) => obLang.querySelectorAll('button').forEach(b => {
+      const on = b.dataset.lang === lang;
+      b.style.background = on ? 'var(--accent, #3b82f6)' : 'transparent';
+      b.style.color = on ? '#fff' : 'inherit';
+    });
+    obLang.querySelectorAll('button').forEach(btn => btn.addEventListener('click', () => {
+      const lang = btn.dataset.lang;
+      localStorage.setItem('vega_lang', lang);
+      applyLang(lang);
+      syncActive(lang);
+    }));
+    syncActive(saved);
+  }
 })();
 </script>
 </body>

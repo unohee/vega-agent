@@ -17,7 +17,7 @@ Automatically invoked every 20 turns in the `stream_gpt()` loop.
 ## Three-layer self-evolution
 
 1. **Conversation summary** — compress long history to save the context window
-2. **Memory update** — add new facts/entities to the LanceDB vector memory (`memory_store.py`)
+2. **Memory update** — extract facts/entities into lexical memory tables (FTS5 via `vega_query.py`)
 3. **Rule update** — automatically reflect recurring patterns/preferences into `data/agents/RULES.md`
 
 ## Immutable region

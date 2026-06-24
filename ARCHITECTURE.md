@@ -44,8 +44,7 @@ pipeline/
   discord_bridge.py — Discord no-op stub (vega-agent uses Telegram/Slack)
   compaction.py     — 20-turn compaction + memory/rule update
   session_store.py  — session/message persistence (SQLite, conversations/messages)
-  vega_query.py     — persona/event/entity queries + schema auto-generation
-  memory_store.py   — vector memory (LanceDB)
+  vega_query.py     — persona/event/entity queries + lexical FTS5 memory search
   mcp_client.py     — MCP server integration (stdio/sse), init_mcp_tools
   data_paths.py     — user data dir resolution (single source for all DB/config paths)
   self_improve.py   — tool failure → patch → verify

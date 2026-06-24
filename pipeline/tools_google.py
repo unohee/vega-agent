@@ -1033,6 +1033,15 @@ def file_read(path: str, sheet: str | None = None, max_rows: int = 500,
         return _local_excel_to_text(str(p), sheet=sheet, max_rows=max_rows, password=password)
     elif suffix in (".db", ".sqlite", ".sqlite3"):
         return _sqlite_to_text(p, table=sheet, max_rows=max_rows)
+    elif suffix == ".pdf":
+        # 호스트 번들 pypdf로 텍스트 추출 (Docker 무관, dev/배포 동일) — INT-1832.
+        return _pdf_bytes_to_text(p.read_bytes(), p.name)
+    elif suffix in (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp",
+                    ".heic", ".heif", ".tiff", ".tif", ".avif", ".svg", ".ico"):
+        # file_read는 텍스트 도구라 이미지 픽셀을 못 읽는다. 비전 분석은 채팅 첨부 경로로
+        # 안내한다(/api/fs/read_image → base64 → vision). 깨진 텍스트 반환 방지 — INT-1832.
+        return (f"[{p.name}] 이미지 파일입니다. file_read는 텍스트만 추출하므로 이미지 내용은 "
+                "읽을 수 없습니다 — 채팅 입력창에 파일을 드래그·첨부하면 비전 모델이 분석합니다.")
     elif suffix in (".txt", ".md", ".json", ".py", ".yaml", ".yml", ".toml"):
         return p.read_text(errors="replace")[:8000]
     else:

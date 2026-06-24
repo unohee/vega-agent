@@ -251,8 +251,8 @@ def _call_compact_sync(input_items: list, system: str) -> tuple[str, list[dict]]
     token_q: _queue.Queue = _queue.Queue()
     tool_q:  _queue.Queue = _queue.Queue()
 
-    req = _build_request(input_items, system)
-    _stream_sse(req, token_q, tool_q)
+    req, kind = _build_request(input_items, system)
+    _stream_sse(req, token_q, tool_q, kind=kind)
 
     # Drain token_q
     tokens = []
