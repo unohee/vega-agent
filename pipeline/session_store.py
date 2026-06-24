@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import sqlite3
+import threading
 import uuid
 from collections.abc import Callable
 from datetime import datetime, timezone
@@ -17,75 +18,94 @@ from pipeline.data_paths import db_path as _db_path
 DB_PATH = _db_path()
 SOURCE = "vega"
 _schema_initialized = False
+_schema_lock = threading.Lock()
+_schema_db_path: Path | None = None
+
+
+def _apply_schema(conn: sqlite3.Connection) -> None:
+    """Create tables + migrate missing columns (idempotent). Safe for new user DBs."""
+    # NOTE:  CRUD (create_session/append_message/load_history )
+    # to INSERT/SELECT  and  . conversations  uuid  PK to,
+    # messages  conv_uuid/sender/text/char_len/updated_at  .
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS conversations (
+            uuid        TEXT PRIMARY KEY,
+            source      TEXT NOT NULL DEFAULT 'vega',
+            name        TEXT NOT NULL DEFAULT 'VEGA session',
+            created_at  TEXT NOT NULL,
+            updated_at  TEXT NOT NULL,
+            msg_count   INTEGER NOT NULL DEFAULT 0,
+            working_dir TEXT,
+            archived    INTEGER NOT NULL DEFAULT 0
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS messages (
+            uuid        TEXT PRIMARY KEY,
+            source      TEXT NOT NULL DEFAULT 'vega',
+            conv_uuid   TEXT NOT NULL,
+            sender      TEXT NOT NULL,
+            text        TEXT NOT NULL,
+            char_len    INTEGER NOT NULL DEFAULT 0,
+            created_at  TEXT NOT NULL,
+            updated_at  TEXT NOT NULL,
+            usage_meta  TEXT
+        )
+    """)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_messages_conv "
+        "ON messages(source, conv_uuid, created_at)"
+    )
+    # Migrate existing DB — add columns if missing
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(conversations)").fetchall()}
+    if "working_dir" not in cols:
+        conn.execute("ALTER TABLE conversations ADD COLUMN working_dir TEXT")
+    if "archived" not in cols:
+        conn.execute("ALTER TABLE conversations ADD COLUMN archived INTEGER NOT NULL DEFAULT 0")
+    msg_cols = {r[1] for r in conn.execute("PRAGMA table_info(messages)").fetchall()}
+    if "usage_meta" not in msg_cols:
+        conn.execute("ALTER TABLE messages ADD COLUMN usage_meta TEXT")
+    # events: assistant message of   (  + tool )
+    # JSONto save →   and  time restore.  message NULL( ).
+    if "events" not in msg_cols:
+        conn.execute("ALTER TABLE messages ADD COLUMN events TEXT")
+    conn.commit()
 
 
 def _conn() -> sqlite3.Connection:
     # timeout=30: wait up to 30 s for concurrent writers (xdist parallel workers on Windows).
-    global _schema_initialized
+    global _schema_initialized, _schema_db_path
     conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
-    # Lazy init: create schema on first connection (avoids parallel import lock on pytest-xdist)
-    # Set flag first to prevent recursive calls to _ensure_schema() from _conn()
-    if not _schema_initialized:
-        _schema_initialized = True
-        try:
-            _ensure_schema()
-        except Exception:
-            # Connection already has timeout for retries; if schema fails, let actual usage fail
-            _schema_initialized = False
+    if not _schema_initialized or _schema_db_path != DB_PATH:
+        with _schema_lock:
+            if not _schema_initialized or _schema_db_path != DB_PATH:
+                _apply_schema(conn)
+                _schema_initialized = True
+                _schema_db_path = DB_PATH
     return conn
 
 
 def _ensure_schema() -> None:
-    """Create tables + migrate missing columns (idempotent). Safe for new user DBs."""
-    with _conn() as conn:
-        # NOTE:  CRUD (create_session/append_message/load_history )
-        # to INSERT/SELECT  and  . conversations  uuid  PK to,
-        # messages  conv_uuid/sender/text/char_len/updated_at  .
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS conversations (
-                uuid        TEXT PRIMARY KEY,
-                source      TEXT NOT NULL DEFAULT 'vega',
-                name        TEXT NOT NULL DEFAULT 'VEGA session',
-                created_at  TEXT NOT NULL,
-                updated_at  TEXT NOT NULL,
-                msg_count   INTEGER NOT NULL DEFAULT 0,
-                working_dir TEXT,
-                archived    INTEGER NOT NULL DEFAULT 0
-            )
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS messages (
-                uuid        TEXT PRIMARY KEY,
-                source      TEXT NOT NULL DEFAULT 'vega',
-                conv_uuid   TEXT NOT NULL,
-                sender      TEXT NOT NULL,
-                text        TEXT NOT NULL,
-                char_len    INTEGER NOT NULL DEFAULT 0,
-                created_at  TEXT NOT NULL,
-                updated_at  TEXT NOT NULL,
-                usage_meta  TEXT
-            )
-        """)
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_messages_conv "
-            "ON messages(source, conv_uuid, created_at)"
-        )
-        # Migrate existing DB — add columns if missing
-        cols = {r[1] for r in conn.execute("PRAGMA table_info(conversations)").fetchall()}
-        if "working_dir" not in cols:
-            conn.execute("ALTER TABLE conversations ADD COLUMN working_dir TEXT")
-        if "archived" not in cols:
-            conn.execute("ALTER TABLE conversations ADD COLUMN archived INTEGER NOT NULL DEFAULT 0")
-        msg_cols = {r[1] for r in conn.execute("PRAGMA table_info(messages)").fetchall()}
-        if "usage_meta" not in msg_cols:
-            conn.execute("ALTER TABLE messages ADD COLUMN usage_meta TEXT")
-        # events: assistant message of   (  + tool )
-        # JSONto save →   and  time restore.  message NULL( ).
-        if "events" not in msg_cols:
-            conn.execute("ALTER TABLE messages ADD COLUMN events TEXT")
+    """Public idempotent schema init (scripts/tests)."""
+    global _schema_initialized, _schema_db_path
+    if _schema_initialized and _schema_db_path == DB_PATH:
+        return
+    with _schema_lock:
+        if _schema_initialized and _schema_db_path == DB_PATH:
+            return
+        conn = sqlite3.connect(DB_PATH, timeout=30)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA foreign_keys=ON")
+        try:
+            _apply_schema(conn)
+        finally:
+            conn.close()
+        _schema_initialized = True
+        _schema_db_path = DB_PATH
 
 
 # Restrict DB file to owner only — prevent access by other users on the same machine
