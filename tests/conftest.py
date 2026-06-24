@@ -8,7 +8,48 @@
 
 from __future__ import annotations
 
+import os
+import shutil
+import tempfile
+
 import pytest
+
+# Registry of per-worker tmpdirs created by pytest_configure so we can clean up.
+_WORKER_TMPDIRS: list[str] = []
+
+
+def pytest_configure(config) -> None:
+    """Per-worker DB isolation for pytest-xdist on Windows.
+
+    CI sets VEGA_DATA_DIR to a shared runner-temp path. All xdist workers would
+    then import pipeline.session_store → _ensure_schema() → sqlite3.connect() on
+    the same file simultaneously during collection, causing OperationalError on
+    Windows (stricter file locking than POSIX) and a follow-on
+    'Different tests were collected' xdist error.
+
+    Fix: each worker process gets its own tmpdir so DB files never collide.
+    pytest_configure runs before any test module is imported, so data_paths.data_dir()
+    and session_store.DB_PATH both pick up the per-worker env var on first call.
+    """
+    worker_id = os.environ.get("PYTEST_XDIST_WORKER", "")
+    if not worker_id:
+        return
+    tmpdir = tempfile.mkdtemp(prefix=f"vega_pytest_{worker_id}_")
+    _WORKER_TMPDIRS.append(tmpdir)
+    os.environ["VEGA_DATA_DIR"] = tmpdir
+    os.environ["VEGA_DB_FILE"] = os.path.join(tmpdir, "vega.db")
+    # Clear lru_cache on data_dir() in case data_paths was somehow pre-imported.
+    try:
+        from pipeline.data_paths import data_dir
+        data_dir.cache_clear()
+    except Exception:
+        pass
+
+
+def pytest_sessionfinish(session, exitstatus) -> None:  # noqa: ARG001
+    """Remove per-worker tmpdirs created by pytest_configure."""
+    for tmpdir in _WORKER_TMPDIRS:
+        shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 @pytest.fixture(autouse=True)

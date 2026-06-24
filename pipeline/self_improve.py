@@ -1,6 +1,6 @@
 # Created: 2026-05-20
 # Purpose: VEGA semi-autonomous self-improvement — detect tool failures → generate patch → sandbox verify → user approval
-# Dependencies: pipeline.sandbox, pipeline.streaming (GPT calls), pipeline.tools
+# Dependencies: pipeline.tools_code (host exec), pipeline.streaming (GPT calls), pipeline.tools
 # Test Status: under review
 
 from __future__ import annotations
@@ -182,14 +182,20 @@ Current implementation:
 
 # ── Patch verification in sandbox ─────────────────────────────────────────────
 
+def _improve_exec(code: str, timeout: int = 30) -> dict:
+    """self_improve 코드 실행 — 호스트 동봉 인터프리터 (Docker 제거, INT-1870 Phase C).
+
+    python_exec 가 워크스페이스 skills/ 를 PYTHONPATH 에 올려 저장된 패치 모듈을 import 한다."""
+    from pipeline.tools_code import python_exec
+    return python_exec(code, timeout=timeout)
+
+
 def _test_patch(tool_name: str, patch_code: str, test_args: dict) -> dict:
     """
-    Verify patch code by running it in the sandbox.
+    Verify patch code by running it (host-first; Docker only on VEGA_USE_DOCKER opt-in).
     test_args: original args from the failing call. Passes if re-run returns a dict without error.
     Returns: {"ok": bool, "output": str, "error": str}
     """
-    from pipeline.sandbox import sandbox_python
-
     args_repr = repr(test_args)
     test_code = f"""
 import json
@@ -206,7 +212,7 @@ try:
 except Exception as e:
     print(json.dumps({{"ok": False, "error": str(e)}}, ensure_ascii=False))
 """
-    result = sandbox_python(test_code, timeout=30)
+    result = _improve_exec(test_code, timeout=30)
     stdout = result.get("stdout", "").strip()
     if result.get("returncode") != 0:
         return {"ok": False, "error": result.get("stderr", "")[:300]}
@@ -296,12 +302,11 @@ async def attempt_improvement(tool_name: str) -> dict | None:
 def apply_patch(tool_name: str, patch_code: str) -> dict:
     """
     Apply an approved patch:
-    1. Save to /workspace/lib/patch_<tool>.py (persistent)
+    1. Save patch_<tool>.py (host workspace skills/, or Docker /workspace/lib on opt-in)
     2. Replace function in TOOL_FUNCTIONS at runtime
     3. Clear failure log
     """
     from pipeline.tools import TOOL_FUNCTIONS
-    from pipeline.sandbox import sandbox_save_module
 
     # Re-check protection list (re-verify after approval)
     if tool_name in _PROTECTED_TOOLS:
@@ -311,24 +316,26 @@ def apply_patch(tool_name: str, patch_code: str) -> dict:
     if violations:
         return {"ok": False, "error": f"금지 패턴: {violations}"}
 
-    # Save to sandbox module
+    # Save the patch module — 호스트 워크스페이스 skills/ (Docker 제거, INT-1870 Phase C)
+    from pipeline.tools_code import _sandboxed_save_module as _save
+    from pipeline.data_paths import workspace_dir
+    skills_path = str(workspace_dir() / "skills")
+
     module_name = f"patch_{tool_name}"
-    save_result = sandbox_save_module(module_name, patch_code)
+    save_result = _save(module_name, patch_code)
     if not save_result.get("ok"):
         return {"ok": False, "error": f"모듈 저장 실패: {save_result}"}
 
-    # Runtime replacement: wrap via sandbox_python
-    from pipeline.sandbox import sandbox_python as _sp
-
+    # Runtime replacement: re-run the saved module via the host-first executor
     def _patched_fn(**kwargs):
         code = f"""
 import json, sys
-sys.path.insert(0, "/workspace/lib")
+sys.path.insert(0, {skills_path!r})
 from {module_name} import {tool_name}
 result = {tool_name}(**{repr(kwargs)})
 print(json.dumps(result, ensure_ascii=False, default=str))
 """
-        r = _sp(code, timeout=30)
+        r = _improve_exec(code, timeout=30)
         stdout = r.get("stdout", "").strip()
         for line in reversed(stdout.splitlines()):
             if line.strip().startswith("{"):

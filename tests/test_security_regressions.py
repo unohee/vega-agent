@@ -174,32 +174,6 @@ class TestSsrfGuard:
         _ssrf_guard("http://example.com/api")
 
 
-# ─────────────────────────────────────────────
-# 4. sandbox.py — /vega_data 및 /host_home rm 가드
-# ─────────────────────────────────────────────
-
-from pipeline import sandbox as _sandbox_mod
-
-
-class TestSandboxRmGuard:
-    """INT-1522: Docker 없어도 rm 가드가 먼저 차단."""
-
-    def test_rm_vega_data_blocked(self):
-        result = _sandbox_mod.sandbox_bash("rm -rf /vega_data/lancedb")
-        assert "error" in result
-        assert "SAFEGUARD" in result["error"]
-
-    def test_rm_host_home_blocked(self):
-        result = _sandbox_mod.sandbox_bash("rm /host_home/.ssh/id_rsa")
-        assert "error" in result
-        assert "SAFEGUARD" in result["error"]
-
-    def test_safe_command_not_blocked(self):
-        """rm 없는 명령은 rm 가드를 통과 (Docker 없으면 예외/에러, SAFEGUARD는 아님)."""
-        try:
-            result = _sandbox_mod.sandbox_bash("echo hello")
-            # rm SAFEGUARD 에러가 아니어야 함
-            assert "SAFEGUARD" not in result.get("error", "")
-        except Exception as e:
-            # Docker 미설치 환경(CI Windows 등)에서는 CalledProcessError 등 발생 — SAFEGUARD 아님
-            assert "SAFEGUARD" not in str(e)
+# (4. sandbox.py rm 가드 테스트 제거 — Docker 샌드박스 폐기, INT-1870 Phase C.
+#  호스트 코드 실행의 파괴적 rm 차단은 tools_code._DESTRUCTIVE_RM / path_guard 가 담당하며
+#  TestHostExecShellChain 등 다른 클래스가 호스트 경로를 검증한다.)

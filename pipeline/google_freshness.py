@@ -122,6 +122,43 @@ def _append_records(source: str, records: list[dict[str, Any]]) -> int:
     return len(records)
 
 
+def _existing_record_ids(source: str) -> set[str]:
+    path = _records_file(source)
+    if not path.exists():
+        return set()
+    ids: set[str] = set()
+    with path.open("r", encoding="utf-8") as fh:
+        for line in fh:
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            record_id = record.get("id") if isinstance(record, dict) else None
+            if record_id:
+                ids.add(str(record_id))
+    return ids
+
+
+def _google_api_status(exc: Exception) -> int | None:
+    for attr in ("status_code", "status"):
+        value = getattr(exc, attr, None)
+        if isinstance(value, int):
+            return value
+    response = getattr(exc, "resp", None)
+    value = getattr(response, "status", None)
+    if isinstance(value, int):
+        return value
+    text = str(exc)
+    marker = "Google API HTTP "
+    if marker not in text:
+        return None
+    tail = text.split(marker, 1)[1]
+    try:
+        return int(tail.split(":", 1)[0].strip())
+    except ValueError:
+        return None
+
+
 def _gapi(path: str, account: str = "", params: dict | None = None, method: str = "GET", body: dict | None = None) -> dict:
     from pipeline.tools_google import _gapi as google_api
 
@@ -135,13 +172,14 @@ def ingest_gmail_incremental(cursor: dict[str, Any] | None, account: str = "") -
     """
     scan_started = _utc_now()
     since = _cursor_time(cursor)
-    query = f"after:{since.strftime('%Y/%m/%d')}"
+    query = f"after:{int(since.timestamp())}"
     base = "gmail.googleapis.com/gmail/v1/users/me"
     data = _gapi(f"{base}/messages", account=account, params={"q": query, "maxResults": _MAX_ITEMS_PER_SOURCE})
     records: list[dict[str, Any]] = []
+    seen_ids = _existing_record_ids("gmail")
     for message in data.get("messages", [])[:_MAX_ITEMS_PER_SOURCE]:
         message_id = message.get("id")
-        if not message_id:
+        if not message_id or str(message_id) in seen_ids:
             continue
         detail = _gapi(
             f"{base}/messages/{message_id}",
@@ -149,9 +187,13 @@ def ingest_gmail_incremental(cursor: dict[str, Any] | None, account: str = "") -
             params={"format": "metadata", "metadataHeaders": ["From", "To", "Subject", "Date"]},
         )
         headers = {h.get("name", ""): h.get("value", "") for h in detail.get("payload", {}).get("headers", [])}
+        record_id = str(detail.get("id", message_id))
+        if record_id in seen_ids:
+            continue
+        seen_ids.add(record_id)
         records.append({
             "source": "gmail",
-            "id": detail.get("id", message_id),
+            "id": record_id,
             "threadId": detail.get("threadId", message.get("threadId", "")),
             "historyId": detail.get("historyId", ""),
             "internalDate": detail.get("internalDate", ""),
@@ -163,6 +205,7 @@ def ingest_gmail_incremental(cursor: dict[str, Any] | None, account: str = "") -
     next_cursor: dict[str, Any] = {
         "syncedAt": _iso(scan_started),
         "queryAfter": query,
+        "updatedMin": _iso(scan_started),
         "ingested": count,
     }
     try:
@@ -180,22 +223,39 @@ def ingest_calendar_incremental(cursor: dict[str, Any] | None, account: str = ""
     scan_started = _utc_now()
     base = "www.googleapis.com/calendar/v3/calendars/primary/events"
     records: list[dict[str, Any]] = []
+    seen_ids = _existing_record_ids("calendar")
     page_token = None
     next_sync_token = None
     pages = 0
+    use_sync_token = bool(cursor and cursor.get("syncToken"))
     while pages < 5 and len(records) < _MAX_ITEMS_PER_SOURCE:
         params: dict[str, Any] = {"maxResults": min(250, _MAX_ITEMS_PER_SOURCE), "showDeleted": True}
-        if cursor and cursor.get("syncToken"):
-            params["syncToken"] = cursor["syncToken"]
+        if use_sync_token:
+            params["syncToken"] = cursor["syncToken"]  # type: ignore[index]
         else:
             params["updatedMin"] = _iso(_cursor_time(cursor))
         if page_token:
             params["pageToken"] = page_token
-        data = _gapi(base, account=account, params=params)
+        try:
+            data = _gapi(base, account=account, params=params)
+        except Exception as exc:
+            if use_sync_token and _google_api_status(exc) == 410:
+                records.clear()
+                seen_ids = _existing_record_ids("calendar")
+                page_token = None
+                next_sync_token = None
+                pages = 0
+                use_sync_token = False
+                continue
+            raise
         for event in data.get("items", []):
+            event_id = event.get("id", "")
+            if event_id and str(event_id) in seen_ids:
+                continue
+            seen_ids.add(str(event_id))
             records.append({
                 "source": "calendar",
-                "id": event.get("id", ""),
+                "id": event_id,
                 "status": event.get("status", ""),
                 "summary": event.get("summary", ""),
                 "updated": event.get("updated", ""),

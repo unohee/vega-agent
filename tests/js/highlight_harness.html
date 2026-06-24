@@ -1,0 +1,93 @@
+<!doctype html>
+<!-- Created: 2026-06-23
+     Purpose: chat.html 코드블록 구문 강조(highlightWithin) 회귀 — 실제 vendored highlight.js로 검증 (INT-1846).
+              1) 언어 클래스 있는 블록 강조(.hljs + 토큰 span)
+              2) 무클래스 블록 자동 감지 강조
+              3) idempotency — 두 번 호출해도 중복/throw 없음(dataset.hl 가드)
+              4) hljs 없거나 빈 root에서 throw 안 함
+     Usage: Chrome --headless --dump-dom → #result-sink 의 RESULT_JSON. -->
+<html><head><meta charset="utf-8">
+<!-- 실제 번들 highlight.js 로드 (file://, --allow-file-access-from-files 필요) -->
+<script src="../../web/static/vendor/highlightjs/highlight.min.js"></script>
+</head><body>
+<div id="result-sink"></div>
+<script>
+async function loadHighlightFn() {
+  const html = await fetch('../../web/static/chat.html').then(r => r.text());
+  const scripts = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)].map(m => m[1]);
+  const script = scripts.reduce((a, b) => b.length > a.length ? b : a, '');
+  const m = script.match(/function highlightWithin\(root\) \{[\s\S]*?\n\}/);
+  if (!m) throw new Error('highlightWithin 추출 실패');
+  (0, eval)(m[0] + '\nwindow._hl = { highlightWithin };');
+}
+
+// marked 산출 구조를 모사: <pre><code class="language-xx">CODE</code></pre>
+function codeBlock(lang, code) {
+  const pre = document.createElement('pre');
+  const c = document.createElement('code');
+  if (lang) c.className = 'language-' + lang;
+  c.textContent = code;
+  pre.appendChild(c);
+  return pre;
+}
+
+async function run() {
+  const r = {};
+  try {
+    r.hljs_loaded = typeof window.hljs === 'object' && typeof hljs.highlightElement === 'function';
+    await loadHighlightFn();
+    const { highlightWithin } = window._hl;
+
+    // 1) 언어 클래스 있는 python — 강조 + 키워드 토큰 span
+    {
+      const root = document.createElement('div');
+      root.appendChild(codeBlock('python', 'def greet(name):\n    return "hi " + name'));
+      highlightWithin(root);
+      const code = root.querySelector('pre code');
+      r.py_hljs_class = code.classList.contains('hljs');
+      r.py_has_token_span = root.querySelectorAll('pre code span[class^="hljs-"]').length > 0;
+      r.py_marked_done = code.dataset.hl === '1';
+    }
+
+    // 2) 무클래스 JS — 자동 감지 강조 (토큰 span 생성)
+    {
+      const root = document.createElement('div');
+      root.appendChild(codeBlock('', 'const x = 42;\nfunction f() { return x; }'));
+      highlightWithin(root);
+      const code = root.querySelector('pre code');
+      r.auto_hljs_class = code.classList.contains('hljs');
+      r.auto_has_token_span = root.querySelectorAll('pre code span[class^="hljs-"]').length > 0;
+    }
+
+    // 3) idempotency — 두 번 호출해도 토큰 수 동일(중복 강조 없음), throw 없음
+    {
+      const root = document.createElement('div');
+      root.appendChild(codeBlock('python', 'import os\nprint(os.getcwd())'));
+      highlightWithin(root);
+      const after1 = root.querySelector('pre code').innerHTML;
+      let threw = false;
+      try { highlightWithin(root); } catch (e) { threw = true; }
+      const after2 = root.querySelector('pre code').innerHTML;
+      r.idempotent_no_throw = !threw;
+      r.idempotent_stable = after1 === after2;
+    }
+
+    // 4) 빈 root / null — throw 없이 무동작
+    {
+      let threw = false;
+      try { highlightWithin(document.createElement('div')); highlightWithin(null); }
+      catch (e) { threw = true; }
+      r.empty_safe = !threw;
+    }
+  } catch (e) {
+    r.fatal = String(e);
+  }
+
+  r.ok = Object.entries(r).every(([k, v]) => typeof v !== 'boolean' || v === true) && !r.fatal;
+  document.getElementById('result-sink').textContent = 'RESULT_JSON:' + JSON.stringify(r);
+}
+run().catch(e => {
+  document.getElementById('result-sink').textContent = 'RESULT_JSON:' + JSON.stringify({ ok: false, error: String(e) });
+});
+</script>
+</body></html>

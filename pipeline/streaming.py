@@ -623,7 +623,14 @@ async def stream_gpt(
     else:
         input_items: list = [{"role": "user", "content": user_content}]
     full_text = ""
-    max_rounds = 40 if research_mode else 20
+    # 부하별 라운드 상한 — 단순 조회/보고가 과도한 툴 라운드를 쓰지 않게 (INT-1893).
+    # research_mode=40, light=10, standard=20, heavy=24. user_content 가 문자열일 때만 분류.
+    try:
+        from pipeline.tier_router import rounds_for_load
+        _route_text = user_content if isinstance(user_content, str) else ""
+        max_rounds = rounds_for_load(_route_text, research_mode=research_mode)
+    except Exception:
+        max_rounds = 40 if research_mode else 20
     first_round = True
 
     # for timing measurement
@@ -756,15 +763,12 @@ async def stream_gpt(
 
             try:
                 # Set working directory before tool execution in the thread
-                # - tools_code: cwd for host_exec/file_read
-                # - sandbox: routes bash_exec/python_exec to container with /project rw mount
+                # - tools_code: cwd for host_exec/file_read/bash_exec/python_exec
                 def _dispatch_with_cwd():
                     from pipeline.tools_code import set_session_working_dir
-                    from pipeline.sandbox import set_sandbox_project_dir
                     from pipeline.tools import set_plan_mode, set_ce_mode
                     from pipeline.spawn import clear_dispatch_context, set_dispatch_context
                     set_session_working_dir(working_dir)
-                    set_sandbox_project_dir(working_dir)
                     set_plan_mode(plan_mode)
                     set_ce_mode(ce_mode)
                     if spawn_context:

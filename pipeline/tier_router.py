@@ -61,3 +61,39 @@ def route_tier(user_text: str, history: list[dict] | None = None) -> str:
     if local_hits > 0:
         return "local"
     return "cloud"
+
+
+# ── 업무 부하 분류 (INT-1892 라우팅 / INT-1893 추론·라운드 상한) ──────────────
+# 단순 조회·보고(이케아 조명 추천 등)가 과도한 추론/툴 라운드를 쓰지 않게,
+# 작업 부하를 light/standard/heavy 로 보수적 분류한다. 확신 없으면 standard.
+_HEAVY_LOAD = [
+    r"코드|스크립트|구현|디버그|리팩터|implement|refactor|debug",
+    r"보고서|문서.*작성|장문|길게|자세히\s*설명|상세히|초안.*작성",
+    r"분석해|설계|아키텍처|비교\s*분석|단계별|전체.*정리|마이그레이션",
+]
+
+
+def route_load(user_text: str, history: list[dict] | None = None) -> str:
+    """요청을 'light' | 'standard' | 'heavy' 로 분류 (부하 기준).
+
+    - heavy: 코드·장문 생성·심층 분석/설계 신호 → 상위 모델·넉넉한 라운드.
+    - light: 짧고(≤80자) heavy 신호 없는 단순 조회/검색/확인 → 저비용 모델·낮은 라운드 상한.
+    - standard: 그 외 (안전한 기본값).
+    """
+    text = (user_text or "").strip()
+    if _match_any(text, _HEAVY_LOAD):
+        return "heavy"
+    if len(text) <= 80:
+        return "light"
+    return "standard"
+
+
+# 부하별 에이전트 툴 라운드 상한 (research_mode 는 호출부에서 40 으로 별도 처리).
+_ROUNDS_BY_LOAD = {"light": 10, "standard": 20, "heavy": 24}
+
+
+def rounds_for_load(user_text: str, research_mode: bool = False) -> int:
+    """부하 분류 기반 에이전트 툴 루프 라운드 상한. 단순 작업의 과도한 반복을 막는다(INT-1893)."""
+    if research_mode:
+        return 40
+    return _ROUNDS_BY_LOAD.get(route_load(user_text), 20)

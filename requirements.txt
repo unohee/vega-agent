@@ -42,6 +42,8 @@ pypdf==6.13.2
 python-docx==1.2.0
 python-pptx==1.0.2
 msoffcrypto-tool==6.0.0
+# PDF 생성(pdf_create) — 순수 파이썬, 한글 CID 폰트 내장(TTF 번들 불필요) — INT-1843
+reportlab==4.5.1
 xlrd==2.0.2
 numpy==2.4.5
 matplotlib==3.10.8
@@ -71,3 +73,7 @@ slack_bolt>=1.21
 
 # 워크스페이스 통합 (Airtable 네이티브 도구 — INT-1498/1570)
 pyairtable==3.3.0
+
+# 한글 문서(HWP/HWPX) 파싱 — 순수 파이썬. HWP5=olefile, HWPX=lxml([hwpx] extra).
+# Node/Hancom/COM 불필요. lxml은 pptx/docx도 끌어오지만 hwpkit 자체 의존으로 명시 (INT-1843)
+hwpkit[hwpx]==1.0.0

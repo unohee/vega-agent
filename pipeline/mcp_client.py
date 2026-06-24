@@ -72,6 +72,21 @@ def _linear_entry() -> dict | None:
     }
 
 
+def _superthread_mcp_entry() -> dict | None:
+    try:
+        from pipeline.auth.superthread import pat_token
+        tok = pat_token()
+    except Exception:
+        return None
+    if not tok:
+        return None
+    return {
+        "transport": "http",
+        "url": "https://mcp.superthread.com/mcp",
+        "headers": {"Authorization": f"Bearer {tok}"},
+    }
+
+
 from pipeline.data_paths import mcp_config_path as _mcp_config_path
 _MCP_CONFIG_PATH = _mcp_config_path()
 
@@ -131,6 +146,11 @@ def _load_registry() -> dict[str, dict]:
         lin = _linear_entry()
         if lin:
             reg["linear"] = lin
+    # Auto-add Superthread MCP if PAT is stored (streamable-http, 89 tools)
+    if "superthread-mcp" not in reg:
+        st = _superthread_mcp_entry()
+        if st:
+            reg["superthread-mcp"] = st
     return reg
 
 
@@ -155,9 +175,12 @@ def _make_transport(cfg: dict):
             # Merge current env with config env (preserves PATH etc.)
             kwargs["env"] = {**os.environ, **cfg["env"]}
         return StdioTransport(**kwargs)
-    if cfg["transport"] in ("sse", "http"):
+    if cfg["transport"] == "sse":
         from fastmcp.client.transports import SSETransport
         return SSETransport(url=cfg["url"], headers=cfg.get("headers", {}))
+    if cfg["transport"] == "http":
+        from fastmcp.client.transports import StreamableHttpTransport
+        return StreamableHttpTransport(url=cfg["url"], headers=cfg.get("headers", {}))
     raise ValueError(f"Unsupported transport: {cfg['transport']}")
 
 

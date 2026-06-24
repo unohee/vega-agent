@@ -15,23 +15,11 @@ from typing import Any
 # ─── Sandbox execution helper ─────────────────────────────────────────────────
 
 def _office_exec(code: str) -> dict:
-    """Office 코드 실행 디스패처 — Docker 있으면 격리 샌드박스, 없으면 호스트 직접.
+    """Office 코드 실행 — 호스트 동봉 인터프리터로 직접 실행 (Docker 제거, INT-1870 Phase C).
 
-    Docker 데몬이 살아 있으면 기존 sandbox_python(격리 유지). 없으면(비개발자
-    배포본 등) 동봉 인터프리터로 호스트에서 직접 실행 → Docker 없이도 xlsx/docx/
-    pptx 생성·편집 가능. 두 경로 모두 {stdout,stderr,returncode,error} 계약 동일.
-    검증: reference_frozen_interpreter_local_exec.md (2026-06-15).
+    xlsx/docx/pptx 생성·편집이 ~/ 에 정상 기록된다. office 작업은 정해진 라이브러리
+    호출이라 무한루프 위험이 없고, path_guard + python_exec 가드가 안전을 담당한다.
     """
-    try:
-        from pipeline.sandbox import docker_available
-        use_docker = docker_available()
-    except Exception:
-        use_docker = False
-
-    if use_docker:
-        from pipeline.sandbox import sandbox_python
-        return sandbox_python(code, timeout=60)
-    # 호스트 직접 실행 — office 작업은 정해진 라이브러리 호출이라 무한루프 위험 없음.
     from pipeline.tools_code import python_exec
     return python_exec(code, timeout=60)
 
@@ -438,6 +426,216 @@ def latex_template(template: str, variables: dict[str, str]) -> str:
     return result
 
 
+# ─── PDF 생성 (reportlab — 한글 CID 폰트 내장, Docker·TeX 불필요) ────────────────
+
+_PDF_FONTS_READY = False
+
+
+def _ensure_pdf_fonts() -> None:
+    """한글 CID 폰트 1회 등록(HYGothic=고딕 본문, HYSMyeongJo=명조). 멱등.
+    reportlab 내장 Adobe CJK CMap을 쓰므로 TTF 번들이 필요 없다."""
+    global _PDF_FONTS_READY
+    if _PDF_FONTS_READY:
+        return
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+    for fn in ("HYGothic-Medium", "HYSMyeongJo-Medium"):
+        try:
+            pdfmetrics.registerFont(UnicodeCIDFont(fn))
+        except Exception:
+            pass
+    _PDF_FONTS_READY = True
+
+
+def _md_inline(text: str) -> str:
+    """markdown 인라인(굵게/기울임/코드/링크)을 reportlab Paragraph 마크업으로 변환.
+    XML escape 를 먼저 한 뒤 마크업 태그를 삽입한다(주입 방지)."""
+    import re
+    s = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    s = re.sub(r"`([^`]+)`", r'<font face="Courier">\1</font>', s)
+    s = re.sub(r"\*\*([^*]+)\*\*", r"<b>\1</b>", s)
+    s = re.sub(r"__([^_]+)__", r"<b>\1</b>", s)
+    s = re.sub(r"(?<!\*)\*([^*]+)\*(?!\*)", r"<i>\1</i>", s)
+    s = re.sub(r"\[([^\]]+)\]\((https?://[^)]+)\)", r'<link href="\2" color="blue">\1</link>', s)
+    return s
+
+
+def pdf_create(path: str, content: str, title: str | None = None) -> dict:
+    """markdown/일반텍스트 content 를 PDF 로 생성 (한글 지원).
+
+    동봉 reportlab 으로 in-process 렌더 — Docker·TeX 불필요라 비개발자 배포본 자립.
+    지원: 제목·헤딩(#~###), 문단, **굵게**/*기울임*/`코드`/[링크], 글머리·번호 목록,
+    코드펜스(```), 표(| a | b |), 구분선(---). 코드/인라인코드는 Courier(ASCII).
+    """
+    try:
+        from pipeline.path_guard import guard_path
+        guard_path(path)
+    except PermissionError as e:
+        return {"error": f"[SAFEGUARD] {e}"}
+    except Exception:
+        pass  # path_guard 로드 실패 시 렌더는 진행(아래 mkdir/쓰기에서 실패 처리)
+    try:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.styles import ParagraphStyle
+        from reportlab.lib.units import mm
+        from reportlab.lib import colors
+        from reportlab.platypus import (
+            SimpleDocTemplate, Paragraph, Spacer, Preformatted,
+            ListFlowable, ListItem, Table, TableStyle, HRFlowable,
+        )
+    except Exception as e:
+        return {"error": f"reportlab 미설치 — PDF 생성 불가: {e}"}
+
+    import re
+    import shutil as _sh
+
+    _ensure_pdf_fonts()
+    BODY = "HYGothic-Medium"
+    out = Path(path).expanduser()
+    try:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        if out.exists():
+            _sh.copy2(out, out.with_suffix(out.suffix + ".bak"))
+    except Exception as e:
+        return {"error": f"경로 준비 실패: {e}"}
+
+    body = ParagraphStyle("body", fontName=BODY, fontSize=10.5, leading=16, spaceAfter=6)
+    h1 = ParagraphStyle("h1", fontName=BODY, fontSize=20, leading=26, spaceBefore=6, spaceAfter=10)
+    h2 = ParagraphStyle("h2", fontName=BODY, fontSize=15, leading=21, spaceBefore=6, spaceAfter=8)
+    h3 = ParagraphStyle("h3", fontName=BODY, fontSize=12.5, leading=18, spaceBefore=4, spaceAfter=6)
+    code_st = ParagraphStyle("code", fontName="Courier", fontSize=9, leading=12,
+                             backColor=colors.HexColor("#f2f2f2"), borderPadding=6, spaceAfter=6)
+
+    flow: list = []
+    if title:
+        flow.append(Paragraph(_md_inline(title), h1))
+        flow.append(Spacer(1, 4))
+
+    lines = content.split("\n")
+    i = 0
+    bullets: list[str] = []
+
+    def _flush_bullets() -> None:
+        nonlocal bullets
+        if bullets:
+            flow.append(ListFlowable(
+                [ListItem(Paragraph(_md_inline(b), body)) for b in bullets],
+                bulletType="bullet", leftIndent=14))
+            bullets = []
+
+    while i < len(lines):
+        st = lines[i].strip()
+        if st.startswith("```"):                                   # 코드펜스
+            _flush_bullets()
+            buf, i = [], i + 1
+            while i < len(lines) and not lines[i].strip().startswith("```"):
+                buf.append(lines[i]); i += 1
+            i += 1
+            flow.append(Preformatted("\n".join(buf) or " ", code_st))
+            continue
+        if st.startswith("|") and st.endswith("|"):                # 표
+            _flush_bullets()
+            rows = []
+            while i < len(lines) and lines[i].strip().startswith("|"):
+                cells = [c.strip() for c in lines[i].strip().strip("|").split("|")]
+                if not all(set(c) <= set("-: ") for c in cells):   # 구분행 스킵
+                    rows.append([Paragraph(_md_inline(c), body) for c in cells])
+                i += 1
+            if rows:
+                tbl = Table(rows, hAlign="LEFT")
+                tbl.setStyle(TableStyle([
+                    ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cccccc")),
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f2f2f2")),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 6), ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                    ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                ]))
+                flow.append(tbl); flow.append(Spacer(1, 6))
+            continue
+        if st.startswith("### "):
+            _flush_bullets(); flow.append(Paragraph(_md_inline(st[4:]), h3)); i += 1; continue
+        if st.startswith("## "):
+            _flush_bullets(); flow.append(Paragraph(_md_inline(st[3:]), h2)); i += 1; continue
+        if st.startswith("# "):
+            _flush_bullets(); flow.append(Paragraph(_md_inline(st[2:]), h1)); i += 1; continue
+        if st in ("---", "***", "___"):
+            _flush_bullets()
+            flow.append(HRFlowable(width="100%", color=colors.HexColor("#cccccc"),
+                                   spaceBefore=4, spaceAfter=8)); i += 1; continue
+        m = re.match(r"[-*+]\s+(.*)", st) or re.match(r"\d+\.\s+(.*)", st)
+        if m:
+            bullets.append(m.group(1)); i += 1; continue
+        if not st:
+            _flush_bullets(); flow.append(Spacer(1, 4)); i += 1; continue
+        _flush_bullets(); flow.append(Paragraph(_md_inline(st), body)); i += 1
+
+    _flush_bullets()
+    if not flow:
+        flow.append(Paragraph(" ", body))
+
+    pages = {"n": 0}
+
+    def _count(canvas, d):
+        pages["n"] += 1
+
+    try:
+        doc = SimpleDocTemplate(
+            str(out), pagesize=A4,
+            leftMargin=20 * mm, rightMargin=20 * mm, topMargin=20 * mm, bottomMargin=20 * mm,
+            title=title or out.stem)
+        doc.build(flow, onFirstPage=_count, onLaterPages=_count)
+    except Exception as e:
+        return {"error": f"PDF 렌더 실패: {e}"}
+    return {"ok": True, "path": str(out), "pages": pages["n"], "bytes": out.stat().st_size}
+
+
+# ─── 이미지 포맷/크기 변환 (Pillow — AI 재생성 아님, INT-1883) ─────────────────
+
+def image_convert(src: str, dst: str, fmt: str = "", width: int = 0,
+                  height: int = 0, quality: int = 95) -> dict:
+    """이미지 포맷/크기 변환 (Pillow, 결정적 — AI 재생성 아님).
+
+    'PNG를 JPG로(같은 크기)' 같은 단순 변환에 쓴다. AI 편집/생성은 image_generate.
+    JPEG 변환 시 알파(RGBA/P)는 흰 배경에 합성. width·height 둘 다 주면 리사이즈.
+    """
+    try:
+        from pipeline.path_guard import guard_path
+        guard_path(dst)
+    except PermissionError as e:
+        return {"error": f"[SAFEGUARD] {e}"}
+    except Exception:
+        pass
+    try:
+        from PIL import Image
+    except Exception as e:
+        return {"error": f"Pillow 미설치 — 이미지 변환 불가: {e}"}
+    sp = Path(src).expanduser()
+    dp = Path(dst).expanduser()
+    if not sp.exists():
+        return {"error": f"원본 이미지 없음: {src}"}
+    try:
+        img = Image.open(sp)
+        target = (fmt or dp.suffix.lstrip(".")).upper()
+        if target == "JPG":
+            target = "JPEG"
+        if target == "JPEG" and img.mode in ("RGBA", "P", "LA"):
+            rgba = img.convert("RGBA")
+            bg = Image.new("RGB", rgba.size, (255, 255, 255))
+            bg.paste(rgba, mask=rgba.split()[-1])
+            img = bg
+        elif target == "JPEG":
+            img = img.convert("RGB")
+        if width and height:
+            img = img.resize((int(width), int(height)))
+        dp.parent.mkdir(parents=True, exist_ok=True)
+        save_kw = {"quality": int(quality)} if target == "JPEG" else {}
+        img.save(dp, format=target, **save_kw)
+        return {"ok": True, "path": str(dp), "format": target,
+                "size": list(img.size), "bytes": dp.stat().st_size}
+    except Exception as e:
+        return {"error": f"이미지 변환 실패: {e}"}
+
+
 # ─── Tool schemas ─────────────────────────────────────────────────────────────
 
 OFFICE_TOOL_SCHEMAS: list[dict] = [
@@ -644,6 +842,37 @@ OFFICE_TOOL_SCHEMAS: list[dict] = [
             "required": ["template", "variables"],
         },
     },
+    {
+        "type": "function",
+        "name": "image_convert",
+        "description": "이미지 포맷/크기 변환 (Pillow, 결정적 — AI 재생성 아님). 'PNG를 JPG로(같은 크기)' 같은 단순 변환·리사이즈에 사용. AI 편집/생성이 필요하면 image_generate 를 써라.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "src": {"type": "string", "description": "원본 이미지 경로(~/... 또는 절대경로)"},
+                "dst": {"type": "string", "description": "저장 경로 — 확장자로 출력 포맷 결정(.jpg/.png/.webp)"},
+                "fmt": {"type": "string", "description": "출력 포맷 강제(선택: PNG/JPEG/WEBP). 생략 시 dst 확장자."},
+                "width": {"type": "integer", "description": "리사이즈 너비(선택, height와 함께 줘야 적용)"},
+                "height": {"type": "integer", "description": "리사이즈 높이(선택)"},
+                "quality": {"type": "integer", "description": "JPEG 품질 1~100 (기본 95)"},
+            },
+            "required": ["src", "dst"],
+        },
+    },
+    {
+        "type": "function",
+        "name": "pdf_create",
+        "description": "markdown/텍스트 내용을 PDF로 생성 (한글 지원, Docker·TeX 불필요). 제목·헤딩·**굵게**/*기울임*/`코드`·목록·표·코드블록·구분선 지원. LLM이 만든 보고서·문서를 PDF로 저장할 때 사용. (고품질 조판이 필요하면 latex_compile.)",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "저장할 PDF 경로 (~/... 또는 절대경로, .pdf)"},
+                "content": {"type": "string", "description": "PDF 본문 (markdown 또는 일반 텍스트)"},
+                "title": {"type": "string", "description": "문서 제목 (선택 — 첫 페이지 상단 + PDF 메타데이터)"},
+            },
+            "required": ["path", "content"],
+        },
+    },
 ]
 
 OFFICE_TOOL_FUNCTIONS: dict[str, Any] = {
@@ -660,4 +889,6 @@ OFFICE_TOOL_FUNCTIONS: dict[str, Any] = {
     "pptx_append_slide": pptx_append_slide,
     "latex_compile":     latex_compile,
     "latex_template":    latex_template,
+    "pdf_create":        pdf_create,
+    "image_convert":     image_convert,
 }

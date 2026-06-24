@@ -22,9 +22,7 @@ datas += [
     (os.path.join(REPO_ROOT, "data", "tool_groups.json"), "data"),
     (os.path.join(REPO_ROOT, "data", "mcp.json"), "data"),
     (os.path.join(REPO_ROOT, "data", "slack_oauth_client.json"), "data"),
-    # Docker 코드 샌드박스 정의 — 설치본에서 ensure_sandbox_ready 가 compose build/up 하려면 필요
-    (os.path.join(REPO_ROOT, "sandbox", "Dockerfile"), "sandbox"),
-    (os.path.join(REPO_ROOT, "sandbox", "docker-compose.yml"), "sandbox"),
+    # (Docker 샌드박스 정의 제거 — 코드 실행은 호스트 동봉 인터프리터로 일원화, INT-1870 Phase C)
 ]
 
 # Google OAuth 내장 client — gitignore라 CI(release-dmg.yml)가 GOOGLE_OAUTH_CLIENT_JSON
@@ -55,8 +53,8 @@ for pkg in ("uvicorn", "fastapi", "starlette", "anyio", "sse_starlette",
         pass
 hiddenimports += ["mcp", "mcp.types"]
 
-# 사무 문서 / 데이터 처리 라이브러리 — VEGA.app 단독(Docker 없이) PDF/XLS/DOCX/PPTX·차트 처리.
-# tools_office.py 는 함수 안 + sandbox 문자열 코드에서 import 하므로 정적 분석이 못 잡는다.
+# 사무 문서 / 데이터 처리 라이브러리 — VEGA.app 단독 PDF/XLS/DOCX/PPTX·차트 처리(호스트 실행).
+# tools_office.py 는 함수 안에서 import 하므로 정적 분석이 못 잡는다.
 #
 # 주의: collect_submodules 는 쓰지 않는다. 빌드 환경(mlx_env)에 torch/transformers/
 # tensorflow/pyarrow 등 거대 ML 패키지가 깔려 있어, pandas 등의 optional 백엔드를
@@ -65,10 +63,11 @@ hiddenimports += ["mcp", "mcp.types"]
 hiddenimports += [
     "openpyxl", "pypdf", "docx", "pptx", "msoffcrypto",
     "xlrd", "PIL", "numpy", "pandas", "matplotlib", "plotly", "mammoth",
+    "hwpkit", "olefile", "lxml",  # 한글 문서(HWP=olefile / HWPX=lxml) — INT-1843
 ]
-# 데이터 파일 의존(matplotlib mpl-data, pptx 기본 템플릿)은 명시 수집.
+# 데이터 파일 의존(matplotlib mpl-data, pptx 기본 템플릿, reportlab 폰트)은 명시 수집.
 # pandas 는 pyarrow 등 optional 백엔드를 데이터로 끌어올 수 있어 제외.
-for pkg in ("matplotlib", "pptx", "openpyxl"):
+for pkg in ("matplotlib", "pptx", "openpyxl", "reportlab"):
     try:
         datas += collect_data_files(pkg)
     except Exception:
@@ -82,6 +81,13 @@ for pkg in ("markdown", "pyairtable"):
         hiddenimports += collect_submodules(pkg)
     except Exception:
         pass
+
+# reportlab(pdf_create) — import 가 전부 함수 내부 lazy 라 정적 그래프가 일부 서브모듈
+# (_cidfontdata 등 한글 CID 데이터)을 놓칠 수 있어 전체 수집. 순수 파이썬이라 폭발 없음 (INT-1843).
+try:
+    hiddenimports += collect_submodules("reportlab")
+except Exception:
+    pass
 
 # fastmcp 데이터 파일(스키마 등) 동봉
 datas += collect_data_files("fastmcp", include_py_files=True)
@@ -161,10 +167,10 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    # 거대 ML 라이브러리 차단 — 빌드 환경(mlx_env)에 깔려 있고 pipeline 함수 안 lazy import
-    # (memory_store.embed 의 mlx_lm 등)를 PyInstaller 가 정적으로 따라가 번들을 742MB+ 로
-    # 부풀린다. 배포본은 EXAONE 모델이 없어 어차피 hash fallback 으로 동작하므로 빼도 안전
-    # (memory_store.py:72). 사무/데이터 처리(numpy/pandas/openpyxl 등)엔 불필요 (2026-06-15).
+    # 거대 ML 라이브러리 차단 — 빌드 환경(mlx_env)에 torch/transformers 등이 깔려 있어
+    # 전이 의존으로 끌려와 번들을 742MB+ 로 부풀린다. VEGA 런타임은 이들을 쓰지 않으므로
+    # 명시적으로 배제한다 (임베딩 벡터 메모리는 2026-06-22 동결·제거 — lexical FTS5 +
+    # 페르소나 SQL 주입이 정본, INT-1828). 사무/데이터 처리(numpy/pandas/openpyxl 등)엔 불필요.
     excludes=[
         "torch", "torchvision", "torchaudio", "transformers", "tensorflow",
         "tensorboard", "keras", "sklearn", "scikit_learn", "cv2", "opencv",

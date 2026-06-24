@@ -153,7 +153,7 @@ jobs:
             echo "::warning::Notarization credentials failed — DMG will be built without notarization"
           fi
 
-      - name: DMG 빌드 (aarch64 + x86_64 + 공증)
+      - name: DMG 빌드 (aarch64 + x86_64 + 선택적 공증)
         run: |
           # Only notarize if credentials successfully stored in this workflow step.
           if [ "${{ steps.notary_setup.outputs.notary_available || 'false' }}" = "true" ]; then
@@ -164,12 +164,13 @@ jobs:
           fi
         timeout-minutes: 80
 
-      - name: DMG 검증 (공증·서명)
+      - name: DMG 검증 (공증·서명 — 선택적)
         run: |
           FAIL=0
           for ARCH in aarch64 x86_64; do
             DMG="build_output/VEGA-${VERSION}-${ARCH}.dmg"
             if [ ! -f "$DMG" ]; then echo "::error::$DMG 없음"; FAIL=1; continue; fi
+
             # Check if notarized (notary profile was prepared)
             if [ "${{ steps.notary_setup.outputs.notary_available || 'false' }}" = "true" ]; then
               # Full notarization verification
@@ -181,6 +182,7 @@ jobs:
               echo "::info::$ARCH 서명만 검증 (공증 제외)"
               codesign -v "$DMG" || { echo "::warning::$ARCH 서명 검증 실패"; FAIL=1; }
             fi
+
             echo "SHA256 ($ARCH): $(shasum -a 256 "$DMG" | cut -d' ' -f1)"
           done
           [ "$FAIL" = "0" ] || exit 1
