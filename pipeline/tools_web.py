@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import contextvars
 import os
 import re
 import urllib.error
@@ -18,6 +19,22 @@ import urllib.request
 #   Keychain > .env/env var > default. The settings window (Tools & Keys) saves to Keychain.
 #   (로컬 SearXNG를 쓰려면 VEGA_SEARXNG_URL=http://localhost:18888 설정)  # cxt-ignore: fake_data
 _DEFAULT_SEARXNG_URL = "https://search.intrect.io"
+_SEARCH_QUERY_CACHE: contextvars.ContextVar[set[str] | None] = contextvars.ContextVar(
+    "vega_web_search_cache", default=None,
+)
+
+
+def _search_cache() -> set[str]:
+    s = _SEARCH_QUERY_CACHE.get()
+    if s is None:
+        s = set()
+        _SEARCH_QUERY_CACHE.set(s)
+    return s
+
+
+def clear_web_search_cache() -> None:
+    """Turn boundary — streaming loop may call between user turns."""
+    _SEARCH_QUERY_CACHE.set(set())
 
 
 # keychain.get 체인(Keychain → .env → 환경변수)을 쓴다 — get_secret(Keychain 단독)이
@@ -67,6 +84,12 @@ def web_search(query: str, max_results: int = 5, engines: str = "google,bing") -
     Raises RuntimeError on failure — caught by dispatch_tool's try/except and
     converted to {"error": "..."}, consistent with telemetry/self_improve convention.
     Returning a raw list (not dict) caused failures to be counted as successes."""
+    qnorm = (query or "").strip().lower()
+    cache = _search_cache()
+    if qnorm and qnorm in cache:
+        raise RuntimeError(f"동일 검색어 재호출 차단(INT-1893): {query!r}")
+    if qnorm:
+        cache.add(qnorm)
     params = urllib.parse.urlencode({
         "q": query,
         "format": "json",

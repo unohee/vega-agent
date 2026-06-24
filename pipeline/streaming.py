@@ -176,7 +176,14 @@ def _build_workdir_section(working_dir: str | None) -> str:
     )
 
 
-def build_system(working_dir: str | None = None) -> str:
+def _load_light_fragment() -> str:
+    p = Path(__file__).resolve().parent.parent / "data" / "agents" / "_light.md"
+    if p.is_file():
+        return p.read_text(encoding="utf-8").strip()
+    return ""
+
+
+def build_system(working_dir: str | None = None, load: str | None = None) -> str:
     """System prompt — static content only (persona, working dir, slash commands, agent guide).
 
     Excludes dashboard, state, and current_time to stay prompt-caching-friendly.
@@ -209,7 +216,7 @@ def build_system(working_dir: str | None = None) -> str:
             f"아직 페르소나가 채워지지 않았으니 {name}을(를) 알아가면서 사용자에게 도움을 줘라."
         )
 
-    return f"""{identity}
+    base = f"""{identity}
 {workdir_section}{commands_section}
 {persona_block}
 
@@ -217,6 +224,11 @@ def build_system(working_dir: str | None = None) -> str:
 
 {agent_md}
 """
+    if load == "light":
+        frag = _load_light_fragment()
+        if frag:
+            return base + f"\n\n---\n\n{frag}\n"
+    return base
 
 
 def build_dynamic_preamble() -> str:
@@ -280,14 +292,14 @@ def _load_agent_md() -> str:
     return "\n\n".join(p for p in parts if p)
 
 
-def _build_request(input_items: list, system: str, ce_mode: bool = False, research_mode: bool = False, tier: str | None = None, model_override: str | None = None):
+def _build_request(input_items: list, system: str, ce_mode: bool = False, research_mode: bool = False, tier: str | None = None, model_override: str | None = None, load: str | None = None):
     """Build a request matching the active LLM provider (or the given tier).
     Returns: (Request, kind). kind is 'responses' | 'chat_completions' — used to branch SSE parsing.
     ce_mode=True passes only the allowlist excluding local system tools.
     tier ("local"|"cloud"): 2단 라우터 provider 선택. None 이면 active."""
     from pipeline.llm_gateway import build_request
-    schemas = get_schemas_for_mode(TOOL_SCHEMAS, ce_mode=ce_mode)
-    return build_request(input_items, system, schemas, research_mode=research_mode, tier=tier, model_override=model_override)
+    schemas = get_schemas_for_mode(TOOL_SCHEMAS, ce_mode=ce_mode, load=load)
+    return build_request(input_items, system, schemas, research_mode=research_mode, tier=tier, model_override=model_override, load=load)
 
 
 def _iter_sse_lines(resp):
@@ -581,6 +593,7 @@ async def stream_gpt(
     research_mode: bool = False,
     tier: str | None = None,
     spawn_context: dict | None = None,
+    load_override: str | None = None,
 ) -> str:
     """
     GPT tool-use loop — streams SSE tokens to on_token in real time.
@@ -592,6 +605,12 @@ async def stream_gpt(
     research_mode: True allows up to 40 tool-loop rounds and passes a hint to build_request.
     """
     loop = asyncio.get_event_loop()
+
+    try:
+        from pipeline.tools_web import clear_web_search_cache
+        clear_web_search_cache()
+    except Exception:
+        pass
 
     if len(messages) == 1:
         user_content = messages[-1]["content"]
@@ -627,26 +646,36 @@ async def stream_gpt(
     load = "standard"
     model_override: str | None = None
     max_rounds = 40 if research_mode else 20
+    max_tool_rounds = 24
     try:
         from pipeline.model_catalog import resolve_turn_model
         from pipeline.tier_router import resolve_load_routing
 
-        routing = resolve_load_routing(messages, research_mode=research_mode)
+        routing = resolve_load_routing(messages, research_mode=research_mode, load_override=load_override)
         load = routing["load"]
         max_rounds = routing["max_rounds"]
+        max_tool_rounds = routing["max_tool_rounds"]
         if tier != "local":
             model_override = resolve_turn_model(load)
         if stats is not None:
             stats["load"] = load
             stats["max_rounds"] = max_rounds
+            stats["max_tool_rounds"] = max_tool_rounds
             stats["route_text_len"] = len(routing["route_text"])
             if model_override:
                 stats["selected_model"] = model_override
+            if routing.get("budget"):
+                stats["budget_max_tokens"] = routing["budget"].get("max_tokens")
     except Exception:
         pass
+    if load == "light" and system and "Light load mode" not in system:
+        frag = _load_light_fragment()
+        if frag and frag not in system:
+            system = system + f"\n\n---\n\n{frag}\n"
     first_round = True
     actual_rounds = 0
     tool_rounds = 0
+    suppress_tools = False
 
     # for timing measurement
     import time as _t
@@ -657,8 +686,14 @@ async def stream_gpt(
         actual_rounds += 1
         req, kind = _build_request(
             input_items, system, ce_mode=ce_mode, research_mode=research_mode,
-            tier=tier, model_override=model_override,
+            tier=tier, model_override=model_override, load=load,
         )
+        if suppress_tools:
+            import json as _json
+            body = _json.loads(req.data.decode())
+            body.pop("tools", None)
+            body.pop("tool_choice", None)
+            req.data = _json.dumps(body).encode()
 
         token_q: asyncio.Queue = asyncio.Queue()
         tool_q: asyncio.Queue = asyncio.Queue()
@@ -737,6 +772,14 @@ async def stream_gpt(
             break
 
         tool_rounds += 1
+        if tool_rounds >= max_tool_rounds:
+            input_items.append({
+                "role": "user",
+                "content": "[시스템] 도구 호출 상한에 도달했다. 지금까지 결과만으로 최종 답변을 3–8문장으로 마무리하라.",
+            })
+            if stats is not None:
+                stats["tool_round_cap_hit"] = True
+            suppress_tools = True
 
         # Preserve the assistant text from a tool-calling round in history. If dropped,
         # the model re-emits the same intro every round (echo) — INT-1411 regression.
@@ -841,6 +884,17 @@ async def stream_gpt(
                 "call_id": tc["call_id"],
                 "output": result,
             })
+
+            if load == "light" and name == "web_search" and not suppress_tools:
+                hits = parsed_result if isinstance(parsed_result, list) else []
+                if len(hits) >= 3:
+                    input_items.append({
+                        "role": "user",
+                        "content": "[시스템] 검색 결과가 충분하다. 추가 도구 없이 추천/답변만 작성하라.",
+                    })
+                    suppress_tools = True
+                    if stats is not None:
+                        stats["early_stop_search"] = True
 
     # Augment timing stats
     if stats is not None:
