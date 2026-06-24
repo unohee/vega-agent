@@ -19,8 +19,11 @@ from pathlib import Path
 
 VEGA_ROOT = Path(__file__).parent.parent
 MLX_PYTHON = Path.home() / "dev/mlx_env/bin/python"
-CHART_DIR = VEGA_ROOT / "data" / "charts"
-CHART_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _chart_dir() -> Path:
+    from pipeline.data_paths import charts_dir
+    return charts_dir()
 
 
 def _python_interp(script_path: str) -> list[str]:
@@ -440,7 +443,7 @@ def python_exec(code: str, timeout: int = 60) -> dict:
 def _save_fig_png(fig_code_result: str) -> str:
     """Returns a temporary PNG file path."""
     import uuid
-    path = CHART_DIR / f"chart_{uuid.uuid4().hex[:8]}.png"
+    path = _chart_dir() / f"chart_{uuid.uuid4().hex[:8]}.png"
     return str(path)
 
 
@@ -451,7 +454,7 @@ def chart_matplotlib(code: str) -> dict:
     Returns: {"__type": "image", "path": str, "stdout": str} | {"error": str}
     """
     import uuid
-    chart_path = str(CHART_DIR / f"chart_{uuid.uuid4().hex[:8]}.png")
+    chart_path = str(_chart_dir() / f"chart_{uuid.uuid4().hex[:8]}.png")
 
     wrapper = f"""
 import matplotlib
@@ -488,7 +491,7 @@ def chart_plotly(code: str) -> dict:
     Returns: {"__type": "html", "path": str} | {"error": str}
     """
     import uuid
-    html_path = str(CHART_DIR / f"chart_{uuid.uuid4().hex[:8]}.html")
+    html_path = str(_chart_dir() / f"chart_{uuid.uuid4().hex[:8]}.html")
 
     wrapper = f"""
 import plotly.graph_objects as go

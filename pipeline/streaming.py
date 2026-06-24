@@ -280,14 +280,14 @@ def _load_agent_md() -> str:
     return "\n\n".join(p for p in parts if p)
 
 
-def _build_request(input_items: list, system: str, ce_mode: bool = False, research_mode: bool = False, tier: str | None = None):
+def _build_request(input_items: list, system: str, ce_mode: bool = False, research_mode: bool = False, tier: str | None = None, model_override: str | None = None):
     """Build a request matching the active LLM provider (or the given tier).
     Returns: (Request, kind). kind is 'responses' | 'chat_completions' — used to branch SSE parsing.
     ce_mode=True passes only the allowlist excluding local system tools.
     tier ("local"|"cloud"): 2단 라우터 provider 선택. None 이면 active."""
     from pipeline.llm_gateway import build_request
     schemas = get_schemas_for_mode(TOOL_SCHEMAS, ce_mode=ce_mode)
-    return build_request(input_items, system, schemas, research_mode=research_mode, tier=tier)
+    return build_request(input_items, system, schemas, research_mode=research_mode, tier=tier, model_override=model_override)
 
 
 def _iter_sse_lines(resp):
@@ -623,12 +623,24 @@ async def stream_gpt(
     else:
         input_items: list = [{"role": "user", "content": user_content}]
     full_text = ""
-    # 부하별 라운드 상한 — 단순 조회/보고가 과도한 툴 라운드를 쓰지 않게 (INT-1893).
-    # research_mode=40, light=10, standard=20, heavy=24. user_content 가 문자열일 때만 분류.
+    # 부하별 라운드 상한·모델 선택 — 현재 user 메시지만 분류 (INT-1893/1892).
+    _route_text = ""
+    load = "standard"
+    model_override: str | None = None
     try:
-        from pipeline.tier_router import rounds_for_load
-        _route_text = user_content if isinstance(user_content, str) else ""
+        from pipeline.tier_router import route_load, rounds_for_load, routing_text_from_messages
+        from pipeline.model_catalog import resolve_turn_model
+
+        _route_text = routing_text_from_messages(messages)
+        load = route_load(_route_text)
         max_rounds = rounds_for_load(_route_text, research_mode=research_mode)
+        if tier != "local":
+            model_override = resolve_turn_model(load)
+        if stats is not None:
+            stats["load"] = load
+            stats["max_rounds"] = max_rounds
+            if model_override:
+                stats["selected_model"] = model_override
     except Exception:
         max_rounds = 40 if research_mode else 20
     first_round = True
@@ -639,7 +651,10 @@ async def stream_gpt(
     t_first_token: float | None = None
 
     for _ in range(max_rounds):
-        req, kind = _build_request(input_items, system, ce_mode=ce_mode, research_mode=research_mode, tier=tier)
+        req, kind = _build_request(
+            input_items, system, ce_mode=ce_mode, research_mode=research_mode,
+            tier=tier, model_override=model_override,
+        )
 
         token_q: asyncio.Queue = asyncio.Queue()
         tool_q: asyncio.Queue = asyncio.Queue()
@@ -782,9 +797,18 @@ async def stream_gpt(
             except Exception as e:
                 result = json.dumps({"error": str(e)}, ensure_ascii=False)
 
-            # On tool failure, check whether to trigger self-improvement
             try:
                 parsed_result = json.loads(result) if isinstance(result, str) else result
+            except Exception:
+                parsed_result = None
+
+            # INT-1895: 코드 실행 성공 → 스킬 저장 런타임 신호
+            if stats is not None and name in ("python_exec", "sandbox_save_module"):
+                if isinstance(parsed_result, dict) and not parsed_result.get("error"):
+                    stats["suggest_skill_save"] = True
+
+            # On tool failure, check whether to trigger self-improvement
+            try:
                 if isinstance(parsed_result, dict) and parsed_result.get("error"):
                     from pipeline.self_improve import should_improve, attempt_improvement
                     if should_improve(name):

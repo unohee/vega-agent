@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from pipeline.model_catalog import select_model_for_load
-from pipeline.tier_router import rounds_for_load, route_load
+from pipeline.tier_router import rounds_for_load, route_load, routing_text_from_messages
 
 
 def test_route_load_heavy():
@@ -18,6 +18,18 @@ def test_route_load_light_short_lookup():
     # 이케아 예시 — 짧은 단순 조회 (EPIC #1 이슈)
     assert route_load("이케아 5만원 이하 사무용 조명 5개 추천해줘") == "light"
     assert route_load("오늘 환율 얼마야?") == "light"
+    assert route_load("이 파일 분석해줘") == "light"  # bare 분석해 — heavy 아님 (INT-1893)
+
+
+def test_routing_text_from_messages_ignores_history():
+    msgs = [
+        {"role": "user", "content": "매출 데이터 분석해서 보고서 작성해줘"},
+        {"role": "assistant", "content": "..."},
+        {"role": "user", "content": "이케아 5만원 이하 사무용 조명 5개 추천해줘"},
+    ]
+    assert routing_text_from_messages(msgs) == msgs[-1]["content"]
+    assert route_load(routing_text_from_messages(msgs)) == "light"
+    assert rounds_for_load(routing_text_from_messages(msgs)) == 10
 
 
 def test_route_load_standard_default():

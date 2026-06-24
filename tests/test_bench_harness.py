@@ -54,3 +54,28 @@ def test_dry_run_no_budget():
                        capture_output=True, text=True, timeout=30)
     assert r.returncode == 0, r.stderr
     assert "dry-run" in r.stdout and "office/" in r.stdout
+
+
+def test_detect_cjk_hallucination():
+    assert bench.detect_cjk_hallucination("안녕하세요 좋은 하루입니다.") is False
+    assert bench.detect_cjk_hallucination("こんにちは") is True
+
+
+def test_verify_swe_py_bugfix():
+    good = "def avg(xs):\n    if not xs:\n        return 0.0\n    return sum(xs)/len(xs)"
+    r = bench.verify_swe({"id": "py_bugfix"}, f"```python\n{good}\n```")
+    assert r["exec_pass"] is True
+
+
+def test_judge_parse_failure_marks_error():
+    agg = bench.aggregate([])
+    agg["error"] = "judge_parse_failed"
+    assert agg["pass"] is False and agg["error"] == "judge_parse_failed"
+
+
+def test_task_prompt_injects_rules_for_press_release(tmp_path, monkeypatch):
+    rules = tmp_path / "RULES.md"
+    rules.write_text("# Press rules\n- no duplicate quotes", encoding="utf-8")
+    monkeypatch.setattr(bench, "RULES_PATH", rules)
+    out = bench.task_prompt({"id": "press_release_single", "prompt": "보도자료 써줘"})
+    assert "Press rules" in out and "보도자료 써줘" in out

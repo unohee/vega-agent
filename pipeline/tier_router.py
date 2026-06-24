@@ -69,8 +69,19 @@ def route_tier(user_text: str, history: list[dict] | None = None) -> str:
 _HEAVY_LOAD = [
     r"코드|스크립트|구현|디버그|리팩터|implement|refactor|debug",
     r"보고서|문서.*작성|장문|길게|자세히\s*설명|상세히|초안.*작성",
-    r"분석해|설계|아키텍처|비교\s*분석|단계별|전체.*정리|마이그레이션",
+    # bare `분석해` 제외 — "이 파일 분석해줘"(≤80자)는 light (INT-1893)
+    r"심층\s*분석|비교\s*분석|데이터\s*분석|코드\s*분석|분석해서|분석하고|분석\s*보고",
+    r"설계|아키텍처|단계별|전체.*정리|마이그레이션",
 ]
+
+
+def routing_text_from_messages(messages: list[dict]) -> str:
+    """현재 턴 분류용 — preamble·히스토리 제외, 마지막 user 메시지만 (INT-1893)."""
+    if not messages:
+        return ""
+    last = messages[-1]
+    content = last.get("content") if isinstance(last, dict) else ""
+    return content if isinstance(content, str) else ""
 
 
 def route_load(user_text: str, history: list[dict] | None = None) -> str:
