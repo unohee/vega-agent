@@ -118,14 +118,17 @@ jobs:
 
       - name: 공증 프로필 등록 (CI env var → keychain-profile)
         # Skip if credentials missing/expired (Int account agreement expired — INT-1697)
+        # Continue-on-error to avoid blocking DMG build if notarization fails
+        continue-on-error: true
         if: env.APPLE_ID && env.APPLE_TEAM_ID && env.APPLE_APP_SPECIFIC_PASSWORD
         run: |
           xcrun notarytool store-credentials "vega-notary-ci" \
             --apple-id "$APPLE_ID" \
             --team-id "$APPLE_TEAM_ID" \
-            --password "$APPLE_APP_SPECIFIC_PASSWORD" || {
-            echo "::warning::Notarization credentials failed — check Apple Developer account agreement status"
-            exit 0
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" && {
+            echo "✓ Notarization credentials stored in keychain"
+          } || {
+            echo "::warning::Notarization credentials failed — DMG will be built without notarization"
           }
 
       - name: DMG 빌드 (aarch64 + x86_64 + 선택적 공증)
