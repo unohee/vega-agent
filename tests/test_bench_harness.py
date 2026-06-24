@@ -67,6 +67,15 @@ def test_verify_swe_py_bugfix():
     assert r["exec_pass"] is True
 
 
+def test_format_http_error_openrouter_body():
+    import io
+    import urllib.error
+
+    body = io.BytesIO(b'{"error":{"message":"Budget limit exceeded (monthly limit).","code":403}}')
+    err = urllib.error.HTTPError("https://openrouter.ai", 403, "Forbidden", {}, body)
+    assert "Budget limit exceeded" in bench._format_http_error(err)
+
+
 def test_judge_parse_failure_marks_error():
     agg = bench.aggregate([])
     agg["error"] = "judge_parse_failed"

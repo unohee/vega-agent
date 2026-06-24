@@ -87,9 +87,8 @@ def _ensure_workspace() -> Path:
 def _base_cwd() -> str:
     """Code execution working dir — session override > App Support workspace (catalog) > home.
 
-    기본을 home 대신 워크스페이스로 둬서 VEGA의 실행·개발 산출물이 home 에 흩어지지 않고
-    App Support 카탈로그에 누적된다 (INT-1870 §4b). 사용자 file_read/office 등은 명시 경로라
-    영향 없음. 사용자가 working dir 를 명시하면 그게 우선."""
+    기본을 workspace 로 둬 VEGA 산출물·skills 가 App Support 에 누적 (INT-1870 §4b).
+    상대 경로는 workspace 기준 — ~/Downloads 등은 `~/…` 또는 절대경로로 지정."""
     wd = _WORKING_DIR.get()
     if wd and Path(wd).expanduser().is_dir():
         return str(Path(wd).expanduser())
@@ -781,12 +780,11 @@ CODE_TOOL_SCHEMAS: list[dict] = [
         "type": "function",
         "name": "bash_exec",
         "description": (
-            "bash 명령어를 격리된 샌드박스 컨테이너에서 실행한다. "
+            "bash 명령어를 호스트에서 실행한다 (Docker 샌드박스 제거, INT-1870). "
             "파일 조작, 데이터 처리, 계산 등에 사용. "
-            "경로는 호스트 표기 그대로 쓰면 된다 — 호스트 경로는 컨테이너 경로로 자동 변환된다. "
-            "연결된 작업 폴더가 있으면 그 폴더(읽기/쓰기)와 VEGA data(/vega_data)만 접근 가능하다 "
-            "— 연결 폴더 밖 경로는 차단된다. 연결 폴더가 없으면 홈은 /host_home(읽기 전용)으로 접근된다. "
-            "인터넷 접근 없음. 호스트 시스템 상태(프로세스·Docker)를 보려면 system_info 사용."
+            "경로는 호스트 절대경로 또는 ~/… (상대경로는 workspace 기준). "
+            "세션 작업 폴더가 있으면 cwd 로 사용; 없으면 App Support workspace. "
+            "path_guard 로 허용 경로만 읽기/쓰기. 인터넷은 web_search 등 별도 도구."
         ),
         "parameters": {
             "type": "object",
@@ -801,12 +799,11 @@ CODE_TOOL_SCHEMAS: list[dict] = [
         "type": "function",
         "name": "python_exec",
         "description": (
-            "Python 코드를 격리된 샌드박스 컨테이너에서 실행한다. "
+            "Python 코드를 호스트에서 실행한다 (Docker 샌드박스 제거, INT-1870). "
             "데이터 분석, 계산, 파일 처리 등에 사용. "
             "차트가 필요하면 chart_matplotlib 또는 chart_plotly를 대신 사용. "
-            "경로는 호스트 표기 그대로 쓰면 된다 — 호스트 경로는 컨테이너 경로로 자동 변환된다. "
-            "연결된 작업 폴더가 있으면 그 폴더(읽기/쓰기)와 VEGA data(/vega_data)만 접근 가능하다 "
-            "— 연결 폴더 밖 경로는 차단된다. 연결 폴더가 없으면 홈은 /host_home(읽기 전용)으로 접근된다."
+            "경로는 호스트 절대경로 또는 ~/… (상대경로는 workspace 기준). "
+            "세션 작업 폴더·workspace skills 가 PYTHONPATH 에 포함."
         ),
         "parameters": {
             "type": "object",
@@ -821,7 +818,7 @@ CODE_TOOL_SCHEMAS: list[dict] = [
         "type": "function",
         "name": "chart_matplotlib",
         "description": (
-            "matplotlib으로 차트를 그려 화면에 표시한다. 샌드박스에서 실행. "
+            "matplotlib으로 차트를 그려 PNG 로 저장·표시한다. 호스트에서 실행. "
             "line, bar, scatter, histogram, heatmap 등 정적 차트에 적합. "
             "plt/np/pd는 import 없이 사용 가능."
         ),
@@ -837,7 +834,7 @@ CODE_TOOL_SCHEMAS: list[dict] = [
         "type": "function",
         "name": "chart_plotly",
         "description": (
-            "plotly로 인터랙티브 차트를 그려 화면에 표시한다. 샌드박스에서 실행. "
+            "plotly로 인터랙티브 차트를 그려 HTML 로 저장·표시한다. 호스트에서 실행. "
             "hover, zoom, 애니메이션이 필요한 차트에 적합. "
             "fig = px.xxx(...) 또는 fig = go.Figure(...) 형태로 fig를 정의해야 함."
         ),
@@ -853,8 +850,7 @@ CODE_TOOL_SCHEMAS: list[dict] = [
         "type": "function",
         "name": "system_info",
         "description": (
-            "호스트 시스템 상태를 조회한다 — CPU, 메모리, 디스크, 실행 중인 Docker 컨테이너. "
-            "샌드박스가 아닌 호스트에서 직접 실행."
+            "호스트 시스템 상태 — CPU, 메모리, 디스크, (설치 시) Docker 컨테이너 목록."
         ),
         "parameters": {"type": "object", "properties": {}, "required": []},
     },
@@ -862,7 +858,8 @@ CODE_TOOL_SCHEMAS: list[dict] = [
         "type": "function",
         "name": "sandbox_save_module",
         "description": (
-            "Python 코드를 샌드박스 영속 모듈로 저장한다 (/workspace/lib/<name>.py). "
+            "Python 유틸리티를 App Support workspace/skills 에 저장한다. "
+            "이후 python_exec 에서 import 가능 (INT-1870 §4b)."
             "저장 후 다음 python_exec에서 바로 import 가능. "
             "재시작 후에도 유지되는 '에이전트 스킬 라이브러리'."
         ),
@@ -878,7 +875,7 @@ CODE_TOOL_SCHEMAS: list[dict] = [
     {
         "type": "function",
         "name": "sandbox_list_skills",
-        "description": "샌드박스에 누적된 스킬 현황 조회: 저장된 모듈, pip 설치 패키지, 실행 이력 파일 목록.",
+        "description": "workspace/skills 에 누적된 모듈·패키지·실행 이력 조회 (sandbox_list_skills).",
         "parameters": {"type": "object", "properties": {}, "required": []},
     },
     {

@@ -68,6 +68,36 @@ class TestWebSearch:
             assert len(results) == 2
             assert results[0]["title"] == "Python 튜토리얼"
             assert "python.org" in results[0]["url"]
+            call_url = mock_urlopen.call_args[0][0].full_url
+            assert "engines=" in call_url
+
+    def test_web_search_localhost_omits_engines(self, monkeypatch):
+        """로컬 SearXNG — engines 파라미터 생략(인스턴스 기본)."""
+        import pipeline.keychain as kc
+        monkeypatch.setattr(kc, "get", lambda key, default="": "http://localhost:18888" if key == "VEGA_SEARXNG_URL" else "")
+        with patch("pipeline.tools_web.urllib.request.urlopen") as mock_urlopen:
+            mock_resp = MagicMock()
+            mock_resp.read.return_value = json.dumps({"results": []}).encode()
+            mock_resp.__enter__ = MagicMock(return_value=mock_resp)
+            mock_resp.__exit__ = MagicMock(return_value=False)
+            mock_urlopen.return_value = mock_resp
+            web_search("테스트")
+            call_url = mock_urlopen.call_args[0][0].full_url
+            assert "engines=" not in call_url
+
+    def test_web_search_custom_host_uses_google_bing(self, monkeypatch):
+        """커스텀(비-localhost) SearXNG — google,bing 기본."""
+        import pipeline.keychain as kc
+        monkeypatch.setattr(kc, "get", lambda key, default="": "https://search.example.com" if key == "VEGA_SEARXNG_URL" else "")
+        with patch("pipeline.tools_web.urllib.request.urlopen") as mock_urlopen:
+            mock_resp = MagicMock()
+            mock_resp.read.return_value = json.dumps({"results": []}).encode()
+            mock_resp.__enter__ = MagicMock(return_value=mock_resp)
+            mock_resp.__exit__ = MagicMock(return_value=False)
+            mock_urlopen.return_value = mock_resp
+            web_search("테스트")
+            call_url = mock_urlopen.call_args[0][0].full_url
+            assert "engines=google%2Cbing" in call_url or "engines=google,bing" in call_url
 
     def test_web_search_no_results(self):
         """검색 결과 없음."""

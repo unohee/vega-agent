@@ -23,12 +23,13 @@ import json
 import os
 import re
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 TASKS_PATH = REPO / "data" / "bench_tasks.json"
-JUDGE_MODEL = "anthropic/claude-sonnet-4-6"
+JUDGE_MODEL = os.getenv("BENCH_JUDGE_MODEL", "anthropic/claude-sonnet-4-6")
 _OR_URL = "https://openrouter.ai/api/v1/chat/completions"
 RULES_PATH = REPO / "data" / "agents" / "RULES.md"
 
@@ -107,7 +108,7 @@ def load_tasks(path: Path = TASKS_PATH, categories: list[str] | None = None) -> 
 
 
 def _resolve_key() -> str:
-    key = os.getenv("OPENROUTER_API", "")
+    key = os.getenv("OPENROUTER_API", "") or os.getenv("OPENROUTER_API_KEY", "")
     if not key:
         try:
             from pipeline import keychain
@@ -115,6 +116,30 @@ def _resolve_key() -> str:
         except Exception:
             pass
     return key
+
+
+def _format_http_error(e: urllib.error.HTTPError) -> str:
+    """OpenRouter HTTPError 본문에서 actionable 메시지 추출."""
+    try:
+        raw = e.read().decode()
+        data = json.loads(raw)
+        err = data.get("error") or data
+        if isinstance(err, dict):
+            msg = err.get("message") or str(err.get("code", raw))
+        else:
+            msg = str(err)
+        return f"HTTP {e.code}: {msg}"
+    except Exception:
+        return f"HTTP {e.code}: {e.reason}"
+
+
+def _preflight(key: str, probe_model: str) -> str | None:
+    """첫 태스크 전 OpenRouter 연결·예산 확인. 실패 시 에러 문자열."""
+    try:
+        _or_chat(probe_model, [{"role": "user", "content": "ping"}], key, max_tokens=1)
+    except RuntimeError as e:
+        return str(e)
+    return None
 
 
 def _or_chat(model: str, messages: list[dict], key: str, max_tokens: int = 1500) -> dict:
@@ -126,8 +151,11 @@ def _or_chat(model: str, messages: list[dict], key: str, max_tokens: int = 1500)
                  "HTTP-Referer": "https://github.com/unohee/VEGA", "X-Title": "VEGA-bench"},
     )
     t0 = time.monotonic()
-    with urllib.request.urlopen(req, timeout=120) as r:
-        data = json.loads(r.read().decode())
+    try:
+        with urllib.request.urlopen(req, timeout=120) as r:
+            data = json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        raise RuntimeError(_format_http_error(e)) from e
     latency = round(time.monotonic() - t0, 2)
     text = (data.get("choices") or [{}])[0].get("message", {}).get("content", "") or ""
     usage = data.get("usage") or {}
@@ -180,26 +208,45 @@ def run_task(model: str, task: dict, key: str) -> dict:
         run = _or_chat(model, [{"role": "user", "content": prompt}], key)
     except Exception as e:
         return {"model": model, "task": task["id"], "category": task["category"], "error": str(e)[:200]}
-    verdict = judge(task, run["text"], key)
     out: dict = {
-        "model": model, "task": task["id"], "category": task["category"],
-        "tokens_in": run["tokens_in"], "tokens_out": run["tokens_out"],
-        "latency_sec": run["latency_sec"], "tool_call_count": 0,
-        "ratio": verdict["ratio"], "pass": verdict["pass"], "scores": verdict["scores"],
+        "model": model,
+        "task": task["id"],
+        "category": task["category"],
+        "tokens_in": run["tokens_in"],
+        "tokens_out": run["tokens_out"],
+        "latency_sec": run["latency_sec"],
+        "tool_call_count": 0,
     }
-    if verdict.get("error"):
-        out["error"] = verdict["error"]
-        if verdict.get("judge_raw"):
-            out["judge_raw"] = verdict["judge_raw"]
+
+    try:
+        verdict = judge(task, run["text"], key)
+    except Exception as e:
+        out["judge_error"] = str(e)[:220]
+        out.update({"ratio": 0.0, "pass": False, "scores": []})
+    else:
+        out.update({
+            "ratio": verdict["ratio"],
+            "pass": verdict["pass"],
+            "scores": verdict["scores"],
+        })
+        if verdict.get("error"):
+            out["judge_error"] = verdict["error"]
+            if verdict.get("judge_raw"):
+                out["judge_raw"] = verdict["judge_raw"]
+
     if task["category"] == "swe":
         swe = verify_swe(task, run["text"])
         out.update(swe)
         if swe.get("exec_pass") is False:
             out["pass"] = False
+            out["judge_error"] = out.get("judge_error") or "swe_verify_failed"
+
     if task.get("id") == "lang_hallucination_guard":
         out["hallucination_chars_detected"] = detect_cjk_hallucination(run["text"])
         if out["hallucination_chars_detected"]:
             out["pass"] = False
+            out["judge_error"] = out.get("judge_error") or "hallucination_detected"
+
     return out
 
 
@@ -240,11 +287,18 @@ def main() -> int:
     if not key:
         print("[bench] ERROR: OPENROUTER_API 키 없음 (env/keychain)."); return 1
 
+    if err := _preflight(key, models[0]):
+        print(f"[bench] ERROR: OpenRouter preflight failed ({models[0]}): {err}")
+        low = err.lower()
+        if "budget limit" in low or "monthly limit" in low:
+            print("[bench] hint: OpenRouter org 월 예산 한도 초과 — 대시보드에서 한도 상향 또는 리셋 대기.")
+        return 1
+
     results = []
     for m in models:
         for t in tasks:
             r = run_task(m, t, key)
-            tag = "ERR" if r.get("error") else ("PASS" if r.get("pass") else "fail")
+            tag = "judge_error" if r.get("judge_error") else ("ERR" if r.get("error") else ("PASS" if r.get("pass") else "fail"))
             print(f"  [{tag}] {m} · {t['category']}/{t['id']} "
                   f"ratio={r.get('ratio','-')} out_tok={r.get('tokens_out','-')} "
                   f"lat={r.get('latency_sec','-')}s")

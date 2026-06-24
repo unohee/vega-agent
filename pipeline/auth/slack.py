@@ -50,15 +50,19 @@ def _load_client() -> dict:
     csec = (data.get("client_secret") or "").strip()
     if not cid or not csec:
         raise SlackOAuthNotConfigured("slack_oauth_client.json 에 client_id/secret 이 비어 있습니다.")
+    _FALLBACK_USER_SCOPES = [
+        "channels:read", "channels:history", "groups:history",
+        "im:history", "mpim:history", "users:read", "search:read",
+        "chat:write",  # slack_send_message — INT-1882
+    ]
+    stored = data.get("user_scopes") or []
+    # Google OAuth 와 동일 — 번들 user_scopes 에 신규 필수 scope 가 없어도 merge
+    merged = list(dict.fromkeys(stored + _FALLBACK_USER_SCOPES)) if stored else list(_FALLBACK_USER_SCOPES)
     return {
         "client_id": cid,
         "client_secret": csec,
         "redirect_uri": data.get("redirect_uri") or "http://localhost:8100/slack/callback",  # cxt-ignore: fake_data
-        "user_scopes": data.get("user_scopes") or [
-            "channels:read", "channels:history", "groups:history",
-            "im:history", "mpim:history", "users:read", "search:read",
-            "chat:write",  # 메시지 전송(slack_send_message) — INT-1882. 재인증 시 부여.
-        ],
+        "user_scopes": merged,
     }
 
 

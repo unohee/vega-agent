@@ -57,3 +57,11 @@ def test_pdf_create_path_guard_blocks_outside_root():
     assert "error" in r and "SAFEGUARD" in r["error"], f"가드 미작동: {r}"
     import os
     assert not os.path.exists("/etc/vega_guard_test.pdf")
+
+
+def test_image_convert_path_guard_blocks_src_outside_root(tmp_path):
+    from pipeline.tools_office import image_convert
+    src = tmp_path / "ok.png"
+    src.write_bytes(b"fake")
+    r = image_convert(src=str(src), dst="/etc/vega_guard_out.jpg")
+    assert "error" in r and "SAFEGUARD" in r["error"], f"src 가드 미작동: {r}"
