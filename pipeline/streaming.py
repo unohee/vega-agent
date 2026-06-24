@@ -624,33 +624,37 @@ async def stream_gpt(
         input_items: list = [{"role": "user", "content": user_content}]
     full_text = ""
     # 부하별 라운드 상한·모델 선택 — 현재 user 메시지만 분류 (INT-1893/1892).
-    _route_text = ""
     load = "standard"
     model_override: str | None = None
+    max_rounds = 40 if research_mode else 20
     try:
-        from pipeline.tier_router import route_load, rounds_for_load, routing_text_from_messages
         from pipeline.model_catalog import resolve_turn_model
+        from pipeline.tier_router import resolve_load_routing
 
-        _route_text = routing_text_from_messages(messages)
-        load = route_load(_route_text)
-        max_rounds = rounds_for_load(_route_text, research_mode=research_mode)
+        routing = resolve_load_routing(messages, research_mode=research_mode)
+        load = routing["load"]
+        max_rounds = routing["max_rounds"]
         if tier != "local":
             model_override = resolve_turn_model(load)
         if stats is not None:
             stats["load"] = load
             stats["max_rounds"] = max_rounds
+            stats["route_text_len"] = len(routing["route_text"])
             if model_override:
                 stats["selected_model"] = model_override
     except Exception:
-        max_rounds = 40 if research_mode else 20
+        pass
     first_round = True
+    actual_rounds = 0
+    tool_rounds = 0
 
     # for timing measurement
     import time as _t
     t_start = _t.monotonic()
     t_first_token: float | None = None
 
-    for _ in range(max_rounds):
+    for _round in range(max_rounds):
+        actual_rounds += 1
         req, kind = _build_request(
             input_items, system, ce_mode=ce_mode, research_mode=research_mode,
             tier=tier, model_override=model_override,
@@ -731,6 +735,8 @@ async def stream_gpt(
 
         if not pending_tools:
             break
+
+        tool_rounds += 1
 
         # Preserve the assistant text from a tool-calling round in history. If dropped,
         # the model re-emits the same intro every round (echo) — INT-1411 regression.
@@ -841,6 +847,8 @@ async def stream_gpt(
         t_end = _t.monotonic()
         elapsed = max(0.001, t_end - (t_first_token or t_start))
         out = stats.get("output_tokens", 0)
+        stats["actual_rounds"] = actual_rounds
+        stats["tool_rounds"] = tool_rounds
         stats["elapsed_sec"] = round(t_end - t_start, 2)
         stats["gen_sec"] = round(elapsed, 2)
         stats["tok_per_sec"] = round(out / elapsed, 1) if out else 0
