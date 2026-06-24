@@ -161,10 +161,10 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    # 거대 ML 라이브러리 차단 — 빌드 환경(mlx_env)에 torch/transformers 등이 깔려 있어
-    # 전이 의존으로 끌려와 번들을 742MB+ 로 부풀린다. VEGA 런타임은 이들을 쓰지 않으므로
-    # 명시적으로 배제한다 (임베딩 벡터 메모리는 2026-06-22 동결·제거 — lexical FTS5 +
-    # 페르소나 SQL 주입이 정본, INT-1828). 사무/데이터 처리(numpy/pandas/openpyxl 등)엔 불필요.
+    # 거대 ML 라이브러리 차단 — 빌드 환경(mlx_env)에 깔려 있고 pipeline 함수 안 lazy import
+    # (memory_store.embed 의 mlx_lm 등)를 PyInstaller 가 정적으로 따라가 번들을 742MB+ 로
+    # 부풀린다. 배포본은 EXAONE 모델이 없어 어차피 hash fallback 으로 동작하므로 빼도 안전
+    # (memory_store.py:72). 사무/데이터 처리(numpy/pandas/openpyxl 등)엔 불필요 (2026-06-15).
     excludes=[
         "torch", "torchvision", "torchaudio", "transformers", "tensorflow",
         "tensorboard", "keras", "sklearn", "scikit_learn", "cv2", "opencv",

@@ -7465,6 +7465,8 @@ function applyLang(lang) {
 }
 
 (function initLang() {
+  // 언어 토글 버튼은 제거됨(헤더 정리). 저장된 언어만 적용한다.
+  // 언어 전환이 필요하면 localStorage.vega_lang 을 'en'/'ko'로 설정 후 새로고침.
   // 저장된 선택이 없으면 브라우저/OS 언어 환경을 따른다 (한국어 환경만 ko, 그 외 en).
   const saved = localStorage.getItem('vega_lang')
     || ((navigator.language || '').toLowerCase().startsWith('ko') ? 'ko' : 'en');
