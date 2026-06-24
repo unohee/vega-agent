@@ -124,21 +124,7 @@
     </div>
   </div>
 
-  <!-- STEP-SANDBOX: 샌드박스 이미지 설치 (Docker OK, 이미지 없을 때만 표시) -->
-  <div class="card hidden" id="stepSandbox">
-    <h2>코드 실행 환경 준비</h2>
-    <div class="sub">VEGA 샌드박스 이미지를 다운로드합니다. 코드 실행·이미지 처리 기능에 필요합니다.</div>
-    <div id="sbPullProgress" style="margin:16px 0; font-size:13px; color:var(--muted); min-height:60px; font-family:monospace; white-space:pre-wrap; word-break:break-all; max-height:140px; overflow-y:auto"></div>
-    <div id="sbPullBar" style="height:4px; border-radius:2px; background:var(--border); margin-bottom:12px; overflow:hidden">
-      <div id="sbPullBarInner" style="height:100%; width:0%; background:var(--accent); transition:width .3s"></div>
-    </div>
-    <div id="sbPullMsg" class="msg" style="margin-bottom:12px"></div>
-    <div class="row">
-      <button class="btn ghost" id="sbSkip">건너뛰고 계속</button>
-      <div class="grow"></div>
-      <button class="btn" id="sbStart">다운로드 시작</button>
-    </div>
-  </div>
+  <!-- (STEP-SANDBOX 제거 — 코드 실행은 호스트에서 직접 동작, Docker 불필요, INT-1870 Phase C) -->
 
   <!-- STEP 2: 워크플레이스 플러그인 선택 + 순차 연결 -->
   <div class="card hidden" id="step2">
@@ -327,114 +313,12 @@ async function enterPluginStep(){
   showSystemNotice();
 }
 
-// 선택 의존성 안내 — Docker 없으면 자동 설치 버튼 제공
-async function showSystemNotice(){
-  try{
-    const r = await fetch('/api/onboarding/system-check'); const s = await r.json();
-    if(s.docker && !s.docker.available){
-      const el = $('sysNotice');
-      el.innerHTML = 'ℹ️ Docker 미설치 — 코드 실행 도구가 비활성화됩니다. '
-        + '<a href="#" id="sysDockerAuto">자동 설치</a> 또는 '
-        + '<a href="#" id="sysDockerLink">직접 설치</a>';
-      el.classList.remove('hidden');
-      $('sysDockerLink').onclick = (e)=>{ e.preventDefault(); openExternal(s.docker.install_url || 'https://www.docker.com/products/docker-desktop/'); };
-      $('sysDockerAuto').onclick = (e)=>{ e.preventDefault(); showSandboxStep(true); };
-    }
-  }catch(e){ /* 백엔드 미지원 시 조용히 무시 */ }
-}
+// 코드 실행은 호스트에서 직접 동작(Docker 제거, INT-1870 Phase C) — Docker 설치 안내·
+// 샌드박스 설치 단계 없음. 호환을 위해 호출부가 기대하는 함수만 no-op 으로 남긴다.
+async function showSystemNotice(){ /* no-op — Docker 의존 제거 */ }
 
-// ── 샌드박스 설치 단계 (Docker 설치 + image pull 통합) ──────────────────────
 async function maybeEnterSandboxStep(){
-  try{
-    const r = await fetch('/api/onboarding/system-check');
-    const s = await r.json();
-    const dockerOk = s.docker && s.docker.available;
-    const imgReady = s.sandbox_image && s.sandbox_image.ready;
-    // Docker 없거나 이미지 없으면 설치 단계 진입
-    if(!dockerOk || !imgReady){
-      showSandboxStep(!dockerOk); // needsDockerInstall=true면 full setup
-      return true;
-    }
-  }catch(e){ /* 건너뜀 */ }
-  return false;
-}
-
-function showSandboxStep(needsDockerInstall = false){
-  [0,1,2].forEach(i=>{
-    $('step'+i).classList.add('hidden');
-    const d=$('dot'+i);
-    d.classList.toggle('active', i===2);
-    d.classList.toggle('done', i<2);
-  });
-  $('stepSandbox').classList.remove('hidden');
-
-  // 제목/설명 동적 설정
-  $('stepSandbox').querySelector('h2').textContent = needsDockerInstall
-    ? '코드 실행 환경 설치'
-    : '코드 실행 환경 준비';
-  $('stepSandbox').querySelector('.sub').textContent = needsDockerInstall
-    ? 'Homebrew → Docker Desktop → 샌드박스 이미지를 자동으로 설치합니다.'
-    : 'VEGA 샌드박스 이미지를 다운로드합니다.';
-  $('sbStart').textContent = needsDockerInstall ? '자동 설치 시작' : '다운로드 시작';
-
-  const endpoint = needsDockerInstall ? '/api/sandbox/setup' : '/api/sandbox/pull';
-
-  const log = $('sbPullProgress');
-  const bar = $('sbPullBarInner');
-  const msg = $('sbPullMsg');
-  let pulling = false;
-
-  $('sbSkip').onclick = ()=>{ enterPluginStep(); };
-
-  $('sbStart').onclick = async ()=>{
-    if(pulling) return;
-    pulling = true;
-    $('sbStart').disabled = true;
-    $('sbSkip').disabled = true;
-    log.textContent = '';
-    msg.textContent = '';
-    msg.className = 'msg';
-
-    let lineCount = 0;
-    const es = new EventSource(endpoint);
-
-    es.onmessage = (e)=>{
-      lineCount++;
-      log.textContent += e.data + '\n';
-      log.scrollTop = log.scrollHeight;
-      const pct = Math.min(95, lineCount * 2);
-      bar.style.width = pct + '%';
-    };
-
-    es.addEventListener('done', ()=>{
-      es.close();
-      bar.style.width = '100%';
-      msg.className = 'msg ok';
-      msg.textContent = needsDockerInstall ? '설치 완료! 코드 실행 환경이 준비됐습니다.' : '샌드박스 이미지 준비 완료!';
-      setTimeout(()=> enterPluginStep(), 1200);
-    });
-
-    es.addEventListener('error', (e)=>{
-      es.close();
-      msg.className = 'msg err';
-      msg.textContent = '실패: ' + (e.data || '알 수 없는 오류');
-      $('sbStart').disabled = false;
-      $('sbStart').textContent = '다시 시도';
-      $('sbSkip').disabled = false;
-      pulling = false;
-    });
-
-    es.onerror = ()=>{
-      if(es.readyState === EventSource.CLOSED) return;
-      es.close();
-      msg.className = 'msg err';
-      msg.textContent = '연결 오류 — 백엔드 응답 없음';
-      $('sbStart').disabled = false;
-      $('sbStart').textContent = '다시 시도';
-      $('sbSkip').disabled = false;
-      pulling = false;
-    };
-  };
+  return false;  // 샌드박스 설치 단계 없음 → 바로 플러그인 단계로
 }
 
 $('plugSkipAll').onclick = finishOnboarding;

@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import sqlite3
+import threading
 import uuid
 from collections.abc import Callable
 from datetime import datetime, timezone
@@ -16,67 +17,97 @@ from pipeline.data_paths import db_path as _db_path
 # Compatibility alias — other modules that import session_store.DB_PATH still work
 DB_PATH = _db_path()
 SOURCE = "vega"
+_schema_initialized = False
+_schema_lock = threading.Lock()
+_schema_db_path: Path | None = None
+
+
+def _apply_schema(conn: sqlite3.Connection) -> None:
+    """Create tables + migrate missing columns (idempotent). Safe for new user DBs."""
+    # NOTE:  CRUD (create_session/append_message/load_history )
+    # to INSERT/SELECT  and  . conversations  uuid  PK to,
+    # messages  conv_uuid/sender/text/char_len/updated_at  .
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS conversations (
+            uuid        TEXT PRIMARY KEY,
+            source      TEXT NOT NULL DEFAULT 'vega',
+            name        TEXT NOT NULL DEFAULT 'VEGA session',
+            created_at  TEXT NOT NULL,
+            updated_at  TEXT NOT NULL,
+            msg_count   INTEGER NOT NULL DEFAULT 0,
+            working_dir TEXT,
+            archived    INTEGER NOT NULL DEFAULT 0
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS messages (
+            uuid        TEXT PRIMARY KEY,
+            source      TEXT NOT NULL DEFAULT 'vega',
+            conv_uuid   TEXT NOT NULL,
+            sender      TEXT NOT NULL,
+            text        TEXT NOT NULL,
+            char_len    INTEGER NOT NULL DEFAULT 0,
+            created_at  TEXT NOT NULL,
+            updated_at  TEXT NOT NULL,
+            usage_meta  TEXT
+        )
+    """)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_messages_conv "
+        "ON messages(source, conv_uuid, created_at)"
+    )
+    # Migrate existing DB — add columns if missing
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(conversations)").fetchall()}
+    if "working_dir" not in cols:
+        conn.execute("ALTER TABLE conversations ADD COLUMN working_dir TEXT")
+    if "archived" not in cols:
+        conn.execute("ALTER TABLE conversations ADD COLUMN archived INTEGER NOT NULL DEFAULT 0")
+    msg_cols = {r[1] for r in conn.execute("PRAGMA table_info(messages)").fetchall()}
+    if "usage_meta" not in msg_cols:
+        conn.execute("ALTER TABLE messages ADD COLUMN usage_meta TEXT")
+    # events: assistant message of   (  + tool )
+    # JSONto save →   and  time restore.  message NULL( ).
+    if "events" not in msg_cols:
+        conn.execute("ALTER TABLE messages ADD COLUMN events TEXT")
+    conn.commit()
 
 
 def _conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
+    # timeout=30: wait up to 30 s for concurrent writers (xdist parallel workers on Windows).
+    global _schema_initialized, _schema_db_path
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
+    if not _schema_initialized or _schema_db_path != DB_PATH:
+        with _schema_lock:
+            if not _schema_initialized or _schema_db_path != DB_PATH:
+                _apply_schema(conn)
+                _schema_initialized = True
+                _schema_db_path = DB_PATH
     return conn
 
 
 def _ensure_schema() -> None:
-    """Create tables + migrate missing columns (idempotent). Safe for new user DBs."""
-    with _conn() as conn:
-        # NOTE: 컬럼명은 CRUD 함수(create_session/append_message/load_history 등)가
-        # 실제로 INSERT/SELECT 하는 것과 일치해야 한다. conversations 는 uuid 를 PK 로,
-        # messages 는 conv_uuid/sender/text/char_len/updated_at 를 쓴다.
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS conversations (
-                uuid        TEXT PRIMARY KEY,
-                source      TEXT NOT NULL DEFAULT 'vega',
-                name        TEXT NOT NULL DEFAULT 'VEGA 세션',
-                created_at  TEXT NOT NULL,
-                updated_at  TEXT NOT NULL,
-                msg_count   INTEGER NOT NULL DEFAULT 0,
-                working_dir TEXT,
-                archived    INTEGER NOT NULL DEFAULT 0
-            )
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS messages (
-                uuid        TEXT PRIMARY KEY,
-                source      TEXT NOT NULL DEFAULT 'vega',
-                conv_uuid   TEXT NOT NULL,
-                sender      TEXT NOT NULL,
-                text        TEXT NOT NULL,
-                char_len    INTEGER NOT NULL DEFAULT 0,
-                created_at  TEXT NOT NULL,
-                updated_at  TEXT NOT NULL,
-                usage_meta  TEXT
-            )
-        """)
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_messages_conv "
-            "ON messages(source, conv_uuid, created_at)"
-        )
-        # Migrate existing DB — add columns if missing
-        cols = {r[1] for r in conn.execute("PRAGMA table_info(conversations)").fetchall()}
-        if "working_dir" not in cols:
-            conn.execute("ALTER TABLE conversations ADD COLUMN working_dir TEXT")
-        if "archived" not in cols:
-            conn.execute("ALTER TABLE conversations ADD COLUMN archived INTEGER NOT NULL DEFAULT 0")
-        msg_cols = {r[1] for r in conn.execute("PRAGMA table_info(messages)").fetchall()}
-        if "usage_meta" not in msg_cols:
-            conn.execute("ALTER TABLE messages ADD COLUMN usage_meta TEXT")
-        # events: assistant 메시지의 인터리빙 구조(텍스트 세그먼트 + 도구 호출)를
-        # JSON으로 저장 → 재방문 시 라이브와 동일한 시간순 복원. 구 메시지는 NULL(텍스트 폴백).
-        if "events" not in msg_cols:
-            conn.execute("ALTER TABLE messages ADD COLUMN events TEXT")
+    """Public idempotent schema init (scripts/tests)."""
+    global _schema_initialized, _schema_db_path
+    if _schema_initialized and _schema_db_path == DB_PATH:
+        return
+    with _schema_lock:
+        if _schema_initialized and _schema_db_path == DB_PATH:
+            return
+        conn = sqlite3.connect(DB_PATH, timeout=30)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA foreign_keys=ON")
+        try:
+            _apply_schema(conn)
+        finally:
+            conn.close()
+        _schema_initialized = True
+        _schema_db_path = DB_PATH
 
 
-_ensure_schema()
 # Restrict DB file to owner only — prevent access by other users on the same machine
 try:
     Path(DB_PATH).chmod(0o600)
@@ -90,7 +121,7 @@ def _now() -> str:
 
 # ── Session (conversation) management ────────────────────────────────────────
 
-def create_session(title: str = "VEGA 세션") -> str:
+def create_session(title: str = "VEGA session") -> str:
     """Create a new session and return the session_uuid."""
     sid = str(uuid.uuid4())
     now = _now()
@@ -178,11 +209,11 @@ def append_message(
     """
     Save a message and return the message_uuid.
     role: 'human' | 'assistant'
-    usage_meta: assistant 메시지의 LLM usage stats (model/tokens/cost/tok_per_sec/ttft_sec).
-                None이면 컬럼은 NULL로 저장.
-    events: assistant 메시지의 인터리빙 구조 — [{"type":"text","data":...},
-            {"type":"tool", "name", "label", "summary", "args", "status", ...}] 순서 배열.
-            재방문 시 라이브와 동일한 시간순 복원에 사용. None이면 텍스트 폴백.
+    usage_meta: assistant message of  LLM usage stats (model/tokens/cost/tok_per_sec/ttft_sec).
+                None  NULLto save.
+    events: assistant message of    — [{"type":"text","data":...},
+            {"type":"tool", "name", "label", "summary", "args", "status", ...}]  .
+              and  time restore at  . None  .
     """
     import json as _json
     mid = str(uuid.uuid4())
@@ -223,8 +254,8 @@ def load_history(session_uuid: str) -> list[dict]:
 
 
 def load_history_with_meta(session_uuid: str) -> list[dict]:
-    """UI용 히스토리. usage_meta·events JSON 파싱해서 함께 반환.
-    events가 있으면 재방문 시 인터리빙(텍스트↔도구 시간순) 복원, 없으면 텍스트 폴백."""
+    """UI . usage_metaevents JSON   return.
+    events have   (↔tool time) restore, not  ."""
     import json as _json
     with _conn() as conn:
         rows = conn.execute(

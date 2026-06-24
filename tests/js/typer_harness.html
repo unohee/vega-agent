@@ -21,6 +21,7 @@ window.marked = {
   },
 };
 function scrollBottom() {}
+function highlightWithin() {}  // 구문강조 후처리 — 타이퍼 로직 테스트엔 무관 (INT-1846 stub)
 
 async function loadTyperFns() {
   const html = await fetch('../../web/static/chat.html').then(r => r.text());

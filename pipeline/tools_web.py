@@ -58,8 +58,11 @@ def _pw_get_text(page) -> str:
     return page.inner_text("body")
 
 
-def web_search(query: str, max_results: int = 5) -> list[dict]:
+def web_search(query: str, max_results: int = 5, engines: str = "google,bing") -> list[dict]:
     """SearXNG meta-search using the instance at SEARXNG_URL.
+
+    engines defaults to google,bing — avoids DuckDuckGo CAPTCHA that returns 0 results
+    on Korean queries (confirmed issue, see INT-1881).
 
     Raises RuntimeError on failure — caught by dispatch_tool's try/except and
     converted to {"error": "..."}, consistent with telemetry/self_improve convention.
@@ -69,6 +72,7 @@ def web_search(query: str, max_results: int = 5) -> list[dict]:
         "format": "json",
         "language": "ko-KR",
         "categories": "general",
+        "engines": engines,
     })
     headers = {
         "Accept": "application/json",

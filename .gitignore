@@ -29,6 +29,7 @@ data/*.json
 !data/user_profile.json
 !data/llm_providers.json
 !data/tool_groups.json
+!data/bench_tasks.json
 data/*.jsonl
 data/*.csv
 data/*.xls

@@ -57,6 +57,7 @@ def _load_client() -> dict:
         "user_scopes": data.get("user_scopes") or [
             "channels:read", "channels:history", "groups:history",
             "im:history", "mpim:history", "users:read", "search:read",
+            "chat:write",  # 메시지 전송(slack_send_message) — INT-1882. 재인증 시 부여.
         ],
     }
 

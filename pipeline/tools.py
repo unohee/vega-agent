@@ -134,11 +134,14 @@ from pipeline.tools_google import (
 from pipeline.tools_web import web_search, web_fetch
 from pipeline.spawn import dispatch_agent
 from pipeline.discord_bridge import discord_notify
-# NOTE: vega-agent 공개판은 office/browser/things/kis/imessage 개인 도구 모듈을 싣지 않는다.
-# OFFICE_TOOL_SCHEMAS / OFFICE_TOOL_FUNCTIONS 는 빈 값으로 스텁한다.
-# (개인 VEGA 에서 이식하려면 pipeline/tools_office.py 를 추가하고 이 두 줄을 import 로 교체)
-OFFICE_TOOL_SCHEMAS: list[dict] = []
-OFFICE_TOOL_FUNCTIONS: dict[str, Any] = {}
+# office 도구(xlsx/docx/pptx 생성·편집·읽기 + latex) — _office_exec 가 Docker→호스트 폴백
+# (INT-1840)이라 Docker 없는 배포본에서도 동봉 인터프리터로 동작. 모듈이 없으면 빈 값 폴백.
+# (browser/things/kis/imessage 개인 도구는 여전히 공개판 미탑재) — INT-1843.
+try:
+    from pipeline.tools_office import OFFICE_TOOL_SCHEMAS, OFFICE_TOOL_FUNCTIONS
+except Exception:
+    OFFICE_TOOL_SCHEMAS: list[dict] = []
+    OFFICE_TOOL_FUNCTIONS: dict[str, Any] = {}
 
 # ── Tool schemas (GPT tool-use format) ───────────────────────────────────────
 
@@ -146,12 +149,17 @@ TOOL_SCHEMAS: list[dict] = [
     {
         "type": "function",
         "name": "web_search",
-        "description": "인터넷에서 정보를 검색한다. 최신 뉴스, 기술 문서, 일반 지식 조회에 사용.",
+        "description": "인터넷에서 정보를 검색한다. 최신 뉴스, 기술 문서, 가격 비교, 일반 지식 조회에 사용.",
         "parameters": {
             "type": "object",
             "properties": {
                 "query": {"type": "string", "description": "검색 키워드 또는 문장"},
                 "max_results": {"type": "integer", "default": 5, "description": "최대 결과 수"},
+                "engines": {
+                    "type": "string",
+                    "default": "google,bing",
+                    "description": "쉼표로 구분된 검색 엔진 목록 (기본: google,bing). 가격 비교·쇼핑: shopping 카테고리 엔진 추가 가능.",
+                },
             },
             "required": ["query"],
         },
@@ -364,13 +372,14 @@ TOOL_SCHEMAS: list[dict] = [
     {
         "type": "function",
         "name": "drive_search",
-        "description": "Google Drive에서 파일을 검색한다.",
+        "description": "Google Drive에서 파일을 검색한다. **특정 폴더 안에서만** 찾아야 하면 folder_id를 반드시 지정해 폴더 밖 파일까지 스캔하지 않게 한다.",
         "parameters": {
             "type": "object",
             "properties": {
-                "query": {"type": "string", "description": "Drive 검색 쿼리 (예: name contains 'ArtifactNet')"},
+                "query": {"type": "string", "description": "Drive 검색 쿼리 (예: name contains 'ArtifactNet'). 자연어를 주면 전체 텍스트 검색으로 처리."},
                 "max_results": {"type": "integer", "default": 10},
                 "account": {"type": "string", "default": "", "description": "사용할 Google 계정 이메일. 미지정 시 기본 계정."},
+                "folder_id": {"type": "string", "default": "", "description": "지정하면 이 폴더 안에서만 검색('<id>' in parents). 사용자가 특정 폴더의 파일만 보라고 하면 그 폴더 ID를 여기 넣어 범위를 한정한다."},
             },
             "required": ["query"],
         },
@@ -396,6 +405,7 @@ TOOL_SCHEMAS: list[dict] = [
             "- xlsx/xls/csv/tsv: 마크다운 테이블로 변환. sheet로 시트 지정.\n"
             "- db/sqlite/sqlite3: 스키마 + 샘플 데이터 반환. sheet로 특정 테이블 지정.\n"
             "- pdf: 텍스트 추출(pypdf).\n"
+            "- hwp/hwpx: 한글 문서 텍스트 추출(hwpkit).\n"
             "- 이미지(png/jpg/heic 등): 텍스트로는 못 읽음 — 사용자에게 채팅 첨부를 안내(비전 분석).\n"
             "- txt/md/json/py/yaml 등 텍스트 파일: 원문 반환.\n"
             "경로는 절대경로 또는 ~/... 형태. "
