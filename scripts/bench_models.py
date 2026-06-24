@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import time
 import urllib.request
 from pathlib import Path
@@ -29,6 +30,67 @@ REPO = Path(__file__).resolve().parent.parent
 TASKS_PATH = REPO / "data" / "bench_tasks.json"
 JUDGE_MODEL = "anthropic/claude-sonnet-4-6"
 _OR_URL = "https://openrouter.ai/api/v1/chat/completions"
+RULES_PATH = REPO / "data" / "agents" / "RULES.md"
+
+
+def task_prompt(task: dict) -> str:
+    """태스크 프롬프트 — 보도자료는 RULES.md 컨텍스트 주입 (INT-1889)."""
+    prompt = task["prompt"]
+    if task.get("id") == "press_release_single" and RULES_PATH.is_file():
+        rules = RULES_PATH.read_text(encoding="utf-8")[:4000]
+        prompt = f"[보도자료 규칙 — RULES.md]\n{rules}\n\n[과제]\n{prompt}"
+    return prompt
+
+
+def detect_cjk_hallucination(text: str) -> bool:
+    """비한국어 문자(가나·한자-only) 혼입 검출 (INT-1891)."""
+    if re.search(r"[\u3040-\u30ff]", text):
+        return True
+    hangul = len(re.findall(r"[가-힣]", text))
+    han = len(re.findall(r"[\u4e00-\u9fff]", text))
+    return han > 2 and hangul == 0
+
+
+def _extract_python_code(text: str) -> str:
+    m = re.search(r"```(?:python)?\n(.*?)```", text, re.S)
+    if m:
+        return m.group(1).strip()
+    if "def " in text:
+        lines = []
+        for line in text.splitlines():
+            if line.strip().startswith("def ") or lines:
+                lines.append(line)
+        return "\n".join(lines).strip()
+    return ""
+
+
+def verify_swe(task: dict, output: str) -> dict:
+    """SWE 태스크 — 추출 코드 실행 검증 (INT-1890)."""
+    tid = task.get("id", "")
+    code = _extract_python_code(output)
+    if not code:
+        return {"exec_pass": False, "exec_error": "no_code_extracted"}
+    ns: dict = {}
+    try:
+        exec(code, ns)  # noqa: S102 — bench harness isolated exec
+        if tid == "py_bugfix":
+            avg = ns.get("avg")
+            if avg is None:
+                return {"exec_pass": False, "exec_error": "avg_not_defined"}
+            if avg([]) != 0.0 or avg([2, 4]) != 3.0:
+                return {"exec_pass": False, "exec_error": "avg_wrong_result"}
+            return {"exec_pass": True}
+        if tid == "py_implement":
+            top_word = ns.get("top_word")
+            if top_word is None:
+                return {"exec_pass": False, "exec_error": "top_word_not_defined"}
+            w, c = top_word("Hello, hello! World.")
+            if w.lower() != "hello" or c != 2:
+                return {"exec_pass": False, "exec_error": "top_word_wrong_result"}
+            return {"exec_pass": True}
+    except Exception as e:
+        return {"exec_pass": False, "exec_error": str(e)[:200]}
+    return {"exec_pass": None}
 
 
 def load_tasks(path: Path = TASKS_PATH, categories: list[str] | None = None) -> list[dict]:
@@ -104,20 +166,41 @@ def judge(task: dict, output: str, key: str, judge_model: str = JUDGE_MODEL) -> 
     res = _or_chat(judge_model, [{"role": "system", "content": sys},
                                  {"role": "user", "content": usr}], key, max_tokens=900)
     scores = _parse_judge(res["text"])
-    return {**aggregate(scores), "scores": scores}
+    agg = aggregate(scores)
+    if not scores:
+        agg["error"] = "judge_parse_failed"
+        agg["judge_raw"] = res["text"][:300]
+    return {**agg, "scores": scores}
 
 
 def run_task(model: str, task: dict, key: str) -> dict:
     """한 모델로 한 태스크 실행 + 채점 → 결과 dict."""
+    prompt = task_prompt(task)
     try:
-        run = _or_chat(model, [{"role": "user", "content": task["prompt"]}], key)
+        run = _or_chat(model, [{"role": "user", "content": prompt}], key)
     except Exception as e:
         return {"model": model, "task": task["id"], "category": task["category"], "error": str(e)[:200]}
     verdict = judge(task, run["text"], key)
-    return {"model": model, "task": task["id"], "category": task["category"],
-            "tokens_in": run["tokens_in"], "tokens_out": run["tokens_out"],
-            "latency_sec": run["latency_sec"], "ratio": verdict["ratio"],
-            "pass": verdict["pass"], "scores": verdict["scores"]}
+    out: dict = {
+        "model": model, "task": task["id"], "category": task["category"],
+        "tokens_in": run["tokens_in"], "tokens_out": run["tokens_out"],
+        "latency_sec": run["latency_sec"], "tool_call_count": 0,
+        "ratio": verdict["ratio"], "pass": verdict["pass"], "scores": verdict["scores"],
+    }
+    if verdict.get("error"):
+        out["error"] = verdict["error"]
+        if verdict.get("judge_raw"):
+            out["judge_raw"] = verdict["judge_raw"]
+    if task["category"] == "swe":
+        swe = verify_swe(task, run["text"])
+        out.update(swe)
+        if swe.get("exec_pass") is False:
+            out["pass"] = False
+    if task.get("id") == "lang_hallucination_guard":
+        out["hallucination_chars_detected"] = detect_cjk_hallucination(run["text"])
+        if out["hallucination_chars_detected"]:
+            out["pass"] = False
+    return out
 
 
 def main() -> int:
@@ -182,8 +265,13 @@ def main() -> int:
 
     if args.out:
         Path(args.out).parent.mkdir(parents=True, exist_ok=True)
-        Path(args.out).write_text(json.dumps({"results": results, "summary": summary},
-                                             ensure_ascii=False, indent=2), encoding="utf-8")
+        artifact = {
+            "schema_version": 1,
+            "judge_model": JUDGE_MODEL,
+            "results": results,
+            "summary": summary,
+        }
+        Path(args.out).write_text(json.dumps(artifact, ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"[bench] 저장: {args.out}")
     return 0
 

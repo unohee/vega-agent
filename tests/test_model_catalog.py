@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from pipeline.model_catalog import curate_models, supports_caching, within_budget
+from pipeline.model_catalog import curate_models, load_bench_scores, select_model_for_load, supports_caching, within_budget
 
 
 def _m(mid, pin, pout):
@@ -31,6 +31,7 @@ def test_caching_capable_within_budget_passes_with_flags():
     out = curate_models([_m("openai/gpt-5.5-mini", 0.2, 0.6)])
     assert len(out) == 1
     assert out[0]["caching"] is True and out[0]["curated"] is True
+    assert "curated_reason" in out[0]
 
 
 def test_unknown_price_excluded():
@@ -53,3 +54,18 @@ def test_supports_caching_prefixes():
     assert supports_caching("anthropic/claude-haiku")
     assert supports_caching("google/gemini-3.1-flash-lite")
     assert not supports_caching("meta-llama/llama-4")
+
+
+def test_load_bench_scores_from_json(tmp_path):
+    p = tmp_path / "bench.json"
+    p.write_text('{"results":[{"model":"a/m","ratio":0.8},{"model":"a/m","ratio":1.0}]}', encoding="utf-8")
+    assert load_bench_scores(p) == {"a/m": 0.9}
+
+
+def test_select_model_for_load_uses_bench_scores():
+    cat = [
+        {"id": "a/cheap", "price_out_per_mtok": 0.2, "num_params_b": 7},
+        {"id": "b/strong", "price_out_per_mtok": 0.9, "num_params_b": 400},
+    ]
+    scores = {"a/cheap": 0.95, "b/strong": 0.5}
+    assert select_model_for_load("heavy", cat, bench_scores=scores)["id"] == "a/cheap"

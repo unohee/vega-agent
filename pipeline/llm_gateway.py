@@ -409,7 +409,7 @@ def _has_image_input(input_items: list) -> bool:
     return False
 
 
-def build_request(input_items: list, system: str, tool_schemas: list[dict], research_mode: bool = False, tier: str | None = None):
+def build_request(input_items: list, system: str, tool_schemas: list[dict], research_mode: bool = False, tier: str | None = None, model_override: str | None = None):
     """Builds a urllib.request.Request for the active provider (or the given tier).
     Replaces _build_request in streaming.py. Returns a (Request, kind) tuple.
     kind is 'responses' | 'chat_completions' — used to branch SSE parsing.
@@ -417,7 +417,8 @@ def build_request(input_items: list, system: str, tool_schemas: list[dict], rese
     tool_schemas is automatically filtered to the active tool groups.
     When research_mode=True, max_tokens/max_completion_tokens is set higher.
     tier ("local"|"cloud"): 지정 시 2단 라우터로 provider 선택(local 다운→cloud 폴백).
-    None 이면 기존처럼 active provider 사용."""
+    None 이면 기존처럼 active provider 사용.
+    model_override: OpenRouter 등 chat 경로에서 default_model 대신 사용 (INT-1892)."""
     import urllib.request
     tool_schemas = filter_tools(tool_schemas)
     prov = get_provider_for_tier(tier) if tier else get_active_provider()
@@ -428,6 +429,8 @@ def build_request(input_items: list, system: str, tool_schemas: list[dict], rese
         vision_model = prov.get("vision_model") or _VISION_MODEL_FALLBACK.get(prov.get("name", ""))
         if vision_model:
             model = vision_model
+    elif model_override:
+        model = model_override
     auth_type = prov.get("auth_type", "none")
     base_url = prov.get("base_url", "")
     extra_headers = dict(prov.get("extra_headers") or {})
