@@ -409,7 +409,7 @@ def _has_image_input(input_items: list) -> bool:
     return False
 
 
-def build_request(input_items: list, system: str, tool_schemas: list[dict], research_mode: bool = False, tier: str | None = None, model_override: str | None = None):
+def build_request(input_items: list, system: str, tool_schemas: list[dict], research_mode: bool = False, tier: str | None = None, model_override: str | None = None, load: str | None = None):
     """Builds a urllib.request.Request for the active provider (or the given tier).
     Replaces _build_request in streaming.py. Returns a (Request, kind) tuple.
     kind is 'responses' | 'chat_completions' — used to branch SSE parsing.
@@ -499,6 +499,10 @@ def build_request(input_items: list, system: str, tool_schemas: list[dict], rese
     # Omit the field entirely outside research_mode; add it only for non-ChatGPT providers in research_mode.
     _res_max = 16000 if research_mode else 8000
     _is_chatgpt = "chatgpt.com" in base_url or auth_type == "chatgpt_oauth"
+    from pipeline.tier_router import LOAD_BUDGET
+    _budget = LOAD_BUDGET.get(load or "standard", LOAD_BUDGET["standard"])
+    _load_max = _budget.get("max_tokens")
+    _load_effort = _budget.get("reasoning_effort")
 
     if kind == "responses":
         url = base_url  # already points to .../responses
@@ -513,8 +517,9 @@ def build_request(input_items: list, system: str, tool_schemas: list[dict], rese
         # Only set token limit when not ChatGPT Codex and in research mode
         if research_mode and not _is_chatgpt:
             payload["max_output_tokens"] = _res_max
-        # reasoning_effort: 프로바이더 설정값 우선, research_mode면 "high" 폴백
-        _effort = prov.get("reasoning_effort") or ("high" if research_mode else None)
+        elif load == "light" and not _is_chatgpt and _load_max:
+            payload["max_output_tokens"] = _load_max
+        _effort = prov.get("reasoning_effort") or (_load_effort if load == "light" else None) or ("high" if research_mode else None)
         if _effort:
             payload["reasoning"] = {"effort": _effort, "summary": "auto"}
     elif kind == "anthropic":
@@ -532,7 +537,7 @@ def build_request(input_items: list, system: str, tool_schemas: list[dict], rese
             "model": model,
             "system": system_blocks,
             "messages": messages,
-            "max_tokens": 16000 if research_mode else 8000,
+            "max_tokens": _res_max if research_mode else (_load_max if load == "light" and _load_max else 8000),
             "stream": True,
         }
         if an_tools:
@@ -556,9 +561,11 @@ def build_request(input_items: list, system: str, tool_schemas: list[dict], rese
             "usage": {"include": True},  # OpenRouter: include usage in stream
             "stream_options": {"include_usage": True},  # OpenAI-compat (mlx-server, etc.): usage in last chunk
         }
-        # Only set max_tokens in research_mode — otherwise use provider default
+        # max_tokens: research > load budget > provider default
         if research_mode:
             payload["max_tokens"] = _res_max
+        elif load == "light" and _load_max:
+            payload["max_tokens"] = _load_max
         if cc_tools:
             payload["tools"] = cc_tools
             payload["tool_choice"] = "auto"

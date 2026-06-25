@@ -101,6 +101,16 @@ def route_load(user_text: str, history: list[dict] | None = None) -> str:
 
 # 부하별 에이전트 툴 라운드 상한 (research_mode 는 호출부에서 40 으로 별도 처리).
 _ROUNDS_BY_LOAD = {"light": 10, "standard": 20, "heavy": 24}
+MAX_TOOL_ROUNDS_BY_LOAD = {"light": 2, "standard": 5, "heavy": 24}
+
+# Load-aware API budget (INT-1893 Phase 1) — reasoning_effort None = provider default.
+LOAD_BUDGET: dict[str, dict] = {
+    "light": {"max_tokens": 1200, "reasoning_effort": "low"},
+    "standard": {"max_tokens": 4000, "reasoning_effort": None},
+    "heavy": {"max_tokens": 8000, "reasoning_effort": None},
+}
+
+_VALID_LOADS = frozenset({"light", "standard", "heavy"})
 
 
 def rounds_for_load(user_text: str, research_mode: bool = False) -> int:
@@ -130,14 +140,75 @@ def user_content_blob_from_messages(messages: list[dict], preamble: str = "") ->
     return user_content
 
 
-def resolve_load_routing(messages: list[dict], *, research_mode: bool = False) -> dict:
+def classify_load_ambiguous(route_text: str, base_load: str) -> str:
+    """80–200자 애매 구간 — optional local SLM (VEGA_LOAD_CLASSIFIER=1) or standard bump."""
+    import os
+
+    text = (route_text or "").strip()
+    if base_load != "light" or len(text) <= 80 or len(text) > 200:
+        return base_load
+    if _match_any(text, _HEAVY_LOAD):
+        return "heavy"
+    if os.getenv("VEGA_LOAD_CLASSIFIER", "").strip() not in ("1", "true", "yes"):
+        return base_load
+    try:
+        from pipeline.llm_gateway import get_provider_for_tier
+
+        prov = get_provider_for_tier("local")
+        if not prov or prov.get("auth_type") == "none" and "127.0.0.1" not in (prov.get("base_url") or ""):
+            pass
+        import json
+        import urllib.request
+
+        base_url = (prov.get("base_url") or "http://127.0.0.1:1234/v1").rstrip("/")
+        model = prov.get("default_model") or "local"
+        body = json.dumps({
+            "model": model,
+            "messages": [
+                {"role": "system", "content": "Reply with exactly one word: light, standard, or heavy."},
+                {"role": "user", "content": f"Classify task load:\n{text[:400]}"},
+            ],
+            "max_tokens": 5,
+            "temperature": 0,
+        }).encode()
+        req = urllib.request.Request(
+            f"{base_url}/chat/completions",
+            data=body,
+            method="POST",
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=8) as r:
+            data = json.loads(r.read().decode())
+        raw = ((data.get("choices") or [{}])[0].get("message") or {}).get("content", "")
+        tag = raw.strip().lower().split()[0] if raw else ""
+        if tag in _VALID_LOADS:
+            return tag
+    except Exception:
+        pass
+    return "standard"
+
+
+def resolve_load_routing(
+    messages: list[dict],
+    *,
+    research_mode: bool = False,
+    load_override: str | None = None,
+) -> dict:
     """현재 턴 부하·라운드 상한 — streaming telemetry 입력 (INT-1893)."""
     route_text = routing_text_from_messages(messages)
-    load = route_load(route_text)
+    if load_override in _VALID_LOADS:
+        load = load_override
+    else:
+        load = route_load(route_text)
+        load = classify_load_ambiguous(route_text, load)
+    budget = LOAD_BUDGET.get(load, LOAD_BUDGET["standard"])
+    max_rounds = 40 if research_mode else _ROUNDS_BY_LOAD.get(load, 20)
     return {
         "route_text": route_text,
         "load": load,
-        "max_rounds": rounds_for_load(route_text, research_mode=research_mode),
+        "max_rounds": max_rounds,
+        "max_tool_rounds": MAX_TOOL_ROUNDS_BY_LOAD.get(load, 5),
+        "budget": dict(budget),
     }
 
 

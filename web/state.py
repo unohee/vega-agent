@@ -16,6 +16,7 @@ _SESSION_HISTORY: dict[str, list[dict]] = {}
 # ── 모드 토글 ──────────────────────────────────────────────────────────────────
 _PLAN_MODE: dict[str, bool] = {}
 _RESEARCH_MODE: dict[str, bool] = {}
+_LOAD_MODE: dict[str, str] = {}  # sid -> light|standard|heavy (absent = auto)
 _YOLO_MODE: dict[str, bool] = {}
 _GOAL_MODE: dict[str, bool] = {}
 
