@@ -294,40 +294,45 @@ def ingest_deckbench(limit: int) -> list[dict]:
 
 
 def ingest_odysseybench(limit: int) -> list[dict]:
-    scenarios = [
-        ("excel_q1_sum", "Q1 매출 시트 합계 595 확인", "xlsx_read", ["xlsx_read"]),
-        ("excel_fix_cell", "합계 셀 오류 수정 후 저장", "xlsx_create", ["xlsx_read", "xlsx_create"]),
-        ("email_draft_reply", "납기 연기 거절 회신 초안", None, []),
-        ("calendar_conflict", "7/10 vs 7/17 미팅 대안 제시", None, []),
-        ("pdf_contract_summary", "계약서 3문장 요약", None, []),
-        ("multi_app_report", "Excel 수치 + 이메일 요약 본문", "xlsx_read", ["xlsx_read"]),
-        ("budget_table", "부서별 예산 표 xlsx 생성", "xlsx_create", ["xlsx_create"]),
-        ("inventory_check", "재고 CSV 읽고 부족 품목 리스트", "python_exec", ["python_exec"]),
-        ("meeting_minutes", "회의록 구조화 action items", None, []),
-        ("travel_expense", "출장비 영수증 합계", "python_exec", ["python_exec"]),
-        ("client_status", "고객 3社 status 표", "xlsx_create", ["xlsx_create"]),
-        ("weekly_report", "주간 보고 이메일 + 첨부 xlsx", "xlsx_create", ["xlsx_create"]),
-        ("data_validation", "이메일 주소 형식 검증", "python_exec", ["python_exec"]),
-        ("ppt_from_outline", "개요 JSON → pptx", "pptx_create", ["pptx_create"]),
-        ("search_competitor", "경쟁사 최신 뉴스 3줄", "web_search", ["web_search"]),
-    ]
+    """실데이터 이식 (INT-1923 재구축): microsoft/OdysseyBench(스펙·골든, MIT) +
+    zlwang-cs/OfficeBench(입력 testbed, Apache-2.0)의 Excel subtask 를 VEGA agent 태스크로.
+
+    입력/골든 xlsx 는 data/bench_external/odysseybench/{files,golden}/ 에 커밋됨.
+    각 태스크는 결정적 verify(odyssey_eval: exact_match/contain) — judge 불필요.
+    spec.json 은 download 스크립트가 생성(원본 task 지시문 + eval 함수 보존)."""
+    spec_path = OUT_ROOT / "odysseybench" / "spec.json"
+    if not spec_path.is_file():
+        return []
+    spec = json.loads(spec_path.read_text(encoding="utf-8"))
     out: list[dict] = []
-    for i, (sid, desc, tool_hint, req) in enumerate(scenarios[:limit]):
-        ap = f"Odyssey-style task: {desc}."
-        if tool_hint:
-            ap += f" Use {tool_hint} tool."
-        extra = {}
-        if req:
-            extra["required_tools"] = req
-            extra["min_tool_rounds"] = 1
+    for i, s in enumerate(spec[:limit]):
+        inp = s["input"]
+        result_file = s["result_file"]
+        instruction = s["instruction"]
+        ap = (
+            f"You have an Excel file named '{inp}' in your working directory. "
+            f"Task: {instruction}. "
+            f"Read it with the xlsx_read tool, perform the operation, and save the result as "
+            f"'{result_file}' in the working directory (use xlsx_create or python_exec)."
+        )
+        odyssey_eval = {
+            "function": s["eval"],
+            "result_file": result_file,
+            "golden": s["golden_rel"],
+        }
+        if s["eval"] == "contain":
+            odyssey_eval["keywords"] = s.get("keywords") or []
         out.append(_base_task(
             "odysseybench", i, category="office", harness="agent",
-            verify="none",
-            source_id=f"odyssey/{sid}",
-            prompt=desc,
+            verify="office",
+            source_id=f"odyssey/{s['dir']}/{s['sub']}",
+            prompt=instruction,
             agent_prompt=ap,
-            rubric=[desc, "적절한 도구 사용"],
-            **extra,
+            rubric=[instruction, "결정적 verify (골든 대조)"],
+            fixture=s["input_rel"],
+            required_tools=["xlsx_read"],
+            min_tool_rounds=1,
+            odyssey_eval=odyssey_eval,
         ))
     return out
 

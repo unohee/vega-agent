@@ -135,8 +135,24 @@ Full external run의 비정상 저점수가 모델 약점이 아니라 harness f
 |-------|---------|----------|-------------|
 | **MBPP** | 0–5% | **96%** (77/80) | 프롬프트가 함수명 미노출 → NameError. test_list assertion을 프롬프트에 포함 (+ double-assert 제거). INT-1920 |
 | **SWE-lite** | 5% | **45%** (18/40) | exec_pass인데 judge fail. swebench_lite를 verify-first에 추가. INT-1921 |
-| Odyssey | 4% | 6% (4/60) | verify 오라벨 → `verify="none"`(INT-1923). **6%는 진짜 한계** — 에이전트가 fixture xlsx 경로 미수신, judge 정당 fail (채점 버그 아님) |
+| Odyssey | 4% | **22%** (8/36) | **실데이터 재구축** — 입력 미제공 합성 스텁을 OdysseyBench(스펙·골든)+OfficeBench(입력) 실데이터 9-Excel subset으로 교체. 결정적 `exact_match` verify(judge 불필요). 22%는 **진짜 신호** — tier1 모델이 정밀 xlsx 변형(삭제/스왑)에 실제로 약함 |
 | HumanEval | 98% | 98% | 변화 없음 (이미 정상) |
+
+### OdysseyBench 재구축 상세 (실데이터 이식)
+
+기존 `ingest_odysseybench`는 입력 데이터 없는 합성 스텁 15개(태스크 제목 + required_tool뿐)라 모델이 수행 불가 → 6% 허위 저점수. 실데이터로 교체:
+
+- **출처**: [microsoft/OdysseyBench](https://github.com/microsoft/OdysseyBench)(MIT, subtask 지시문+골든) + [zlwang-cs/OfficeBench](https://github.com/zlwang-cs/OfficeBench)(Apache-2.0, testbed 입력 xlsx). attribution: `data/bench_external/odysseybench/NOTICE.txt`.
+- **9 Excel subset**: delete×5, sort×1, swap×3 (변별력 없는 degenerate 1건 제외).
+- **결정적 verify**: `verify_odyssey_eval`(`bench_lib.py`) — 에이전트 출력 xlsx를 골든과 셀 단위 `exact_match` 비교. judge 불필요(verify-first). offline 검증: 골든→pass·입력→fail 9/9.
+- **결과**: 8/36 (22%). task별 sort 4/4·delete-all 3/4은 통과, 정밀 cell 삭제·스왑은 대부분 0/4 — 모델 출력=입력(변형 미수행). 실제 능력 한계 반영.
+
+| Model | pass |
+|-------|------|
+| `deepseek-v3.1-terminus` | 3/9 |
+| `deepseek-v3.2-exp` | 2/9 |
+| `gpt-4o-mini` | 2/9 |
+| `gemini-2.5-flash-lite` | 1/9 |
 
 수정 후 `bench_external_fixed.json` = full run에 위 3 suite 덮어쓰기. merge 후 **swe category mean 0.883** (이전 MBPP 0%가 끌어내리던 값 정상화). `model_catalog` swe 점수: deepseek-v3.1 0.90 · v3.2 0.90 · gemini 0.89 · gpt-4o-mini 0.85.
 

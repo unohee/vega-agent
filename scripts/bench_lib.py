@@ -383,6 +383,50 @@ def verify_officeeval_spec(task: dict, output: str, artifacts: list[str] | None 
     return {"exec_pass": True, "checks": ["officeeval_spec"]}
 
 
+def verify_odyssey_eval(task: dict, sandbox_dir: Path | None = None) -> dict:
+    """OdysseyBench 결정적 채점 (INT-1923 재구축).
+
+    실데이터(microsoft/OdysseyBench 스펙·골든 + zlwang-cs/OfficeBench 입력)를 이식한
+    Excel 태스크. 에이전트가 sandbox 에 저장한 result_file 을 골든과 비교한다:
+    - exact_match: xlsx 셀 값 전체 일치 (포맷 무시, 값만)
+    - contain: 텍스트 결과에 keywords 모두 포함
+    judge 없이 결정적 — verify-first 로 exec_pass→pass."""
+    spec = task.get("odyssey_eval") or {}
+    if not sandbox_dir or not Path(sandbox_dir).is_dir():
+        return {"exec_pass": False, "exec_error": "no_sandbox", "checks": []}
+    result_name = spec.get("result_file") or ""
+    cand = list(Path(sandbox_dir).rglob(result_name)) if result_name else []
+    if not cand:
+        return {"exec_pass": False, "exec_error": f"result_missing:{result_name}", "checks": []}
+    rf = cand[0]
+    fn = spec.get("function") or "exact_match"
+    if fn == "contain":
+        try:
+            text = rf.read_text(errors="ignore")
+        except Exception as e:
+            return {"exec_pass": False, "exec_error": f"read:{str(e)[:80]}", "checks": []}
+        miss = [k for k in (spec.get("keywords") or []) if k not in text]
+        return {"exec_pass": not miss, "exec_error": "" if not miss else f"missing:{miss}",
+                "checks": ["contain"]}
+    # exact_match — xlsx 셀 값 비교
+    golden_path = EXTERNAL_ROOT / (spec.get("golden") or "")
+    if not golden_path.is_file():
+        return {"exec_pass": False, "exec_error": f"golden_missing:{spec.get('golden')}", "checks": []}
+    try:
+        import openpyxl
+
+        def _cells(p: Path) -> list:
+            wb = openpyxl.load_workbook(str(p), data_only=True)
+            return [[[c.value for c in row] for row in ws.iter_rows()] for ws in wb.worksheets]
+
+        got, want = _cells(rf), _cells(golden_path)
+    except Exception as e:
+        return {"exec_pass": False, "exec_error": f"load:{str(e)[:80]}", "checks": []}
+    ok = got == want
+    return {"exec_pass": ok, "exec_error": "" if ok else "cells_differ",
+            "checks": ["exact_match"], "artifact": str(rf)}
+
+
 def verify_adbench_gt(task: dict, output: str) -> dict:
     gt = task.get("adbench_gt") or {}
     needle = gt.get("answer_contains")
@@ -489,6 +533,9 @@ def verify_office(
 
     tid = task.get("id", "")
     checks: list[str] = []
+
+    if task.get("odyssey_eval"):
+        return verify_odyssey_eval(task, sandbox_dir)
 
     if tid == "excel_calc":
         sheets = parse_sheets_json(output)
@@ -652,11 +699,13 @@ def task_is_verify_first(task: dict) -> bool:
     if task.get("id") in VERIFY_FIRST_TASKS:
         return True
     src = task.get("source") or task.get("suite") or ""
-    if src in ("humaneval", "mbpp", "bizgeneval", "officeeval", "presentbench", "slidesgen", "swebench_lite"):
+    if src in ("humaneval", "mbpp", "bizgeneval", "officeeval", "presentbench", "slidesgen",
+               "swebench_lite", "odysseybench"):
         return True
     tid = task.get("id", "")
     return tid.startswith((
         "ext_humaneval_", "ext_mbpp_", "ext_bizgeneval_", "ext_officeeval_", "ext_swebench_lite_",
+        "ext_odysseybench_",
     ))
 
 

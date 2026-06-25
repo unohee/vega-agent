@@ -53,7 +53,9 @@
       "category": "office",
       "harness": "agent",
       "verify": "office",
-      "required_tools": ["pptx_create"],
+      "required_tools": [
+        "pptx_create"
+      ],
       "routing_default": true
     },
     "slidesgen": {
@@ -64,7 +66,9 @@
       "category": "office",
       "harness": "agent",
       "verify": "office",
-      "required_tools": ["pptx_create"],
+      "required_tools": [
+        "pptx_create"
+      ],
       "routing_default": true
     },
     "deckbench": {
@@ -75,18 +79,22 @@
       "category": "office",
       "harness": "agent",
       "verify": "none",
-      "required_tools": ["pptx_create"],
+      "required_tools": [
+        "pptx_create"
+      ],
       "routing_default": true
     },
     "odysseybench": {
-      "title": "OdysseyBench (portable subset)",
-      "license": "MIT",
+      "title": "OdysseyBench (Excel portable subset)",
+      "license": "MIT (specs/golden) + Apache-2.0 (OfficeBench inputs)",
       "source_url": "https://github.com/microsoft/OdysseyBench",
-      "routing_limit": 15,
+      "input_source_url": "https://github.com/zlwang-cs/OfficeBench",
+      "routing_limit": 9,
       "category": "office",
       "harness": "agent",
       "verify": "office",
-      "routing_default": true
+      "routing_default": true,
+      "note": "실데이터 이식: OdysseyBench subtasks_plus 지시문+reference 골든 + OfficeBench testbed 입력. 결정적 exact_match verify (judge 불필요). 입력/골든 xlsx는 odysseybench/{files,golden}/에 커밋."
     },
     "officeeval": {
       "title": "OfficeEval Excel adapt",
@@ -96,7 +104,9 @@
       "category": "office",
       "harness": "agent",
       "verify": "office",
-      "required_tools": ["xlsx_create"],
+      "required_tools": [
+        "xlsx_create"
+      ],
       "routing_default": true
     },
     "creativity": {
@@ -117,7 +127,9 @@
       "category": "office",
       "harness": "agent",
       "verify": "office",
-      "required_tools": ["python_exec"],
+      "required_tools": [
+        "python_exec"
+      ],
       "routing_default": true
     },
     "bizgeneval": {
