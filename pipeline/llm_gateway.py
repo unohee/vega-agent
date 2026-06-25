@@ -303,6 +303,7 @@ def list_providers() -> list[dict]:
             "has_key": has_key,
             "active": name == active,
             "reasoning_effort": prov.get("reasoning_effort") or None,
+            "auto_route": bool(prov.get("auto_route")),
         })
     return out
 
@@ -354,11 +355,19 @@ def remove_provider(name: str) -> None:
 
 
 def update_model(name: str, model: str) -> None:
+    """모델 선택 저장.
+
+    model == "auto" 면 업무별 자동 라우터를 켠다(auto_route=True, default_model 은 폴백으로 유지).
+    구체 모델이면 그 모델로 고정하고 자동 라우터를 끈다(auto_route=False) — 수동 선택 우선(INT-1892)."""
     cfg = _read_config()
     providers = cfg.get("providers") or {}
     if name not in providers:
         raise KeyError(name)
-    providers[name]["default_model"] = model
+    if model == "auto":
+        providers[name]["auto_route"] = True
+    else:
+        providers[name]["default_model"] = model
+        providers[name]["auto_route"] = False
     _write_config(cfg)
 
 

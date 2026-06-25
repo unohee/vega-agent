@@ -82,3 +82,35 @@ class TestGetProviderForTierKeylessFallback:
         cfg = gw._read_config(); cfg["active"] = "openrouter"; cfg["tiers"] = {"cloud": "chatgpt"}; gw._write_config(cfg)
         prov = gw.get_provider_for_tier("cloud")
         assert prov["name"] == "chatgpt"
+
+
+class TestAutoRoute:
+    """업무별 자동 라우터 vs 수동 선택 우선 (INT-1892)."""
+
+    def test_select_concrete_model_disables_auto_route(self, gw):
+        # 특정 모델 선택 → 그 모델 고정 + auto_route=False (수동 선택 우선)
+        gw.update_model("openrouter", "deepseek/deepseek-v4-flash")
+        prov = gw._read_config()["providers"]["openrouter"]
+        assert prov["default_model"] == "deepseek/deepseek-v4-flash"
+        assert prov["auto_route"] is False
+
+    def test_select_auto_enables_route_keeps_default(self, gw):
+        # "auto" 선택 → auto_route=True, default_model(폴백)은 유지
+        gw.update_model("openrouter", "deepseek/deepseek-v4-flash")
+        gw.update_model("openrouter", "auto")
+        prov = gw._read_config()["providers"]["openrouter"]
+        assert prov["auto_route"] is True
+        assert prov["default_model"] == "deepseek/deepseek-v4-flash"  # 폴백 보존
+
+    def test_list_providers_exposes_auto_route(self, gw):
+        gw.update_model("openrouter", "auto")
+        provs = {p["name"]: p for p in gw.list_providers()}
+        assert provs["openrouter"]["auto_route"] is True
+
+    def test_resolve_turn_model_none_when_auto_route_off(self, gw, monkeypatch):
+        # auto_route=False면 라우터가 None → build_request가 default_model(수동 선택) 사용
+        from pipeline import model_catalog
+        cfg = gw._read_config(); cfg["active"] = "openrouter"
+        cfg["providers"]["openrouter"]["auto_route"] = False
+        gw._write_config(cfg)
+        assert model_catalog.resolve_turn_model("standard") is None

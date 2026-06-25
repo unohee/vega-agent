@@ -6060,6 +6060,7 @@ const llmModelPickerCount = document.getElementById('llm-model-picker-count');
 let _modelPickerProvider = null;
 let _allModels = [];
 let _currentModelId = null;
+let _currentAutoRoute = false;  // 업무별 자동 라우터 활성 여부 (openrouter)
 let _modelSortKey = 'default';
 let _favorites = new Set(JSON.parse(localStorage.getItem('vega_model_favorites') || '[]'));
 
@@ -6127,7 +6128,8 @@ async function editLlmModel(name) {
     const { providers } = await r.json();
     const p = providers.find(p => p.name === name);
     _currentModelId = p?.default_model || null;
-  } catch { _currentModelId = null; }
+    _currentAutoRoute = !!p?.auto_route;
+  } catch { _currentModelId = null; _currentAutoRoute = false; }
   try {
     const r = await fetch(`/api/llm/models?provider=${encodeURIComponent(name)}`);
     const data = await r.json();
@@ -6218,10 +6220,19 @@ function renderModelList() {
     llmModelList.innerHTML = `<div class="dir-empty" style="padding:18px;text-align:center;font-size:11px">${emptyMsg}</div>`;
     return;
   }
-  llmModelList.innerHTML = filtered.slice(0, 200).map(m => {
+  // 업무별 자동 라우터 — openrouter 목록 최상단 고정. data-id="auto" 로 기존 선택 핸들러 재사용.
+  const autoRow = (_modelPickerProvider === 'openrouter') ? `
+      <div class="llm-model-row${_currentAutoRoute ? ' current' : ''}" data-id="auto">
+        <div class="llm-model-row-info">
+          <div class="llm-model-row-id">⚙ 자동 (업무별)</div>
+          <div class="llm-model-row-name">벤치 결과로 작업 부하별 모델 자동 선택</div>
+        </div>
+        <div class="llm-model-row-meta"><span class="pill">auto</span></div>
+      </div>` : '';
+  llmModelList.innerHTML = autoRow + filtered.slice(0, 200).map(m => {
     const mods = (m.modalities || []).filter(x => x !== 'text');
     const pin = m.price_in_per_mtok;
-    const isCur = m.id === _currentModelId;
+    const isCur = !_currentAutoRoute && m.id === _currentModelId;
     const isFav = _favorites.has(m.id);
     return `
       <div class="llm-model-row${isCur ? ' current' : ''}" data-id="${esc(m.id)}">
@@ -6274,7 +6285,7 @@ async function _selectModel(modelId) {
     });
     const data = await r.json();
     if (!r.ok) { showToast(data.error || '실패'); return; }
-    showToast(`${modelId} 선택됨`);
+    showToast(modelId === 'auto' ? '자동 (업무별) 라우팅 켜짐' : `${modelId} 선택됨`);
     llmModelPicker.classList.add('hidden');
     await loadLlmProviders();
     await loadActiveLlmLabel();
@@ -6287,8 +6298,11 @@ async function loadActiveLlmLabel() {
     const { providers, active } = await r.json();
     const cur = providers.find(p => p.name === active);
     if (cur) {
-      statusLlmLabel.textContent = cur.default_model || cur.label;
-      statusLlm.title = `${cur.label} · ${cur.default_model} (클릭해 변경)`;
+      const auto = !!cur.auto_route;
+      statusLlmLabel.textContent = auto ? '자동 (업무별)' : (cur.default_model || cur.label);
+      statusLlm.title = auto
+        ? `${cur.label} · 자동 (업무별) 라우팅 (클릭해 변경)`
+        : `${cur.label} · ${cur.default_model} (클릭해 변경)`;
     }
   } catch {}
 }
