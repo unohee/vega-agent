@@ -52,6 +52,6 @@ pytest tests/test_routing.py tests/test_int1893_overthinking.py \
 
 ## Epic INT-1876 checklist (remaining)
 
-- [ ] Full model bench RUN → `build_output/bench.json` (operator)
+- [ ] Operator bench: smoke → `bench_smoke.json`, agent office → `bench_agent.json`, merge → `bench.json` (see `docs/bench_design.md`)
 - [x] Overthinking INT-1893 implementation
 - [ ] INT-1894/1895 runtime triggers (separate issues)

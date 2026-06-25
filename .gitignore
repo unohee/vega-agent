@@ -104,3 +104,4 @@ pytest_output.log
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
 .wrangler/
+data/bench_fixtures/*.bak
