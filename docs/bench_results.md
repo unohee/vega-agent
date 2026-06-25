@@ -19,10 +19,9 @@ Related docs:
 | Excel smoke | `build_output/bench_excel_smoke.json` | smoke | **14/26 (54%)** | 26 (@excel) | `excel_calc` only |
 | Excel agent | `build_output/bench_excel_agent.json` | agent | **7/14 (50%)** | 14 | smoke-pass subset · `excel_create_e2e` |
 | External HumanEval pilot | `build_output/bench_external_humaneval_pilot.json` | external | **3/3 (100%)** | 1 | 3-task smoke check |
+| **External routing (full)** | `build_output/bench_external_merged.json` | external | **206/492 (42%)** | 4 (@tier1) | 123 tasks · 11 suites · `claude-cli` judge · 2026-06-25 |
 | Extended agent pilot | `build_output/bench_extended_agent.json` | agent | **1/2 (50%)** | 2 | `slide_deck_create` only |
 | External merge test | `build_output/test_ext_merge.json` | external | 1/1 | mock | dev fixture only |
-
-**Not yet run:** full external routing merge (`build_output/bench_external_merged.json`, ~123 tasks across 11 suites). Ingest manifest exists at `data/bench_external/manifest.json`.
 
 ## Tier-1 models (@tier1)
 
@@ -157,9 +156,49 @@ These JSON files are **not** part of the model-routing bench merge:
 | `int1893_before_after.json` | INT-1893 scenario metadata |
 | `test_ext_merge.json` | External merge unit-test fixture |
 
+## External routing full run (`bench_external_merged.json`)
+
+Completed **2026-06-25** (~3.1 h wall time). Command:
+
+```bash
+VEGA_BENCH_JUDGE=claude-cli python3 scripts/bench_external.py \
+  --suites routing --models @tier1 --judge claude-cli \
+  --out build_output/bench_external_merged.json
+```
+
+492 runs (123 tasks × 4 models). Judge: `claude-cli` (local `claude -p`). Log: `build_output/bench_external_run.log`.
+
+### By model (123 tasks each)
+
+| Model | Pass | Rate |
+|-------|------|------|
+| `deepseek/deepseek-v3.2-exp` | 63/123 | 51% |
+| `deepseek/deepseek-v3.1-terminus` | 62/123 | 50% |
+| `google/gemini-2.5-flash-lite-preview-09-2025` | 54/123 | 44% |
+| `openai/gpt-4o-mini` | 27/123 | 22% |
+
+### By source suite (all models pooled)
+
+| Suite | Pass | N | mean_ratio | Notes |
+|-------|------|---|------------|-------|
+| humaneval | 78 | 80 | 0.98 | Strong |
+| bizgeneval | 12 | 12 | 1.00 | Perfect |
+| adbench | 9 | 15 | 0.87 | |
+| presentbench | 44 | 56 | 0.79 | |
+| creativity | 22 | 40 | 0.68 | |
+| officeeval | 19 | 30 | 0.67 | |
+| deckbench | 9 | 15 | 0.72 | |
+| slidesgen | 9 | 30 | 0.30 | Weak |
+| odysseybench | 2 | 45 | 0.22 | Weak |
+| swebench_lite | 2 | 40 | 0.20 | Weak |
+| mbpp | 0 | 80 | 0.00 | **All fail** — verify harness/ingest |
+| native | 0 | 49 | 0.00 | Placeholder rows in merge schema |
+
+**Takeaways:** HumanEval/bizgen/ad copy suites track tier-1 well; MBPP 0% and SWE/Odyssey/SlidesGen agent tasks need harness or task review before routing merge.
+
 ## Recommended next merge
 
-When tool-calling agent + external pilots are stable, refresh routing input:
+Refresh routing input with tool-calling agent + external full run:
 
 ```bash
 python scripts/merge_bench_artifacts.py \
