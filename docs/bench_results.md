@@ -13,13 +13,16 @@ Related docs:
 |-----|----------|---------|-----------|--------|-------|
 | Tier-1 smoke | `build_output/bench_smoke.json` | smoke | **28/36 (78%)** | 4 (@tier1) | 9 tasks · routing baseline |
 | Tier-1 agent (legacy) | `build_output/bench_agent.json` | agent | **5/16 (31%)** | 4 | 4 office tasks · superseded by tool-calling run |
-| **Merged routing** | `build_output/bench.json` | merged | **33/52 (64%)** | 4 | smoke + legacy agent · consumed by `model_catalog` |
+| **Merged routing** | `build_output/bench.json` | merged | **344/575 (60%)** | 4 | smoke + tool-calling agent + fixed external · consumed by `model_catalog` (2026-06-25) |
 | Extended smoke | `build_output/bench_extended_smoke.json` | smoke | **27/32 (84%)** | 4 | 8 new tasks (slides, proposal, ad, py_*) |
 | Tool-calling agent | `build_output/bench_toolcalling_agent.json` | agent | **15/32 (47%)** | 4 | 8 office tasks with `required_tools` |
 | Excel smoke | `build_output/bench_excel_smoke.json` | smoke | **14/26 (54%)** | 26 (@excel) | `excel_calc` only |
 | Excel agent | `build_output/bench_excel_agent.json` | agent | **7/14 (50%)** | 14 | smoke-pass subset · `excel_create_e2e` |
 | External HumanEval pilot | `build_output/bench_external_humaneval_pilot.json` | external | **3/3 (100%)** | 1 | 3-task smoke check |
-| **External routing (full)** | `build_output/bench_external_merged.json` | external | **206/492 (42%)** | 4 (@tier1) | 123 tasks · 11 suites · `claude-cli` judge · 2026-06-25 |
+| **External routing (full, pre-fix)** | `build_output/bench_external_merged.json` | external | **206/492 (42%)** | 4 (@tier1) | 123 tasks · 11 suites · `claude-cli` judge · 2026-06-25 |
+| **External (harness-fixed)** | `build_output/bench_external_fixed.json` | external | **301/507 (59%)** | 4 (@tier1) | full + re-run MBPP/SWE/Odyssey w/ INT-1920~1923 fixes |
+| External re-run (affected) | `build_output/bench_external_affected.json` | external | **26/180 (14%)** | 4 | MBPP+SWE+Odyssey · pre-MBPP-prompt-fix |
+| External MBPP re-fix | `build_output/bench_external_mbpp_refix.json` | external | **77/80 (96%)** | 4 | MBPP after prompt-includes-tests fix |
 | Extended agent pilot | `build_output/bench_extended_agent.json` | agent | **1/2 (50%)** | 2 | `slide_deck_create` only |
 | External merge test | `build_output/test_ext_merge.json` | external | 1/1 | mock | dev fixture only |
 
@@ -34,20 +37,22 @@ Used in most runs above (`data/bench_tier1_models.json`):
 
 ## Merged routing (`bench.json`)
 
-Current production merge for `pipeline/model_catalog.py` (smoke + legacy agent, **no external**).
+Current production merge for `pipeline/model_catalog.py` (smoke + tool-calling agent + **harness-fixed external**). 575 results.
 
-| Model | Pass | Rate |
-|-------|------|------|
-| `openai/gpt-4o-mini` | 9/13 | 69% |
-| `deepseek/deepseek-v3.1-terminus` | 9/13 | 69% |
-| `deepseek/deepseek-v3.2-exp` | 8/13 | 62% |
-| `google/gemini-2.5-flash-lite-preview-09-2025` | 7/13 | 54% |
+**By category:** office 122/307 (0.557) · **swe 180/208 (0.883)** · multilingual 8/8 (1.0) · creative 34/52 (0.752)
 
-**By category:** office 18/36 · swe 7/8 · multilingual 8/8
+`model_catalog` per-category scores (mean ratio):
 
-**Hardest tasks:** `biz_email_reply` 0/4 · `excel_read_fix` 0/4 · `excel_calc` 1/8
+| Model | swe | office |
+|-------|-----|--------|
+| `deepseek/deepseek-v3.1-terminus` | 0.904 | 0.636 |
+| `deepseek/deepseek-v3.2-exp` | 0.897 | 0.644 |
+| `google/gemini-2.5-flash-lite-preview-09-2025` | 0.885 | 0.490 |
+| `openai/gpt-4o-mini` | 0.846 | 0.374 |
 
-Updated: 2026-06-25 00:54
+→ heavy(swe) routing: `deepseek-v3.1-terminus` (0.904). standard/light(office): `deepseek-v3.2-exp` (0.644).
+
+Updated: 2026-06-25 (harness-fix re-run)
 
 ## Tier-1 smoke (`bench_smoke.json`)
 
@@ -121,6 +126,21 @@ Full excel (smoke + agent): **7 models** — see design doc table (`gpt-oss-20b`
 Updated: 2026-06-25 01:07
 
 ## External benchmarks
+
+### Harness-fix re-run (INT-1920~1923, 2026-06-25)
+
+Full external run의 비정상 저점수가 모델 약점이 아니라 harness false-negative였음을 진단·수정 후 재측정. HumanEval 98%인데 MBPP 0%면 채점 버그가 거의 확실 (같은 코드생성).
+
+| Suite | pre-fix | post-fix | 원인 / 수정 |
+|-------|---------|----------|-------------|
+| **MBPP** | 0–5% | **96%** (77/80) | 프롬프트가 함수명 미노출 → NameError. test_list assertion을 프롬프트에 포함 (+ double-assert 제거). INT-1920 |
+| **SWE-lite** | 5% | **45%** (18/40) | exec_pass인데 judge fail. swebench_lite를 verify-first에 추가. INT-1921 |
+| Odyssey | 4% | 6% (4/60) | verify 오라벨 → `verify="none"`(INT-1923). **6%는 진짜 한계** — 에이전트가 fixture xlsx 경로 미수신, judge 정당 fail (채점 버그 아님) |
+| HumanEval | 98% | 98% | 변화 없음 (이미 정상) |
+
+수정 후 `bench_external_fixed.json` = full run에 위 3 suite 덮어쓰기. merge 후 **swe category mean 0.883** (이전 MBPP 0%가 끌어내리던 값 정상화). `model_catalog` swe 점수: deepseek-v3.1 0.90 · v3.2 0.90 · gemini 0.89 · gpt-4o-mini 0.85.
+
+진단: `scripts/bench_harness_triage.py` (API 없이 게이트 검증).
 
 ### HumanEval pilot (`bench_external_humaneval_pilot.json`)
 
