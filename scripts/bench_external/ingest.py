@@ -103,7 +103,12 @@ def ingest_mbpp(limit: int) -> list[dict]:
         text = row.get("text") or row.get("prompt") or ""
         test_list = row.get("test_list") or []
         test_code = "\n".join(_mbpp_assert_line(t) for t in test_list[:5])
-        prompt = f"{text}\n\nWrite a Python function to solve this. Output code in a ```python block."
+        # 테스트 assertion 을 프롬프트에 포함 — 모델이 기대 함수명·시그니처를 알 수 있게.
+        # MBPP 공식 평가 관례. 누락 시 모델이 다른 함수명으로 작성 → NameError false-negative (INT-1920).
+        prompt = (
+            f"{text}\n\nYour code should pass these tests:\n```python\n{test_code}\n```\n\n"
+            "Output the function definition in a ```python block."
+        )
         out.append(_base_task(
             "mbpp", i, category="swe", harness="smoke", verify="swe",
             source_id=str(row.get("task_id", i)),
