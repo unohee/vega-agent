@@ -88,14 +88,21 @@ def ingest_humaneval(limit: int) -> list[dict]:
     return out
 
 
+def _mbpp_assert_line(raw: str) -> str:
+    """sanitized-mbpp test_list entries already include 'assert'."""
+    s = (raw or "").strip()
+    if s.startswith("assert "):
+        return s
+    return f"assert {s}"
+
+
 def ingest_mbpp(limit: int) -> list[dict]:
     data = _fetch_json(MBPP_URL)
     out: list[dict] = []
     for i, row in enumerate(data[:limit]):
         text = row.get("text") or row.get("prompt") or ""
-        code = row.get("code") or ""
         test_list = row.get("test_list") or []
-        test_code = "\n".join(f"assert {t}" for t in test_list[:5])
+        test_code = "\n".join(_mbpp_assert_line(t) for t in test_list[:5])
         prompt = f"{text}\n\nWrite a Python function to solve this. Output code in a ```python block."
         out.append(_base_task(
             "mbpp", i, category="swe", harness="smoke", verify="swe",
@@ -310,7 +317,7 @@ def ingest_odysseybench(limit: int) -> list[dict]:
             extra["min_tool_rounds"] = 1
         out.append(_base_task(
             "odysseybench", i, category="office", harness="agent",
-            verify="office" if req else "none",
+            verify="none",
             source_id=f"odyssey/{sid}",
             prompt=desc,
             agent_prompt=ap,

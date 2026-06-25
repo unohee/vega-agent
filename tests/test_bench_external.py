@@ -77,6 +77,39 @@ def test_resolve_judge_backend_default():
     os.environ.pop("VEGA_BENCH_JUDGE", None)
 
 
+def test_mbpp_assert_line_no_double_assert():
+    import importlib.util as iu
+    spec = iu.spec_from_file_location("ingest", _REPO / "scripts" / "bench_external" / "ingest.py")
+    ingest = iu.module_from_spec(spec)
+    spec.loader.exec_module(ingest)
+    raw = "assert set(similar_elements((1, 2), (2, 3))) == set((2,))"
+    line = ingest._mbpp_assert_line(raw)
+    assert line == raw
+    compile(line, "<mbpp>", "exec")
+
+
+def test_task_is_verify_first_swebench_lite():
+    task = {"id": "ext_swebench_lite_000", "source": "swebench_lite"}
+    assert bench.task_is_verify_first(task)
+    merged = bench.merge_pass(
+        task, judge_pass=False, verify={"exec_pass": True}, subjective=True,
+    )
+    assert merged is True
+
+
+def test_verify_tool_use_xlsx_read_alias():
+    task = {
+        "id": "excel_read_fix_save",
+        "category": "office",
+        "required_tools": ["xlsx_read", "xlsx_create"],
+        "min_tool_rounds": 2,
+    }
+    stats = {"tools_called": ["file_read", "xlsx_create"], "tool_rounds": 2}
+    tv = bench.verify_tool_use(task, stats)
+    assert tv["tool_pass"] is True
+    assert tv["missing_tools"] == []
+
+
 def test_merge_external_artifact_shape():
     import importlib.util as iu
     spec = iu.spec_from_file_location("merge", _REPO / "scripts" / "merge_bench_artifacts.py")

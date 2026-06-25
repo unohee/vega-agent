@@ -40,6 +40,18 @@ VERIFY_FIRST_TASKS = frozenset({
 # agent office 태스크 기본 금지 도구 — host_exec 등 우회 경로 차단
 OFFICE_FORBIDDEN_TOOLS = frozenset({"host_exec"})
 
+# bench required_tools 충족 판정 — 실제 호출명이 canonical과 다를 때 (INT-1922)
+BENCH_TOOL_SATISFIES: dict[str, frozenset[str]] = {
+    "xlsx_read": frozenset({"xlsx_read", "file_read"}),
+}
+
+
+def _required_tool_satisfied(required: str, tools_called: list[str]) -> bool:
+    if required in tools_called:
+        return True
+    alts = BENCH_TOOL_SATISFIES.get(required, frozenset())
+    return any(t in tools_called for t in alts)
+
 _PROPOSAL_JSON_KEYS = ("배경", "과업범위", "일정", "예산", "수행조직")
 _PROPOSAL_KEYWORDS = ("8000", "8,000", "8000만", "8,000만", "ISO27001", "ISO 27001", "6개월", "9월")
 
@@ -640,10 +652,12 @@ def task_is_verify_first(task: dict) -> bool:
     if task.get("id") in VERIFY_FIRST_TASKS:
         return True
     src = task.get("source") or task.get("suite") or ""
-    if src in ("humaneval", "mbpp", "bizgeneval", "officeeval", "presentbench", "slidesgen"):
+    if src in ("humaneval", "mbpp", "bizgeneval", "officeeval", "presentbench", "slidesgen", "swebench_lite"):
         return True
     tid = task.get("id", "")
-    return tid.startswith(("ext_humaneval_", "ext_mbpp_", "ext_bizgeneval_", "ext_officeeval_"))
+    return tid.startswith((
+        "ext_humaneval_", "ext_mbpp_", "ext_bizgeneval_", "ext_officeeval_", "ext_swebench_lite_",
+    ))
 
 
 def merge_pass(
@@ -690,7 +704,7 @@ def verify_tool_use(
     max_rounds = task.get("max_tool_rounds")
     tool_rounds = int((stats or {}).get("tool_rounds") or 0)
 
-    missing = [t for t in required if t not in tools_called]
+    missing = [t for t in required if not _required_tool_satisfied(t, tools_called)]
     forbidden_used = [t for t in tools_called if t in forbidden]
 
     rounds_ok = tool_rounds >= min_rounds
