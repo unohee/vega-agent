@@ -14,9 +14,18 @@ import pytest
 from pipeline.tools_web import (
     _get_searxng_url,
     _pw_get_text,
+    clear_web_search_cache,
     web_fetch,
     web_search,
 )
+
+
+@pytest.fixture(autouse=True)
+def _reset_web_search_cache():
+    """INT-1893 중복 검색어 차단 가드는 모듈 레벨 상태 — 테스트 간 누수 방지로 매번 초기화."""
+    clear_web_search_cache()
+    yield
+    clear_web_search_cache()
 
 
 class TestWebSearch:
