@@ -127,6 +127,29 @@ Updated: 2026-06-25 01:07
 
 ## External benchmarks
 
+### Office mutation 모델 cut 탐색 (2026-06-25)
+
+OdysseyBench Excel 변형(delete/sort/swap) 9-task로 **모델 능력 cut**을 탐색 — tier1(≤$0.6, 22%)이 약한 게 가격/능력 한계인지 확인. Claude·GPT·Gemini의 mid+flagship 6개 측정(judge 0, 결정적 verify).
+
+| $/M out | model | pass |
+|---|---|---|
+| 1.5 | google/gemini-3.1-flash-lite | 3/9 (33%) |
+| 4.5 | openai/gpt-5.4-mini | 1/9 (11%) |
+| 5 | anthropic/claude-haiku-4.5 | 3/9 (33%) |
+| 12 | google/gemini-3.1-pro-preview | 2/9 (22%) |
+| 15 | anthropic/claude-sonnet-4.6 | 2/9 (22%) |
+| 30 | openai/gpt-5.5 | 3/9 (33%) |
+
+**cut 없음** — $1.5→$30 전 구간 11~33%로 tier1(22%)과 동급. 가격이 pass를 예측하지 못함.
+
+**단, 이유는 모델 무능이 아니라 verify 과엄격**: 단일 골든 `exact_match`가 유효한 대안 해석을 거부. 증거 — task 002 "delete all amounts in salary": 골든은 `amount` **열 통째 제거**, 그런데 gpt-5.5·claude-sonnet-4.6은 **값만 비우고 헤더 유지**(둘 다 합당) → `cells_differ` fail. 모호 삭제 task(000/001/002)는 frontier 포함 전부 0/6, 명확 task(005 정렬 5/6·003 전체삭제 4/6)는 가격 무관 통과.
+
+**함의**:
+1. **라우팅**: office 변형은 고가 모델 불필요 — frontier ≈ cheap. "office는 $1 캡을 깨야 한다"는 기우, ≤$1 풀로 충분.
+2. **자체 벤치 필요**: 이식 OdysseyBench의 single-golden exact_match는 모호 태스크에서 천장을 만들어 cut 측정 도구로 부적합. 제대로 측정하려면 (a) 의미동등 허용 verify, 또는 (b) 명확-골든 태스크만 큐레이션. → VEGA 자체 office 벤치 설계 과제.
+
+아티팩트: `build_output/bench_odyssey_cgg.json` (gitignore, 로컬).
+
 ### Harness-fix re-run (INT-1920~1923, 2026-06-25)
 
 Full external run의 비정상 저점수가 모델 약점이 아니라 harness false-negative였음을 진단·수정 후 재측정. HumanEval 98%인데 MBPP 0%면 채점 버그가 거의 확실 (같은 코드생성).
