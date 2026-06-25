@@ -311,5 +311,6 @@ async def session_delete(sid: str):
     delete_session(sid)
     _SESSION_HISTORY.pop(sid, None)
     _PLAN_MODE.pop(sid, None)
+    _RESEARCH_MODE.pop(sid, None)  # Deep Thinking 모드 상태 — 누수 방지
     _ACCESS.pop(sid, None)
     return JSONResponse({"ok": True})
