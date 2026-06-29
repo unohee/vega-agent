@@ -157,8 +157,14 @@ def import_recent_visits(profile_db_path: Path | str | None = None, limit: int |
 
     temp_copy = _copy_history_db(source_path)
     try:
-        with _connect_readonly(temp_copy) as source_conn:
+        # 주의: `with sqlite3.connect(...)` 은 트랜잭션만 관리하고 연결을 닫지 않는다.
+        # 연결이 열린 채 unlink 하면 Windows 에서 WinError 32(파일 사용 중)로 죽는다
+        # (INT-1993). 명시적으로 close 한 뒤 삭제한다.
+        source_conn = _connect_readonly(temp_copy)
+        try:
             visits = _fetch_new_visits(source_conn, last_visit_time, last_visit_id, limit)
+        finally:
+            source_conn.close()
     finally:
         temp_copy.unlink(missing_ok=True)
 

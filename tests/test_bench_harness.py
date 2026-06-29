@@ -96,6 +96,7 @@ def test_dry_run_no_budget():
         [sys.executable, str(_REPO / "scripts" / "bench_models.py"),
          "--dry-run", "--categories", "office", "--limit", "1"],
         capture_output=True, text=True, timeout=30,
+        encoding="utf-8", errors="replace",  # 자식이 utf-8 출력 — Windows cp1252 디코드 어긋남 방지(INT-1993)
     )
     assert r.returncode == 0, r.stderr
     assert "dry-run" in r.stdout
@@ -105,6 +106,7 @@ def test_bench_agent_dry_run():
     r = subprocess.run(
         [sys.executable, str(_REPO / "scripts" / "bench_agent.py"), "--dry-run", "--limit-models", "1"],
         capture_output=True, text=True, timeout=30, cwd=str(_REPO),
+        encoding="utf-8", errors="replace",  # 자식이 utf-8 출력 — Windows cp1252 디코드 어긋남 방지(INT-1993)
     )
     assert r.returncode == 0, r.stderr
     assert "bench-agent" in r.stdout

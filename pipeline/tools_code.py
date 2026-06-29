@@ -255,6 +255,9 @@ def bash_exec(command: str, timeout: int = 60, workdir: str | None = None) -> di
 
     cwd = workdir or _base_cwd()
     env = os.environ.copy()
+    # Windows cp1252 stdout 에서 한글/이모지 출력이 죽는 것 방지 (INT-1993).
+    env["PYTHONUTF8"] = "1"
+    env["PYTHONIOENCODING"] = "utf-8"
     # 개발 환경(mlx_env)에서만 venv 를 PATH 에 얹는다. 배포본엔 그 경로가 없다.
     if not getattr(sys, "frozen", False) and MLX_PYTHON.exists():
         mlx_bin = str(MLX_PYTHON.parent)
@@ -399,9 +402,13 @@ def python_exec(code: str, timeout: int = 60) -> dict:
     # 2차(진짜 경계): 런타임 파일접근 가드 prelude. open/os.remove/shutil.rmtree 후킹으로
     # 난독화 우회 코드도 실제 파일 접근 시점에 차단. Docker 격리 없는 호스트 실행의 방어선.
     from pipeline.data_paths import workspace_dir
+    # 경로는 forward-slash 로 정규화한다 — Windows 의 백슬래시 경로(C:\Users\…)를 생성 코드
+    # 문자열 리터럴에 그대로 박으면 '\U'(C:\Users) 등이 unicodeescape SyntaxError 를 낸다
+    # (Windows CI pytest 실패, INT-1993). Windows 도 forward-slash 경로를 받아들인다.
+    _fs = lambda p: str(p).replace("\\", "/")
     prelude = _guard_prelude() + "\n" + _PYTHON_PRELUDE.format(
-        vega_root=str(VEGA_ROOT), home=str(Path.home()),
-        cwd=_base_cwd(), workspace=str(workspace_dir())
+        vega_root=_fs(VEGA_ROOT), home=_fs(Path.home()),
+        cwd=_fs(_base_cwd()), workspace=_fs(workspace_dir())
     )
     full_code = prelude + "\n" + textwrap.dedent(code)
 
@@ -411,6 +418,10 @@ def python_exec(code: str, timeout: int = 60) -> dict:
         tmppath = f.name
 
     env = os.environ.copy()
+    # Windows: 자식 파이썬의 stdout 인코딩이 cp1252 면 한글·이모지 print 가
+    # UnicodeEncodeError('charmap')로 죽는다(INT-1993). UTF-8 모드를 강제한다.
+    env["PYTHONUTF8"] = "1"
+    env["PYTHONIOENCODING"] = "utf-8"
     # 개발 환경(mlx_env)에서만 venv 환경변수를 세팅한다. frozen 배포본은 동봉
     # 인터프리터가 자체 경로를 들고 있어 mlx_bin 주입이 불필요/유해.
     if not getattr(sys, "frozen", False) and MLX_PYTHON.exists():
@@ -422,6 +433,7 @@ def python_exec(code: str, timeout: int = 60) -> dict:
         result = subprocess.run(
             _python_interp(tmppath),
             capture_output=True, text=True, timeout=timeout, env=env,
+            encoding="utf-8", errors="replace",
         )
         return {
             "stdout": result.stdout[:4000],

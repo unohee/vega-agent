@@ -147,7 +147,9 @@ def _process_file(conn: sqlite3.Connection, path: Path, result: dict[str, Any]) 
         return
 
     try:
-        text = data.decode("utf-8-sig")
+        # 줄바꿈을 LF 로 정규화한다 — Windows 파일은 CRLF 라 그대로 두면 저장 콘텐츠가
+        # 플랫폼마다 달라지고(\r\n vs \n) 해시·중복 검출이 어긋난다 (INT-1993).
+        text = data.decode("utf-8-sig").replace("\r\n", "\n").replace("\r", "\n")
     except UnicodeDecodeError as exc:
         result["skipped"] += 1
         _record_error(result, path, "decode_error", str(exc))
