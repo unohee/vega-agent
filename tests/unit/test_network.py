@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import subprocess
 import sys
 from pathlib import Path
 
@@ -63,6 +64,26 @@ def test_wireguard_post_writes_key_file(client, tmp_path, monkeypatch):
     key_file = tmp_path / "privatekey"
     assert key_file.exists()
     assert key_file.read_text().strip() == "my_private_key"
+
+
+def test_wireguard_post_writes_publickey_when_wg_available(client, tmp_path, monkeypatch):
+    """private key 저장 시 wg pubkey 로 publickey 파일 갱신 (Bugbot)."""
+    import shutil
+    if not shutil.which("wg"):
+        pytest.skip("wg CLI not installed")
+    monkeypatch.setenv("VEGA_WIREGUARD_DIR", str(tmp_path))
+    # WireGuard 표준 테스트 키 쌍 (공개 문서용 dummy)
+    priv = "YFWEF9M7XDG7ZRNMHYXHGYGVDXTHCHMYXQQ2THTHCH2MHYUGLHQ="
+    r = subprocess.run(["wg", "pubkey"], input=priv + "\n", text=True, capture_output=True, timeout=5)
+    if r.returncode != 0:
+        pytest.skip("wg pubkey failed")
+    expected_pub = r.stdout.strip()
+    client.post("/api/network/wireguard", json={"PrivateKey": priv})
+    pub_file = tmp_path / "publickey"
+    assert pub_file.exists()
+    assert pub_file.read_text().strip() == expected_pub
+    resp = client.get("/api/network/wireguard")
+    assert resp.json().get("public_key") == expected_pub
 
 
 def test_wireguard_post_writes_conf_file(client, tmp_path, monkeypatch):

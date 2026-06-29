@@ -163,8 +163,9 @@ jobs:
             # Check if notarized (notary profile was prepared)
             if [ "${{ steps.notary_setup.outputs.notary_available || 'false' }}" = "true" ]; then
               # Full notarization verification
-              spctl --assess --type open --context context:primary-signature -v "$DMG" || { 
-                echo "::warning::$ARCH 공증 검증 실패 — 서명만 확인"
+              spctl --assess --type open --context context:primary-signature -v "$DMG" || {
+                echo "::error::$ARCH 공증 검증(spctl) 실패"
+                FAIL=1
               }
             else
               # Just check signature (notarization was skipped)

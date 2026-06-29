@@ -75,38 +75,45 @@ def _pw_get_text(page) -> str:
     return page.inner_text("body")
 
 
-def web_search(query: str, max_results: int = 5, engines: str = "google,bing") -> list[dict]:
+def web_search(query: str, max_results: int = 5, engines: str | None = None) -> list[dict]:
     """SearXNG meta-search using the instance at SEARXNG_URL.
 
-    engines defaults to google,bing — avoids DuckDuckGo CAPTCHA that returns 0 results
-    on Korean queries (confirmed issue, see INT-1881).
+    engines: 명시 시에만 전송. 미지정이면 인스턴스 기본 엔진(로컬 SearXNG 호환).
+    호스팅(search.intrect.io)은 google,bing 기본 — DuckDuckGo CAPTCHA 회피(INT-1881).
 
     Raises RuntimeError on failure — caught by dispatch_tool's try/except and
     converted to {"error": "..."}, consistent with telemetry/self_improve convention.
     Returning a raw list (not dict) caused failures to be counted as successes."""
+    searxng_url = _get_searxng_url()
+    effective_engines = engines
+    if effective_engines is None:
+        if "localhost" in searxng_url or "127.0.0.1" in searxng_url:
+            effective_engines = ""  # 로컬 SearXNG — 인스턴스 기본 엔진
+        else:
+            effective_engines = "google,bing"  # 호스팅·커스텀 URL — CAPTCHA 회피 (INT-1881)
     qnorm = (query or "").strip().lower()
     cache = _search_cache()
     if qnorm and qnorm in cache:
         raise RuntimeError(f"동일 검색어 재호출 차단(INT-1893): {query!r}")
     if qnorm:
         cache.add(qnorm)
-    params = urllib.parse.urlencode({
+    params: dict = {
         "q": query,
         "format": "json",
         "language": "ko-KR",
         "categories": "general",
-        "engines": engines,
-    })
+    }
+    if effective_engines:
+        params["engines"] = effective_engines
     headers = {
         "Accept": "application/json",
         "User-Agent": "VEGA/1.0",
     }
-    searxng_url = _get_searxng_url()
     searxng_key = _get_searxng_key()
     if searxng_key:
         headers["X-VEGA-Key"] = searxng_key
     req = urllib.request.Request(
-        f"{searxng_url}/search?{params}",
+        f"{searxng_url}/search?{urllib.parse.urlencode(params)}",
         headers=headers,
     )
     try:

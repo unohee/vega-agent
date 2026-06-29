@@ -472,8 +472,8 @@ def pdf_create(path: str, content: str, title: str | None = None) -> dict:
         guard_path(path)
     except PermissionError as e:
         return {"error": f"[SAFEGUARD] {e}"}
-    except Exception:
-        pass  # path_guard 로드 실패 시 렌더는 진행(아래 mkdir/쓰기에서 실패 처리)
+    except Exception as e:
+        return {"error": f"path guard failed: {e}"}
     try:
         from reportlab.lib.pagesizes import A4
         from reportlab.lib.styles import ParagraphStyle
@@ -600,11 +600,12 @@ def image_convert(src: str, dst: str, fmt: str = "", width: int = 0,
     """
     try:
         from pipeline.path_guard import guard_path
+        guard_path(src)
         guard_path(dst)
     except PermissionError as e:
         return {"error": f"[SAFEGUARD] {e}"}
-    except Exception:
-        pass
+    except Exception as e:
+        return {"error": f"path guard failed: {e}"}
     try:
         from PIL import Image
     except Exception as e:

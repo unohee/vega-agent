@@ -125,27 +125,37 @@ def _expand_env(value: Any) -> Any:
 _CHATGPT_CORRECT_URL = "https://chatgpt.com/backend-api/codex/responses"
 _CHATGPT_STALE_URLS = {"https://chatgpt.com/x", "https://chatgpt.com/backend-api/conversation"}
 
-def _migrate_config(cfg: dict) -> dict:
-    """Fix known stale values in saved config (hot-migrated on read, never persisted here)."""
+def _migrate_config(cfg: dict) -> tuple[dict, bool]:
+    """Fix known stale values in saved config. Returns (cfg, dirty)."""
+    dirty = False
     chatgpt = (cfg.get("providers") or {}).get("chatgpt")
     if isinstance(chatgpt, dict):
         if chatgpt.get("base_url") in _CHATGPT_STALE_URLS:
             chatgpt["base_url"] = _CHATGPT_CORRECT_URL
-        # gpt-5.4-mini was a transitional name; endpoint now requires gpt-5.5
+            dirty = True
         if chatgpt.get("default_model") in ("gpt-5.4-mini", "gpt-4o", "gpt-4o-mini"):
             chatgpt["default_model"] = "gpt-5.5"
-    return cfg
+            dirty = True
+    return cfg, dirty
 
 
 def _read_config() -> dict:
     """Reads config fresh from disk on every call (hot-reload).
     Priority: user data directory → repo data/ → hardcoded defaults."""
     for path in (_PROVIDERS_PATH, _REPO_PROVIDERS_PATH):
-        if path.exists():
+        if not path.exists():
+            continue
+        try:
+            cfg = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        cfg, dirty = _migrate_config(cfg)
+        if dirty and path == _PROVIDERS_PATH:
             try:
-                return _migrate_config(json.loads(path.read_text(encoding="utf-8")))
+                _write_config(cfg)
             except Exception:
-                continue
+                pass  # 마이그레이션 persist 실패해도 in-memory cfg 는 반환
+        return cfg
     return _default_config()
 
 

@@ -171,8 +171,7 @@ TOOL_SCHEMAS: list[dict] = [
                 "max_results": {"type": "integer", "default": 5, "description": "최대 결과 수"},
                 "engines": {
                     "type": "string",
-                    "default": "google,bing",
-                    "description": "쉼표로 구분된 검색 엔진 목록 (기본: google,bing). 가격 비교·쇼핑: shopping 카테고리 엔진 추가 가능.",
+                    "description": "쉼표 구분 SearXNG 엔진(선택). 생략 시 인스턴스 기본. 호스팅은 google,bing 자동.",
                 },
             },
             "required": ["query"],

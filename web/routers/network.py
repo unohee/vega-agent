@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 from pathlib import Path
 
 from fastapi import APIRouter
@@ -68,6 +69,23 @@ def get_wireguard() -> dict:
     return _redacted_wg_config()
 
 
+def _wg_public_from_private(private_key: str) -> str | None:
+    """Derive WireGuard public key from private key (wg pubkey)."""
+    try:
+        r = subprocess.run(
+            ["wg", "pubkey"],
+            input=private_key.strip() + "\n",
+            text=True,
+            capture_output=True,
+            timeout=5,
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            return r.stdout.strip()
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        pass
+    return None
+
+
 @router.post("/wireguard")
 def set_wireguard(config: WireGuardConfigIn) -> dict:
     """Accept WireGuard settings. PrivateKey is write-only and never echoed."""
@@ -75,12 +93,16 @@ def set_wireguard(config: WireGuardConfigIn) -> dict:
     wg_dir.mkdir(parents=True, exist_ok=True)
 
     if config.private_key:
+        priv = config.private_key.strip()
         key_path = wg_dir / "privatekey"
-        key_path.write_text(config.private_key.strip() + "\n", encoding="utf-8")
+        key_path.write_text(priv + "\n", encoding="utf-8")
         try:
             key_path.chmod(0o600)
         except OSError:
             pass
+        pub = _wg_public_from_private(priv)
+        if pub:
+            (wg_dir / "publickey").write_text(pub + "\n", encoding="utf-8")
 
     lines: list[str] = ["[Interface]"]
     if config.address:
