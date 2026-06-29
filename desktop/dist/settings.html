@@ -513,9 +513,11 @@ const I18N = {
     langH:'Language', langD:'Display language.', langLbl:'Display language', langHint:'Applies to tray menu immediately',
     // ── 동적 JS 문자열 ──
     wsDescSlack:'Channels · read & search DMs', wsDescSuperthread:'Boards · read & manage cards',
+    wsDescAirtable:'Bases · read & manage records', wsDescGithub:'Issues · PRs · code search',
     // Workspace 상태/버튼
     wsNotConfigured:'Not configured (no OAuth client in this build)', wsConnected:'Connected', wsNotConnected:'Not connected',
     wsBtnDisconnect:'Disconnect', wsBtnDisconnecting:'Disconnecting…', wsBtnConnect:'Connect',
+    wsBtnSaveKey:'Save', wsBtnSaving:'Saving…', wsKeyFail:'Connection failed: ',
     wsDisconnectFail:'Disconnect failed: ', wsConsentPrompt:'Please complete the consent screen in your browser…',
     wsTimeout:'Timed out — please try again.',
     // Google 멀티계정
@@ -663,9 +665,11 @@ const I18N = {
     langH:'언어', langD:'표시 언어.', langLbl:'Display language', langHint:'Applies to tray menu immediately',
     // ── 동적 JS 문자열 ──
     wsDescSlack:'채널 · DM 읽기 및 검색', wsDescSuperthread:'보드 · 카드 읽기 및 관리',
+    wsDescAirtable:'베이스 · 레코드 조회 및 관리', wsDescGithub:'이슈 · PR · 코드 검색',
     // Workspace 상태/버튼
     wsNotConfigured:'구성 안 됨 (빌드에 OAuth client 없음)', wsConnected:'연결됨', wsNotConnected:'연결 안 됨',
     wsBtnDisconnect:'해제', wsBtnDisconnecting:'해제 중…', wsBtnConnect:'연결',
+    wsBtnSaveKey:'저장', wsBtnSaving:'저장 중…', wsKeyFail:'연결 실패: ',
     wsDisconnectFail:'해제 실패: ', wsConsentPrompt:'브라우저에서 동의 화면을 완료해 주세요…',
     wsTimeout:'시간 초과 — 다시 시도해 주세요.',
     // Google 멀티계정
@@ -830,13 +834,19 @@ const WS_SERVICES = [
   { id: 'google',      label: 'Google Workspace', desc: 'Gmail · Calendar · Drive',  auth_path: '/google/auth' },
   { id: 'slack',       label: 'Slack',            descKey: 'wsDescSlack',            auth_path: '/slack/auth' },
   { id: 'superthread', label: 'Superthread',      descKey: 'wsDescSuperthread',      auth_path: '/superthread/auth' },
+  { id: 'airtable',    label: 'Airtable',         descKey: 'wsDescAirtable',         auth: 'key' },
+  { id: 'github',      label: 'GitHub',           descKey: 'wsDescGithub',           auth: 'key' },
 ];
 function wsDesc(s) { return s.descKey ? (T[s.descKey] || '') : (s.desc || ''); }
+const wsById = id => WS_SERVICES.find(x => x.id === id) || { id };
 let wsPoll = null;
 function stopWsPoll() { if (wsPoll) { clearInterval(wsPoll); wsPoll = null; } }
 
-async function wsStatus(id) {
-  const r = await fetch(provBase() + '/api/onboarding/' + id, { signal: AbortSignal.timeout(5000) });
+async function wsStatus(idOrSvc) {
+  const s = typeof idOrSvc === 'string' ? wsById(idOrSvc) : idOrSvc;
+  // key 타입 플러그인(Airtable/GitHub)은 OAuth 상태 엔드포인트가 없으므로 plugin-status 사용 (INT-1575)
+  const path = s.auth === 'key' ? '/api/onboarding/plugin-status/' + s.id : '/api/onboarding/' + s.id;
+  const r = await fetch(provBase() + path, { signal: AbortSignal.timeout(5000) });
   return r.json();
 }
 
@@ -850,6 +860,7 @@ async function loadWorkspacePane() {
   list.innerHTML = '';
   for (const { s, st } of rows) {
     if (s.id === 'google') { renderGoogleRows(list, s, st); continue; }
+    if (s.auth === 'key') { renderKeyPluginRow(list, s, st); continue; }
     const row = document.createElement('div'); row.className = 'row';
     const acct = st.email ? ` — ${st.email}` : st.team ? ` — ${st.team}` : '';
     const stateTxt = !st.configured ? T.wsNotConfigured
@@ -893,6 +904,59 @@ async function loadWorkspacePane() {
     row.appendChild(btns);
     list.appendChild(row);
   }
+}
+
+// ── key 타입 플러그인(Airtable/GitHub) — PAT 입력으로 연결 (INT-1575) ──
+function renderKeyPluginRow(list, s, st) {
+  const desc = wsDesc(s);
+  const row = document.createElement('div'); row.className = 'row';
+  const stateTxt = st.authenticated ? T.wsConnected : T.wsNotConnected;
+  row.innerHTML = `<div class="field"><label>${s.label}</label>
+    <div class="hint" id="ws-hint-${s.id}">${desc} · ${stateTxt}</div></div>`;
+  const btns = document.createElement('div');
+  if (st.authenticated) {
+    const dis = document.createElement('button'); dis.className = 'btn'; dis.textContent = T.wsBtnDisconnect;
+    dis.onclick = async () => {
+      dis.disabled = true; dis.textContent = T.wsBtnDisconnecting;
+      try {
+        const res = await fetch(provBase() + `/api/onboarding/plugin-key/${s.id}`, { method: 'DELETE', signal: AbortSignal.timeout(10000) });
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok || !d.ok) throw new Error(d.error || `HTTP ${res.status}`);
+        loadWorkspacePane();
+      } catch (e) {
+        dis.disabled = false; dis.textContent = T.wsBtnDisconnect;
+        $('ws-hint-' + s.id).textContent = desc + ' · ' + T.wsDisconnectFail + (e.message || e);
+      }
+    };
+    btns.appendChild(dis);
+  } else {
+    // PAT 입력 + 저장
+    const inp = document.createElement('input');
+    inp.type = 'password'; inp.className = 'input'; inp.placeholder = st.key_hint || 'PAT';
+    inp.style.cssText = 'width:200px;margin-right:6px;';
+    const save = document.createElement('button'); save.className = 'btn primary'; save.textContent = T.wsBtnSaveKey || 'Save';
+    save.onclick = async () => {
+      const key = (inp.value || '').trim();
+      if (!key) { inp.focus(); return; }
+      save.disabled = true; inp.disabled = true; save.textContent = T.wsBtnSaving || '…';
+      try {
+        const res = await fetch(provBase() + '/api/onboarding/plugin-key', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ plugin: s.id, api_key: key }), signal: AbortSignal.timeout(20000),
+        });
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok || !d.ok) throw new Error(d.error || `HTTP ${res.status}`);
+        loadWorkspacePane();
+      } catch (e) {
+        save.disabled = false; inp.disabled = false; save.textContent = T.wsBtnSaveKey || 'Save';
+        $('ws-hint-' + s.id).textContent = desc + ' · ' + (T.wsKeyFail || '연결 실패: ') + (e.message || e);
+      }
+    };
+    if (st.key_hint_long) { $('ws-hint-' + s.id).textContent = desc + ' · ' + st.key_hint_long; }
+    btns.appendChild(inp); btns.appendChild(save);
+  }
+  row.appendChild(btns);
+  list.appendChild(row);
 }
 
 // ── Google 멀티계정 (INT-1471) — 계정 목록 + 계정별 해제 + 계정 추가 ──
