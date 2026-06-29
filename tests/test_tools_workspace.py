@@ -316,3 +316,72 @@ def test_new_groups_respect_explicit_disable(tmp_path, monkeypatch):
     enabled = lg.get_enabled_groups()
     assert "slack" not in enabled and "superthread" not in enabled
     assert enabled == {"web"}
+
+
+# 연결된 워크스페이스의 읽기 도구가 light load 에서 사라지던 회귀 방지.
+# (route_load 가 80자 이하 메시지를 light 로 분류 → get_schemas_for_mode(load="light")
+#  가 _LIGHT_ALLOWED_TOOLS 로 축소. 짧은 "슬랙 봐줘" 가 slack 도구를 통째로 잃었었음.)
+_WORKSPACE_READ_IN_LIGHT = [
+    "slack_search", "slack_list_channels", "slack_read_channel",
+    "superthread_list_projects", "superthread_list_boards",
+    "superthread_search_cards", "superthread_get_card",
+    "gmail_read", "drive_search", "drive_read",
+    "linear_search_issues", "linear_list_issues",
+    "airtable_list_records", "airtable_get_records",
+    "github_search_code", "github_list_issues",
+]
+# light 에서 절대 노출되면 안 되는 워크스페이스 *쓰기/외부전송* 도구.
+_WORKSPACE_WRITE_NOT_IN_LIGHT = [
+    "slack_send_message", "superthread_create_card", "gmail_send",
+    "calendar_create_event", "linear_create_issue", "airtable_create_record",
+    "github_create_issue", "docs_create", "slides_create",
+]
+
+
+@pytest.mark.parametrize("tool", _WORKSPACE_READ_IN_LIGHT)
+def test_light_load_exposes_connected_workspace_read_tools(tool):
+    """light load 도 '단순 조회'이므로 연결 워크스페이스 읽기 도구는 노출돼야 한다.
+
+    핵심 불변식은 allowlist 멤버십(항상 성립). 실제 payload 노출은 그 도구가
+    TOOL_SCHEMAS 에 등록돼 있을 때만 검사한다 — linear 네이티브 도구처럼
+    LINEAR_API_KEY 유무에 따라 조건부 등록되는 toolset 이 있기 때문."""
+    from pipeline.tools import _LIGHT_ALLOWED_TOOLS, TOOL_SCHEMAS, get_schemas_for_mode
+    assert tool in _LIGHT_ALLOWED_TOOLS, f"{tool} 가 _LIGHT_ALLOWED_TOOLS 에 없음 (light 에서 증발)"
+    base = {s["name"] for s in TOOL_SCHEMAS}
+    if tool not in base:
+        pytest.skip(f"{tool} 미등록(조건부 toolset) — allowlist 멤버십만 검사")
+    with patch("pipeline.tool_registry.is_toolset_available", return_value=True):
+        names = {s["name"] for s in get_schemas_for_mode(TOOL_SCHEMAS, load="light")}
+    assert tool in names, f"{tool} 가 light 스키마 payload 에서 빠짐"
+
+
+@pytest.mark.parametrize("tool", _WORKSPACE_WRITE_NOT_IN_LIGHT)
+def test_light_load_excludes_workspace_write_tools(tool):
+    """light 는 토큰 절감 모드 — 워크스페이스 쓰기/외부전송 도구는 제외 유지."""
+    from pipeline.tools import _LIGHT_ALLOWED_TOOLS
+    assert tool not in _LIGHT_ALLOWED_TOOLS, f"{tool}(쓰기)가 light 에 잘못 포함됨"
+
+
+def test_superthread_revoke_pats_only_deletes_same_name():
+    """PAT 발급 전 정리(INT-1994) — 동명('vega-agent') PAT 만 삭제, 타 앱 PAT 는 보존."""
+    from pipeline.auth import superthread as st
+    listing = {"pats": [
+        {"id": "a1", "name": "vega-agent"},
+        {"id": "b2", "name": "kyte-portal"},   # 다른 앱 — 보존돼야
+        {"id": "c3", "name": "vega-agent"},
+        {"id": "d4", "name": "vega-core"},     # 옛 이름 — 동명 아님, 보존
+    ]}
+    deleted = []
+    with patch.object(st, "_get_json", return_value=listing), \
+         patch.object(st, "_delete", side_effect=lambda url, headers=None: deleted.append(url)):
+        n = st._revoke_pats_named("WS1", "tok", "vega-agent")
+    assert n == 2
+    assert all(u.endswith("/pats/a1") or u.endswith("/pats/c3") for u in deleted)
+    assert not any("b2" in u or "d4" in u for u in deleted)
+
+
+def test_superthread_revoke_best_effort_swallows_errors():
+    """조회/삭제 실패가 발급을 막지 않도록 — 예외를 삼키고 0 반환."""
+    from pipeline.auth import superthread as st
+    with patch.object(st, "_get_json", side_effect=RuntimeError("HTTP 500")):
+        assert st._revoke_pats_named("WS1", "tok", "vega-agent") == 0

@@ -168,6 +168,49 @@ def _get_json(url: str, headers: dict | None = None) -> dict:
     return _open_with_error_body(urllib.request.Request(url, headers=hdrs))
 
 
+def _delete(url: str, headers: dict | None = None) -> None:
+    """DELETE 요청. 204/200 + 빈 본문 허용(파싱 안 함). 실패는 HTTPError 로 전파."""
+    import urllib.error
+    hdrs = {"User-Agent": _UA, "Accept": "application/json"}
+    if headers:
+        hdrs.update(headers)
+    req = urllib.request.Request(url, headers=hdrs, method="DELETE")
+    try:
+        with urllib.request.urlopen(req, timeout=15, context=_ssl_context()):
+            return
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode("utf-8", errors="replace")[:200]
+        raise RuntimeError(f"HTTP {e.code}: {detail}") from e
+
+
+def _revoke_pats_named(ws: str, access_token: str, name: str) -> int:
+    """워크스페이스 ws 에서 name 과 같은 이름의 기존 PAT 를 삭제한다.
+
+    Superthread 는 계정당 PAT 수에 상한이 있어 재인증마다 같은 이름('vega-agent')으로
+    새 PAT 를 쌓으면 'PAT limit reached'(SEC:000-00003)로 발급이 막힌다. 발급 직전
+    동명 PAT 를 정리해 한도 누적을 방지한다 (INT-1995).
+    GET /auth/{ws}/pats → {"pats":[{id,name,...}]} 는 실측 확인됨. DELETE 는 best-effort
+    — 조회/삭제 실패는 삼키고 진행한다(정리 실패가 발급 자체를 막지 않도록). 반환: 삭제 수."""
+    hdr = {"Authorization": f"Bearer {access_token}"}
+    try:
+        listing = _get_json(f"{_API_BASE}/auth/{ws}/pats", headers=hdr)
+    except Exception:
+        return 0
+    pats = listing.get("pats") if isinstance(listing, dict) else None
+    if not isinstance(pats, list):
+        return 0
+    removed = 0
+    for p in pats:
+        if not isinstance(p, dict) or p.get("name") != name or not p.get("id"):
+            continue
+        try:
+            _delete(f"{_API_BASE}/auth/{ws}/pats/{p['id']}", headers=hdr)
+            removed += 1
+        except Exception:
+            pass  # 한 개 실패해도 나머지는 계속 시도
+    return removed
+
+
 def _discover_team_ids(access_token: str) -> list[str]:
     """사용자가 속한 워크스페이스(team) ID 목록 — GET /v1/users/me 의 user.teams[].
 
@@ -243,6 +286,8 @@ def exchange_code(code: str, state: str | None = None) -> dict:
     errors: list[str] = []
     for ws in team_ids:
         try:
+            # 한도 누적 방지 — 발급 전 동명('vega-agent') 옛 PAT 정리 (INT-1995).
+            _revoke_pats_named(ws, access_token, PAT_NAME)
             pat_resp = _post_json(
                 f"{_API_BASE}/auth/{ws}/pats",
                 {"name": PAT_NAME, "expires_in": PAT_EXPIRES_DAYS},
