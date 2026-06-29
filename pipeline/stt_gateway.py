@@ -23,20 +23,28 @@ class LocalSTTUnavailable(RuntimeError):
     """Raised when provider=local but the sidecar process is not reachable."""
 
 
+# 기본은 openrouter — 사용자가 LLM 용으로 이미 가진 OpenRouter 키를 그대로 재사용한다.
+# (별도 STT 키·CF·셀프호스팅 불필요. INT-2000.) 화자분리 회의 모드는 별도(self-host PoC).
 _DEFAULT_STT = {
-    "provider": "openai",
-    "model": "whisper-1",
+    "provider": "openrouter",
+    "model": "openai/whisper-large-v3",
     "language": None,   # None → auto-detect
     "response_format": "text",
 }
 
 # Well-known STT endpoints keyed by provider name (OpenAI-compatible Whisper API)
 _WELL_KNOWN_ENDPOINTS: dict[str, str] = {
+    "openrouter": "https://openrouter.ai/api/v1/audio/transcriptions",
     "openai":   "https://api.openai.com/v1/audio/transcriptions",
     "groq":     "https://api.groq.com/openai/v1/audio/transcriptions",
     "local":    "http://localhost:8765/v1/audio/transcriptions",  # cxt-ignore: fake_data  # e.g. faster-whisper-server
     "lmstudio": "http://localhost:1234/v1/audio/transcriptions",  # cxt-ignore: fake_data
 }
+
+# OpenRouter 의 transcription API 는 multipart 가 아니라 JSON+base64 를 받는다
+# (input_audio.data = base64, model = openai/whisper-* 형식). 다른 OpenAI 호환
+# 서버(openai/groq/local)는 multipart 라 분기한다.
+_JSON_B64_PROVIDERS = {"openrouter"}
 
 
 def _read_config() -> dict:
@@ -182,8 +190,36 @@ def transcribe(
     model = stt_cfg.get("model", "whisper-1")
     language = language_override or stt_cfg.get("language") or None
     response_format = stt_cfg.get("response_format", "text")
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "webm"
 
-    # Build multipart/form-data manually (no external deps)
+    # OpenRouter: JSON + base64 (multipart 아님). 사용자별 OpenRouter 키 재사용.
+    if stt_cfg.get("provider") in _JSON_B64_PROVIDERS or "openrouter.ai" in endpoint:
+        import base64
+        payload: dict = {
+            "model": model,
+            "input_audio": {"data": base64.b64encode(audio_bytes).decode(), "format": ext},
+        }
+        if language:
+            payload["language"] = language
+        jbody = json.dumps(payload).encode()
+        jheaders = {"Content-Type": "application/json", "Content-Length": str(len(jbody))}
+        if api_key:
+            jheaders["Authorization"] = f"Bearer {api_key}"
+        jreq = urllib.request.Request(endpoint, data=jbody, headers=jheaders, method="POST")
+        try:
+            with urllib.request.urlopen(jreq, timeout=90) as resp:
+                raw = resp.read().decode("utf-8").strip()
+                try:
+                    return json.loads(raw).get("text", raw)
+                except Exception:
+                    return raw
+        except urllib.error.HTTPError as e:
+            body_err = e.read().decode("utf-8", errors="replace")[:400]
+            raise RuntimeError(f"STT HTTP {e.code}: {body_err}") from e
+        except urllib.error.URLError as e:
+            raise RuntimeError(f"STT 연결 실패 ({endpoint}): {e.reason}") from e
+
+    # Build multipart/form-data manually (no external deps) — openai/groq/local
     boundary = "----VegaSTTBoundary"
     parts: list[bytes] = []
 
