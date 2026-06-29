@@ -87,6 +87,28 @@ def _superthread_mcp_entry() -> dict | None:
     }
 
 
+def _broker_mcp_entry() -> tuple[str, dict] | None:
+    """If a broker is paired, return (label, MCP entry). Inject the CF-Access service token
+    into the headers. Credentials come from pipeline/auth/broker (Keychain), so we do not
+    hardcode any company or URL (INT-1924). label and mcp_url arrive at runtime from the
+    pairing callback."""
+    try:
+        from pipeline.auth.broker import credentials
+        creds = credentials()
+    except Exception:
+        return None
+    if not creds:
+        return None
+    return creds["label"], {
+        "transport": "http",
+        "url": creds["mcp_url"],
+        "headers": {
+            "CF-Access-Client-Id": creds["client_id"],
+            "CF-Access-Client-Secret": creds["client_secret"],
+        },
+    }
+
+
 from pipeline.data_paths import mcp_config_path as _mcp_config_path
 _MCP_CONFIG_PATH = _mcp_config_path()
 
@@ -151,6 +173,12 @@ def _load_registry() -> dict[str, dict]:
         st = _superthread_mcp_entry()
         if st:
             reg["superthread-mcp"] = st
+    # Auto-add paired broker (CF-Access service token) if paired (INT-1924).
+    # label and mcp_url come from the pairing callback; no hardcoded company name or URL source.
+    br = _broker_mcp_entry()
+    if br:
+        name, entry = br
+        reg.setdefault(name, entry)
     return reg
 
 
