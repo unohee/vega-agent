@@ -18,5 +18,9 @@
     <true/>
     <key>com.apple.security.automation.apple-events</key>
     <true/>
+    <!-- 음성 입력(STT) — chat.html 마이크 버튼의 getUserMedia. hardened runtime 에선
+         이 entitlement 가 없으면 WKWebView 가 마이크 접근을 차단한다(INT-2000). -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
 </dict>
 </plist>
