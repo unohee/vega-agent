@@ -12,8 +12,9 @@
 #     --macos    : darwin-aarch64 / darwin-x86_64 항목만 채운다 (build_output/updater/*.app.tar.gz)
 #     --windows  : windows-x86_64 항목만 채운다 (build_output/*-setup.exe)
 #     (둘 다 생략하면 가능한 플랫폼을 전부 시도 — 단일 호스트가 모두 빌드한 경우)
-#     --merge-from <path> : 기존 매니페스트를 읽어 병합. 단, version 이 다르면 기존 platforms 는
-#                           버린다(구버전 항목이 신버전 매니페스트에 남지 않도록).
+#     --merge-from <path> : 기존 매니페스트를 읽어 병합. 이번 호출이 채우지 않은
+#                           다른-플랫폼 항목은 버전이 달라도 보존한다(분리 빌드가 서로
+#                           상대 플랫폼을 지우지 않도록 — INT-1991 후속).
 #
 # 출력: build_output/latest.json
 #
@@ -106,8 +107,12 @@ def main() -> int:
 
     platforms = _collect(specs, version, base)
 
-    # 기존 매니페스트와 병합 — 단 같은 버전일 때만 기존 platforms 를 보존한다.
-    # 버전이 다르면 기존 항목은 구버전이므로 버린다(신버전 매니페스트에 남으면 안 됨).
+    # 기존 매니페스트와 병합 — 이번 호출이 *생성하지 않은* 다른-플랫폼 항목은
+    # 버전이 달라도 보존한다. macOS(self-hosted)와 Windows(github-hosted) 빌드가
+    # 분리돼 있어, 버전 bump 시 먼저 도는 빌드가 상대 플랫폼의 직전 항목을 버리면
+    # latest.json 이 한쪽 플랫폼만 남아 그 플랫폼 자동업데이트가 깨진다(INT-1991 후속).
+    # → 상대 플랫폼은 직전 버전 url 그대로 유지하다가 그쪽 빌드가 돌면 갱신된다.
+    #   top-level version 은 항상 이번 버전. 이번 호출이 채운 platform 만 덮어쓴다.
     if args.merge_from:
         merge_path = Path(args.merge_from)
         if merge_path.exists():
@@ -116,16 +121,15 @@ def main() -> int:
             except Exception as e:
                 print(f"::warning::기존 latest.json 파싱 실패({e}) — 병합 생략", file=sys.stderr)
                 prev = {}
-            if str(prev.get("version", "")).lstrip("v") == version:
-                merged = dict(prev.get("platforms") or {})
-                preserved = set(merged) - set(platforms)
-                merged.update(platforms)  # 이번 호출 항목이 우선(재빌드 시 갱신)
-                platforms = merged
-                print(f"[merge] 기존 매니페스트(v{version})와 병합 — 보존: {preserved or '없음'}",
-                      file=sys.stderr)
-            else:
-                print(f"[merge] 기존 버전({prev.get('version')}) != {version} — 기존 platforms 폐기",
-                      file=sys.stderr)
+            prev_platforms = dict(prev.get("platforms") or {})
+            # 이번 호출이 만든 platform 은 새 값으로, 나머지(상대 플랫폼)는 기존값 보존.
+            preserved = {k: v for k, v in prev_platforms.items() if k not in platforms}
+            merged = dict(preserved)
+            merged.update(platforms)
+            platforms = merged
+            print(f"[merge] 갱신: {set(p for p in platforms if p not in preserved) or '없음'} · "
+                  f"보존(타플랫폼, prev v{prev.get('version')}): {set(preserved) or '없음'}",
+                  file=sys.stderr)
         else:
             print(f"[merge] {merge_path} 없음 — 신규 매니페스트로 생성", file=sys.stderr)
 
