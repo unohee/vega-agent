@@ -49,21 +49,29 @@ def _strip_mention(text: str) -> str:
     return re.sub(r"<@[A-Z0-9]+>", "", text or "").strip()
 
 
+def _reply_ts_and_conv_id(channel: str, event: dict) -> tuple[str, str]:
+    """(답글 스레드 ts, 세션 대화 키).
+
+    DM(채널 D…)은 스레드를 거의 안 써 매 메시지 ts 가 바뀌면 새 세션이 되어 직전
+    대화를 기억 못 한다(dementia — 카드 4215). DM 은 채널 자체를 안정 키로 써 순차
+    메시지도 같은 세션이 되게 한다. 채널 멘션은 스레드를 대화 단위로 유지."""
+    reply_ts = event.get("thread_ts") or event.get("ts")
+    conv_id = f"{channel}:dm" if str(channel).startswith("D") else f"{channel}:{reply_ts}"
+    return reply_ts, conv_id
+
+
 def build_app() -> AsyncApp:
     app = AsyncApp(token=_bot_token())
 
     async def _handle(event: dict, say, client) -> None:
         text = _strip_mention(event.get("text", ""))
         channel = event.get("channel")
-        # 스레드 키: 부모가 있으면 그 thread_ts, 없으면 이 메시지 ts → 같은 스레드 = 같은 세션
-        thread_ts = event.get("thread_ts") or event.get("ts")
         if not text or not channel:
             return
-
-        conv_id = f"{channel}:{thread_ts}"
+        reply_ts, conv_id = _reply_ts_and_conv_id(channel, event)
 
         # 첫 메시지 전송 (스레드)
-        posted = await client.chat_postMessage(channel=channel, thread_ts=thread_ts, text="…")
+        posted = await client.chat_postMessage(channel=channel, thread_ts=reply_ts, text="…")
         ts = posted["ts"]
 
         state = {"last_edit": 0.0, "shown": ""}
