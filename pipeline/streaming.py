@@ -9,6 +9,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
@@ -302,6 +303,31 @@ def _build_request(input_items: list, system: str, ce_mode: bool = False, resear
     return build_request(input_items, system, schemas, research_mode=research_mode, tier=tier, model_override=model_override, load=load)
 
 
+# 모델 tokenizer 특수토큰 — 정상 본문엔 절대 나오지 않는다. 모델이 degenerate 하면
+# 본문에 누수돼 외계어처럼 보인다(ST 4294: deepseek-flash 가 raw vocab 을 토해낸 사례).
+# fullwidth 파이프(｜ U+FF5C)를 쓰는 <｜…｜> 류는 DeepSeek 토크나이저 시그니처라 항상 제거.
+# ascii <|begin_of_sentence|> / <|place_holder…|> 등 알려진 이름도 제거. 일반 마크업은 건드리지 않는다.
+_MODEL_ARTIFACT_RE = re.compile(
+    r"<｜[^>｜]{0,60}｜>"
+    r"|<\|(?:begin|end)[_▁]of[_▁]sentence\|>"
+    r"|<\|place[_▁]?holder[^>]{0,30}\|>"
+)
+
+
+def _strip_model_artifacts(text: str) -> tuple[str, int]:
+    """본문 토큰에서 모델 특수토큰을 제거. 반환 (정리된 텍스트, 제거 개수)."""
+    if "<｜" not in text and "<|" not in text:
+        return text, 0
+    n = 0
+
+    def _sub(_m):
+        nonlocal n
+        n += 1
+        return ""
+
+    return _MODEL_ARTIFACT_RE.sub(_sub, text), n
+
+
 def _iter_sse_lines(resp):
     """Generator that reads line-by-line from an http.client HTTPResponse."""
     buf = b""
@@ -434,7 +460,9 @@ def _stream_sse(
                     if dt == "text_delta":
                         text = delta.get("text", "")
                         if text:
-                            _queue_put(token_q, text, loop)
+                            text, _na = _strip_model_artifacts(text)
+                            if text:
+                                _queue_put(token_q, text, loop)
                     elif dt == "input_json_delta":
                         blk = anthropic_blocks.get(idx)
                         if blk is not None and "arguments" in blk:
@@ -485,7 +513,12 @@ def _stream_sse(
                 delta = choices[0].get("delta") or {}
                 content = delta.get("content")
                 if content:
-                    _queue_put(token_q, content, loop)
+                    content, _na = _strip_model_artifacts(content)
+                    if _na:
+                        logger.warning("[degeneration] 모델 특수토큰 %d개 제거 (model=%s)",
+                                       _na, (stats_out or {}).get("model", "?"))
+                    if content:
+                        _queue_put(token_q, content, loop)
                 tcs = delta.get("tool_calls") or []
                 for tc in tcs:
                     idx = tc.get("index", 0)
@@ -508,7 +541,9 @@ def _stream_sse(
             if t == "response.output_text.delta":
                 delta = ev.get("delta", "")
                 if delta:
-                    _queue_put(token_q, delta, loop)
+                    delta, _na = _strip_model_artifacts(delta)
+                    if delta:
+                        _queue_put(token_q, delta, loop)
 
             elif t == "response.reasoning_summary_text.delta":
                 delta = ev.get("delta", "")
