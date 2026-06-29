@@ -154,7 +154,11 @@ build_arch() {
         echo "[4.5] updater 아티팩트 생성..."
         mkdir -p "$UPDATER_DIR"
         local UPDATER_TGZ="$UPDATER_DIR/${APP_NAME}-${VERSION}-${ARCH}.app.tar.gz"
-        tar -C "$(dirname "$TAURI_APP")" -czf "$UPDATER_TGZ" "$(basename "$TAURI_APP")"
+        # COPYFILE_DISABLE=1: macOS BSD tar 가 .app 확장속성을 AppleDouble(._VEGA.app)로
+        # 동봉하면 tauri updater 가 unpack 단계에서 "failed to unpack ._VEGA.app" 로 죽어
+        # 모든 macOS OTA 설치가 실패한다(INT-1996). 코드서명·notary staple 은 번들 내
+        # 정규 파일이라 보존된다(검증됨). 미설정 시 전 버전 자동업데이트가 조용히 깨짐.
+        COPYFILE_DISABLE=1 tar -C "$(dirname "$TAURI_APP")" -czf "$UPDATER_TGZ" "$(basename "$TAURI_APP")"
         ( cd "$REPO_ROOT/desktop" && cargo tauri signer sign "$UPDATER_TGZ" ) \
             && echo "  ✓ $(basename "$UPDATER_TGZ")(.sig)" \
             || echo "  ⚠️  서명 실패"
