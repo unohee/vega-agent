@@ -71,6 +71,27 @@ _LIGHT_ALLOWED_TOOLS: frozenset[str] = frozenset({
     # 병렬 조사용 sub-agent — 검색 등 동시 호출이 필요한 단순 작업에서 fan-out 허용.
     # 순차 툴 라운드 대신 자식 에이전트로 병렬화 (overthinking 없이 wall-clock 단축).
     "dispatch_agent",
+    # 연결된 워크스페이스의 *읽기/조회* 도구 — light 도 "단순 조회"이므로 포함한다.
+    # (INT-1893 초기엔 gmail_search/calendar_list 만 넣어 slack/superthread/drive 조회가
+    #  light 질문에서 통째로 사라졌다 — "슬랙 봐줘"가 80자 이하라 light 가 되며 도구 증발.)
+    # write/exec/office 는 여전히 제외 — _PLAN_BLOCKED_TOOLS 와 동일 경계.
+    # 불변식은 tests/test_tools_workspace.py 가 강제(워크스페이스 read 도구 ⊆ light).
+    # Slack
+    "slack_search", "slack_list_channels", "slack_read_channel",
+    # Superthread
+    "superthread_list_projects", "superthread_list_boards",
+    "superthread_search_cards", "superthread_get_card",
+    # Google (gmail_search/calendar_list_events 는 위에 이미 포함)
+    "gmail_read", "gmail_list_attachments", "gmail_download_attachment",
+    "drive_search", "drive_read",
+    # Linear
+    "linear_list_issues", "linear_get_issue", "linear_search_issues",
+    # Airtable
+    "airtable_list_bases", "airtable_list_tables",
+    "airtable_list_records", "airtable_get_records",
+    # GitHub
+    "github_list_issues", "github_get_issue", "github_list_pulls",
+    "github_get_pull", "github_search_code", "github_read_file",
 })
 
 
