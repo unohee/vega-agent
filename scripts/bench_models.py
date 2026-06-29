@@ -9,6 +9,14 @@ import json
 import sys
 from pathlib import Path
 
+# Windows 콘솔 기본 cp1252 에선 한글·이모지 print 가 UnicodeEncodeError 로 죽어
+# 스크립트가 비0 종료한다(INT-1993). stdout/stderr 를 UTF-8 로 고정한다.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
+
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
