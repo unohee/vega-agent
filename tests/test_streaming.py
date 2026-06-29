@@ -478,3 +478,32 @@ class TestStreamGptStability:
 
         assert result == "완료"
         assert reasoning_seen == [("분석 중", False), ("", True)]
+
+
+# ── 모델 degeneration 특수토큰 스트립 (ST 4294) ─────────────────────────────────
+
+def test_strip_model_artifacts_removes_special_tokens():
+    """DeepSeek 등 tokenizer 특수토큰(외계어 누수)을 본문에서 제거 — n>0."""
+    from pipeline.streaming import _strip_model_artifacts
+    for raw in [
+        "böjnings<｜begin▁of▁sentence｜>孩子",
+        "<｜place▁holder▁no▁445｜>orthy",
+        "<|place_holder_mm_span_0181|>raphies",
+        "텍스트<|begin_of_sentence|>더",
+        "<｜end▁of▁sentence｜>",
+    ]:
+        out, n = _strip_model_artifacts(raw)
+        assert n >= 1
+        assert "｜>" not in out and "_sentence|>" not in out and "holder" not in out
+
+
+def test_strip_model_artifacts_leaves_normal_content_unchanged():
+    """일반 본문(html·마크다운 표·파이프·수식·코드)은 절대 건드리지 않는다 (n==0)."""
+    from pipeline.streaming import _strip_model_artifacts
+    for text in [
+        "Hello world", "if x < 5 and y > 3:", "a | b | c",
+        "| 컬럼1 | 컬럼2 |", "코드: `arr[i] | flag`", "수식: a<b, c>d",
+        "<div>html</div>", "shell: cat f | grep x",
+    ]:
+        out, n = _strip_model_artifacts(text)
+        assert n == 0 and out == text
