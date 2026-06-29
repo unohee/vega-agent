@@ -110,8 +110,9 @@ PLUGIN_CATALOG = [
         "key_hint": "pat...",
         "verify_url": "https://api.airtable.com/v0/meta/whoami",
         "verify_header": "bearer",
-        # 도구 본체는 완성(개발자는 .env/keychain로 사용). 비개발자 GUI key 연결은 INT-1575.
-        "status": "coming_soon",
+        "key_hint_long": "Airtable PAT — scope: schema.bases:read + data.records:read (쓰기 시 data.records:write), 대상 base 접근 추가 필요.",
+        # GUI key 연결 활성 (INT-1575) — POST /api/onboarding/plugin-key.
+        "status": "available",
     },
     {
         "id": "notion",
@@ -131,8 +132,9 @@ PLUGIN_CATALOG = [
         "key_hint": "ghp_... 또는 github_pat_...",
         "verify_url": "https://api.github.com/user",
         "verify_header": "bearer",
-        # 도구 본체는 완성(개발자는 .env/keychain로 사용). 비개발자 GUI key 연결은 INT-1575.
-        "status": "coming_soon",
+        "key_hint_long": "GitHub PAT (classic 또는 fine-grained) — repo·read:org 권한 권장.",
+        # GUI key 연결 활성 (INT-1575) — POST /api/onboarding/plugin-key.
+        "status": "available",
     },
 ]
 
@@ -149,6 +151,12 @@ def _plugin_authenticated(pid: str) -> bool:
         if pid == "superthread":
             from pipeline.auth import superthread
             return superthread.is_authenticated()
+        if pid == "airtable":
+            from pipeline.auth import airtable
+            return airtable.is_authenticated()
+        if pid == "github":
+            from pipeline.auth import github
+            return github.is_authenticated()
     except Exception:
         pass
     return False
@@ -165,6 +173,8 @@ def _plugin_configured(pid: str) -> bool:
             return slack.is_configured()
         if pid == "superthread":
             return True  # public client — 항상 configured
+        if pid in ("airtable", "github"):
+            return True  # key 타입 — 클라이언트 시크릿 불필요, 사용자가 PAT만 입력
     except Exception:
         pass
     return False
@@ -365,6 +375,76 @@ async def configure_provider(payload: ProviderPayload):
         return JSONResponse({"ok": True, "active": "local", "reachable": reachable})
 
     return JSONResponse({"ok": False, "error": "이 프로바이더는 PKCE 로그인을 사용하세요."}, status_code=400)
+
+
+@router.get("/api/onboarding/plugin-status/{plugin}")
+async def plugin_status(plugin: str):
+    """key 타입 플러그인 연결 상태 (설정창 워크스페이스 패널용). 값은 노출 안 함."""
+    entry = next((p for p in PLUGIN_CATALOG if p["id"] == plugin), None)
+    if not entry:
+        return JSONResponse({"configured": False, "authenticated": False}, status_code=404)
+    return JSONResponse({
+        "id": plugin,
+        "auth": entry.get("auth"),
+        "key_hint": entry.get("key_hint", ""),
+        "key_hint_long": entry.get("key_hint_long", ""),
+        "configured": _plugin_configured(plugin),
+        "authenticated": _plugin_authenticated(plugin),
+    })
+
+
+class PluginKeyPayload(BaseModel):
+    plugin: str = ""
+    api_key: str = ""
+
+
+@router.post("/api/onboarding/plugin-key")
+async def configure_plugin_key(payload: PluginKeyPayload):
+    """key 타입 워크스페이스 플러그인(Airtable/GitHub)의 PAT 를 검증·저장한다 (INT-1575).
+
+    LLM 프로바이더 키저장(/provider)과 달리 llm_providers 에 등록하지 않고 keychain 에만
+    저장한다 — tool_registry 의 toolset 게이트(_airtable_check/_github_check)가
+    is_authenticated()→True 를 보고 도구를 자동 노출한다. 검증은 provider 와 동일한
+    _verify_key(plugin 카탈로그의 verify_url/header 사용)."""
+    entry = next((p for p in PLUGIN_CATALOG if p["id"] == payload.plugin), None)
+    if not entry:
+        return JSONResponse({"ok": False, "error": f"알 수 없는 플러그인: {payload.plugin}"}, status_code=400)
+    if entry.get("auth") != "key" or not entry.get("key_env"):
+        return JSONResponse({"ok": False, "error": f"{payload.plugin} 은 key 타입 플러그인이 아닙니다."}, status_code=400)
+    key = (payload.api_key or "").strip()
+    if not key:
+        return JSONResponse({"ok": False, "error": "PAT(키)가 비어 있습니다."}, status_code=400)
+    ok, err = _verify_key(entry, key)
+    if not ok:
+        return JSONResponse({"ok": False, "error": err or "키 검증 실패"}, status_code=400)
+    from pipeline import keychain
+    key_env = entry["key_env"]
+    keychain.set_secret(key_env, key)
+    os.environ[key_env] = key  # 현재 프로세스 즉시 반영
+    try:
+        from pipeline.tool_registry import invalidate_check_fn_cache
+        invalidate_check_fn_cache()  # 30s TTL 기다리지 않고 도구 즉시 노출
+    except Exception:
+        pass
+    return JSONResponse({"ok": True, "plugin": entry["id"], "authenticated": True})
+
+
+@router.delete("/api/onboarding/plugin-key/{plugin}")
+async def disconnect_plugin_key(plugin: str):
+    """key 타입 플러그인 PAT 제거 (연결 해제)."""
+    entry = next((p for p in PLUGIN_CATALOG if p["id"] == plugin), None)
+    if not entry or entry.get("auth") != "key" or not entry.get("key_env"):
+        return JSONResponse({"ok": False, "error": f"알 수 없는 key 플러그인: {plugin}"}, status_code=400)
+    from pipeline import keychain
+    key_env = entry["key_env"]
+    keychain.delete_secret(key_env)
+    os.environ.pop(key_env, None)
+    try:
+        from pipeline.tool_registry import invalidate_check_fn_cache
+        invalidate_check_fn_cache()
+    except Exception:
+        pass
+    return JSONResponse({"ok": True, "plugin": plugin, "authenticated": False})
 
 
 def _provider_json_for(entry: dict, model_override: str) -> dict:
