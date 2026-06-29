@@ -24,10 +24,20 @@ from functools import lru_cache
 
 @lru_cache(maxsize=1)
 def _ca_file() -> str | None:
-    """certifi 의 cacert.pem 경로. 번들/개발 환경 모두 importlib.resources 로 해결됨."""
+    """certifi 의 cacert.pem 경로. 번들/개발 환경 모두 importlib.resources 로 해결됨.
+
+    certifi.where() 가 경로 문자열을 돌려줘도, PyInstaller 번들에서 실제 cacert.pem
+    이 누락되면(spec collect 누락·stale _MEIPASS) 그 경로는 존재하지 않는다. 그대로
+    ssl.create_default_context(cafile=...) 에 넘기면 FileNotFoundError([Errno 2]) 가
+    _stream_sse 에서 잡혀 매 라운드 "LLM 스트림 오류: [Errno 2] No such file or
+    directory" 로 응답이 통째로 중단된다 (INT-1932). 따라서 파일이 실제 존재할 때만
+    경로를 반환하고, 없으면 None → OS 기본 CA 로 폴백한다(정상 맥에선 시스템 CA 로 동작).
+    """
     try:
         import certifi
-        return certifi.where()
+        import os
+        ca = certifi.where()
+        return ca if ca and os.path.exists(ca) else None
     except Exception:
         return None
 
