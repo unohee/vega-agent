@@ -385,3 +385,60 @@ def test_superthread_revoke_best_effort_swallows_errors():
     from pipeline.auth import superthread as st
     with patch.object(st, "_get_json", side_effect=RuntimeError("HTTP 500")):
         assert st._revoke_pats_named("WS1", "tok", "vega-agent") == 0
+
+
+# ── 카드 4236: light 가 MCP(kyte__/superthread__) read 도구를 잃던 버그 ──────────
+
+def test_light_load_includes_mcp_read_excludes_mcp_writes():
+    """정적 allowlist 로 못 잡는 MCP 도구도 read 면 light 에 노출, write 면 제외.
+    (kyte 봇 short 질문이 light 로 분류되며 kyte__ 도구를 통째로 잃어 정적 응답만 뱉던 버그.)"""
+    from pipeline.tools import get_schemas_for_mode
+    base = [
+        {"type": "function", "name": "kyte__find_tasks", "parameters": {}},
+        {"type": "function", "name": "kyte__create_task", "parameters": {}},
+        {"type": "function", "name": "superthread__getTask", "parameters": {}},
+        {"type": "function", "name": "superthread__task_update", "parameters": {}},
+    ]
+    with patch("pipeline.tool_registry.is_toolset_available", return_value=True):
+        light = {s["name"] for s in get_schemas_for_mode(base, load="light")}
+    assert "kyte__find_tasks" in light and "superthread__getTask" in light
+    assert "kyte__create_task" not in light and "superthread__task_update" not in light
+
+
+# ── 카드 4295: gmail draft 수정이 새 draft 를 양산하던 버그 ──────────────────────
+
+def test_gmail_draft_creates_then_updates_in_place():
+    """draft_id 없으면 create(POST /drafts), 있으면 update(PUT /drafts/{id})."""
+    from pipeline import tools_google as G
+    calls = []
+    with patch.object(G, "_gapi",
+                      side_effect=lambda path, **k: calls.append((k.get("method"), path)) or {"id": "d1"}):
+        G.gmail_draft("a@b.c", "s", "body")
+        G.gmail_draft("a@b.c", "s", "body2", draft_id="d1")
+    assert calls[0] == ("POST", "gmail.googleapis.com/gmail/v1/users/me/drafts")
+    assert calls[1] == ("PUT", "gmail.googleapis.com/gmail/v1/users/me/drafts/d1")
+
+
+# ── 카드 4297: 여러 메일 첨부 batch 수집 ────────────────────────────────────────
+
+def test_gmail_collect_attachments_batches_and_dedups(tmp_path):
+    """검색→메일별 list→download 를 단일 호출로 수행 + 파일명 충돌 회피."""
+    import base64
+    from pipeline import tools_google as G
+
+    def fake_gapi(path, account="", params=None, method="GET", body=None):
+        if path.endswith("/messages"):
+            assert "has:attachment" in params["q"]   # 자동 추가 확인
+            return {"messages": [{"id": "m1"}, {"id": "m2"}]}
+        if "/attachments/" in path:
+            return {"data": base64.urlsafe_b64encode(b"X").decode()}
+        # messages/{id} full → 같은 이름(report.pdf) 첨부 하나씩
+        mid = path.rsplit("/", 1)[-1]
+        return {"payload": {"parts": [{"filename": "report.pdf", "mimeType": "application/pdf",
+                                       "body": {"attachmentId": f"a-{mid}", "size": 1}}]}}
+
+    with patch.object(G, "_gapi", side_effect=fake_gapi):
+        res = G.gmail_collect_attachments("from:x", str(tmp_path))
+    assert res["count"] == 2
+    assert sorted(f["filename"] for f in res["files"]) == ["report (2).pdf", "report.pdf"]
+    assert (tmp_path / "report.pdf").exists() and (tmp_path / "report (2).pdf").exists()

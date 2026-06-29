@@ -200,6 +200,42 @@ def gmail_download_attachment(
     return {"saved": True, "path": str(dest), "size": len(raw)}
 
 
+def gmail_collect_attachments(query: str, save_dir: str,
+                              max_results: int = 25, account: str = "") -> dict:
+    """검색 쿼리에 맞는 여러 메일의 첨부파일을 한 번에 모아 save_dir 에 저장한다(카드 4297).
+
+    search → 메시지별 list_attachments → download 의 1+N+M 라운드 fan-out 은 툴 라운드
+    상한(MAX_TOOL_ROUNDS_BY_LOAD)을 넘겨 중도 절단됐다. 이 도구는 그 전체를 단일
+    라운드로 수행한다. query 에 has:attachment 가 없으면 자동 추가해 첨부 있는 메일만
+    스캔한다. 같은 파일명은 ' (2)' 식으로 회피. 반환: 저장 디렉터리·개수·파일 목록."""
+    base = "gmail.googleapis.com/gmail/v1/users/me"
+    q = query if "has:attachment" in query else f"{query} has:attachment"
+    listing = _gapi(f"{base}/messages", account=account,
+                    params={"q": q, "maxResults": max_results})
+    dest_dir = Path(save_dir).expanduser()
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    saved: list[dict] = []
+    used_names: set[str] = set()
+    for m in listing.get("messages", []) or []:
+        mid = m.get("id")
+        if not mid:
+            continue
+        for att in gmail_list_attachments(mid, account=account):
+            fname = att["filename"]
+            # 파일명 충돌 회피 (다른 메일이 같은 이름 첨부일 수 있음)
+            stem, dot, ext = fname.rpartition(".")
+            cand, n = fname, 2
+            while cand in used_names:
+                cand = (f"{stem} ({n}).{ext}" if dot else f"{fname} ({n})")
+                n += 1
+            used_names.add(cand)
+            res = gmail_download_attachment(mid, att["attachment_id"],
+                                            str(dest_dir / cand), account=account)
+            saved.append({"message_id": mid, "filename": cand,
+                          "path": res["path"], "size": res["size"]})
+    return {"saved_dir": str(dest_dir), "count": len(saved), "files": saved}
+
+
 def _md_to_html(text: str) -> str:
     """
     Markdown → HTML conversion (no external dependencies).
@@ -311,11 +347,22 @@ def gmail_send(to: str, subject: str, body: str, account: str = "") -> dict:
                  method="POST", body={"raw": encoded})
 
 
-def gmail_draft(to: str, subject: str, body: str, account: str = "") -> dict:
+def gmail_draft(to: str, subject: str, body: str,
+                draft_id: str = "", account: str = "") -> dict:
+    """이메일 draft 생성 또는 기존 draft 수정.
+
+    draft_id 가 주어지면 drafts.update(PUT)로 같은 draft 를 덮어쓴다 — "방금 만든
+    draft 를 고쳐줘"가 새 draft 를 양산하지 않게 한다(카드 4295). 없으면 create(POST).
+    Gmail 은 두 경우 모두 응답에 draft "id"를 포함하므로 호출자는 그 id 를 다음 수정
+    호출의 draft_id 로 넘기면 된다. update 는 전체 메시지를 요구하므로 수정 시에도
+    to/subject/body 전체(수정본)를 보내야 한다(부분 patch 아님)."""
     import base64
     raw_bytes = _build_mime(to, subject, body)
     encoded = base64.urlsafe_b64encode(raw_bytes).decode()
     base = "gmail.googleapis.com/gmail/v1/users/me"
+    if draft_id:
+        return _gapi(f"{base}/drafts/{draft_id}", account=account,
+                     method="PUT", body={"message": {"raw": encoded}})
     return _gapi(f"{base}/drafts", account=account,
                  method="POST", body={"message": {"raw": encoded}})
 

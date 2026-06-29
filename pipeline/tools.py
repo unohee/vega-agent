@@ -95,6 +95,29 @@ _LIGHT_ALLOWED_TOOLS: frozenset[str] = frozenset({
 })
 
 
+# MCP 도구(이름에 "__" 포함, server__tool 형식)는 정적 allowlist 로 커버 못 한다 —
+# 사용자가 연결한 MCP 서버의 읽기 도구는 light 에서도 노출돼야 한다(카드 4236:
+# kyte 봇이 light 질문에서 kyte__ 도구를 통째로 잃어 카드형 정적 응답만 뱉던 버그).
+# write 동사가 보이면 제외(light 는 read-only 의도). 미연결 워크스페이스 native 도구는
+# _LIGHT_ALLOWED_TOOLS 로 직접 화이트리스트(INT-1994).
+import re as _re
+_MCP_WRITE_VERB = _re.compile(
+    r"(?:^|_)(create|update|delete|add|remove|set|send|post|write|put|patch|"
+    r"archive|move|duplicate|edit|react|unreact|upload|invite|assign|close|merge)")
+_MCP_READ_VERB = _re.compile(
+    r"(?:^|_)(find|get|list|search|read|fetch|query|view|describe|show|lookup|me|members)")
+
+
+def _is_light_mcp_read(name: str) -> bool:
+    """MCP 도구(server__tool)가 light 에 노출될 읽기 도구인지. write 동사 우선 배제."""
+    if "__" not in name:
+        return False
+    tool = name.split("__", 1)[1].lower()
+    if _MCP_WRITE_VERB.search(tool):
+        return False
+    return bool(_MCP_READ_VERB.search(tool))
+
+
 def get_schemas_for_mode(
     base: list[dict],
     ce_mode: bool = False,
@@ -112,7 +135,9 @@ def get_schemas_for_mode(
     from pipeline.tool_registry import filter_available_schemas
     schemas = filter_available_schemas(base)
     if load == "light":
-        return [s for s in schemas if s.get("name") in _LIGHT_ALLOWED_TOOLS]
+        return [s for s in schemas
+                if s.get("name") in _LIGHT_ALLOWED_TOOLS
+                or _is_light_mcp_read(str(s.get("name", "")))]
     return schemas
 
 
@@ -123,8 +148,9 @@ _PLAN_BLOCKED_TOOLS: frozenset[str] = frozenset({
     "host_exec", "bash_exec", "python_exec", "sandbox_exec",
     # File write
     "file_edit",
-    # Gmail write/send
+    # Gmail write/send (gmail_collect_attachments 는 로컬에 파일을 내려받으므로 write)
     "gmail_send", "gmail_draft", "gmail_modify_labels", "gmail_batch_modify",
+    "gmail_collect_attachments",
     # Calendar write
     "calendar_create_event", "calendar_update_event", "calendar_delete_event",
     # iCloud write
@@ -159,7 +185,7 @@ _PLAN_BLOCKED_TOOLS: frozenset[str] = frozenset({
 
 from pipeline.tools_google import (
     gmail_search, gmail_read, gmail_send, gmail_draft, gmail_modify_labels, gmail_batch_modify,
-    gmail_list_attachments, gmail_download_attachment,
+    gmail_list_attachments, gmail_download_attachment, gmail_collect_attachments,
     calendar_list_events, calendar_create_event, calendar_update_event, calendar_delete_event,
     drive_search, drive_read, file_read, file_edit,
     icloud_list, icloud_move, icloud_rename, icloud_mkdir,
@@ -213,7 +239,7 @@ TOOL_SCHEMAS: list[dict] = [
     {
         "type": "function",
         "name": "gmail_search",
-        "description": "Gmail에서 이메일을 검색한다. Gmail 검색 문법 지원 (from:, subject:, is:unread, after:2026/01/01 등).",
+        "description": "Gmail에서 이메일을 검색한다. Gmail 검색 문법 지원 (from:, subject:, is:unread, has:attachment, after:2026/01/01 등). 여러 메일의 첨부를 모아 받을 땐 gmail_collect_attachments를 쓸 것.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -255,13 +281,14 @@ TOOL_SCHEMAS: list[dict] = [
     {
         "type": "function",
         "name": "gmail_draft",
-        "description": "이메일 임시저장(draft)을 생성한다. 발송하지 않고 Gmail 임시보관함에 저장 — 사용자가 검토 후 직접 보낸다.",
+        "description": "이메일 임시저장(draft)을 생성하거나 기존 draft를 수정한다. 발송하지 않고 Gmail 임시보관함에 저장 — 사용자가 검토 후 직접 보낸다. 직전에 만든 draft를 고치려면 그 응답의 id를 draft_id로 전달해 같은 draft를 덮어쓴다(새 draft 양산 방지). 수정 시에도 to/subject/body 전체(수정본)를 보내야 한다.",
         "parameters": {
             "type": "object",
             "properties": {
                 "to": {"type": "string", "description": "수신자 이메일"},
                 "subject": {"type": "string", "description": "제목"},
                 "body": {"type": "string", "description": "본문"},
+                "draft_id": {"type": "string", "default": "", "description": "기존 draft를 수정할 때 그 draft의 id (직전 gmail_draft 응답의 id). 비우면 새 draft 생성."},
                 "account": {"type": "string", "default": "", "description": "발신 Google 계정 이메일. 미지정 시 기본 계정."},
             },
             "required": ["to", "subject", "body"],
@@ -338,6 +365,21 @@ TOOL_SCHEMAS: list[dict] = [
                 "save_path": {"type": "string", "description": "저장할 절대경로 (예: ~/Downloads/report.xlsx)"},
             },
             "required": ["message_id", "attachment_id", "save_path"],
+        },
+    },
+    {
+        "type": "function",
+        "name": "gmail_collect_attachments",
+        "description": "검색 쿼리에 맞는 여러 메일의 첨부파일을 한 번에 모아 한 폴더에 저장한다. '진석이 보낸 제안서 첨부 다 모아줘'처럼 여러 메일에 흩어진 첨부를 받을 때 사용 — search→list→download를 메일마다 반복하지 않고 단일 호출로 끝낸다(라운드 절약). has:attachment는 자동 추가됨.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Gmail 검색 쿼리 (예: 'from:jinseok 제안서'). has:attachment는 자동 추가."},
+                "save_dir": {"type": "string", "description": "첨부를 모아 저장할 디렉터리 (예: ~/Downloads/제안서)"},
+                "max_results": {"type": "integer", "default": 25, "description": "스캔할 최대 메일 수"},
+                "account": {"type": "string", "default": "", "description": "사용할 Google 계정 이메일. 미지정 시 기본 계정."},
+            },
+            "required": ["query", "save_dir"],
         },
     },
     {
@@ -1769,6 +1811,7 @@ TOOL_FUNCTIONS: dict[str, Any] = {
     "gmail_batch_modify": gmail_batch_modify,
     "gmail_list_attachments": gmail_list_attachments,
     "gmail_download_attachment": gmail_download_attachment,
+    "gmail_collect_attachments": gmail_collect_attachments,
     "calendar_list_events": calendar_list_events,
     "calendar_create_event": calendar_create_event,
     "calendar_update_event": calendar_update_event,
