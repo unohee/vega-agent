@@ -64,21 +64,35 @@ _CE_ALLOWED_TOOLS: frozenset[str] = frozenset({
 })
 
 
+_LIGHT_ALLOWED_TOOLS: frozenset[str] = frozenset({
+    "web_search", "web_fetch", "file_read", "memory_search", "memory_read",
+    "memory_recall", "vega_query", "gmail_search", "calendar_list_events",
+    "ask_user_question",
+    # 병렬 조사용 sub-agent — 검색 등 동시 호출이 필요한 단순 작업에서 fan-out 허용.
+    # 순차 툴 라운드 대신 자식 에이전트로 병렬화 (overthinking 없이 wall-clock 단축).
+    "dispatch_agent",
+})
+
+
 def get_schemas_for_mode(
     base: list[dict],
     ce_mode: bool = False,
+    load: str | None = None,
 ) -> list[dict]:
     """현재 모드에 맞는 도구 스키마를 반환.
 
     CE 게이트는 당분간 비활성 — 개인용이라 모든 진입점(데스크톱 앱·채널 봇)에서
     로컬 파일/exec 도구를 포함한 전체 도구를 노출한다. ce_mode 인자는 호출부
     호환을 위해 유지하나 더 이상 스키마를 필터링하지 않는다.
-    (원격 노출 시 재활성화하려면 아래 _CE_ALLOWED_TOOLS 화이트리스트 필터를 되살릴 것.)
+    load=light (INT-1893): 단순 조회용 최소 도구만 — exec/office write 제외.
 
     미연결 워크스페이스(toolset) 도구는 제외한다 — hermes-agent의
     "check_fn 실패 도구는 get_definitions()에서 제외" 규칙 (pipeline/tool_registry.py 참조)."""
     from pipeline.tool_registry import filter_available_schemas
-    return filter_available_schemas(base)
+    schemas = filter_available_schemas(base)
+    if load == "light":
+        return [s for s in schemas if s.get("name") in _LIGHT_ALLOWED_TOOLS]
+    return schemas
 
 
 # Tools blocked in plan mode. Read/search/lookup/memory_read are excluded.

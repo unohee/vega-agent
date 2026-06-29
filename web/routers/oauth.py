@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import html
+
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
@@ -99,5 +101,48 @@ async def google_callback(request: Request):
         return HTMLResponse(f"<h3>Google 인증 완료</h3><p>계정: {email}</p>")
     return HTMLResponse(
         f"<h3>Google 인증 실패</h3><pre>{result.get('error') or 'unknown error'}</pre>",
+        status_code=400,
+    )
+
+
+@router.get("/broker/auth")
+async def broker_auth_start(request: Request):
+    """Start generic broker pairing. pair_url (required) and mcp_url (optional) are read from the
+    query string — no company or URL source hardcoding (INT-1924)."""
+    pair_url = request.query_params.get("pair_url", "")
+    mcp_url = request.query_params.get("mcp_url") or None
+    if not pair_url:
+        return HTMLResponse(
+            "<h3>Broker pairing error</h3><pre>The pair_url parameter is required.</pre>",
+            status_code=400,
+        )
+    try:
+        from pipeline.auth.broker import authorize_url
+        return RedirectResponse(url=authorize_url(pair_url, mcp_url=mcp_url), status_code=302)
+    except Exception as e:
+        return HTMLResponse(
+            f"<h3>Broker pairing configuration error</h3><pre>{html.escape(str(e))}</pre>",
+            status_code=500,
+        )
+
+
+@router.get("/broker/callback")
+async def broker_callback(request: Request):
+    error = request.query_params.get("error")
+    if error:
+        return HTMLResponse(
+            f"<h3>Broker pairing canceled/failed</h3><pre>{html.escape(error)}</pre>",
+            status_code=400,
+        )
+    from pipeline.auth.broker import handle_callback
+    result = handle_callback(dict(request.query_params))
+    if result.get("ok"):
+        _refresh_tool_availability()
+        label = result.get("label") or "broker"
+        return HTMLResponse(
+            f"<h3>Broker pairing complete</h3><p>Connection: {html.escape(label)} · tools will be available shortly.</p>"
+        )
+    return HTMLResponse(
+        f"<h3>Broker pairing failed</h3><pre>{html.escape(result.get('error') or 'unknown error')}</pre>",
         status_code=400,
     )

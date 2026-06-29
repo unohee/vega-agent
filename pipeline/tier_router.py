@@ -101,6 +101,16 @@ def route_load(user_text: str, history: list[dict] | None = None) -> str:
 
 # 부하별 에이전트 툴 라운드 상한 (research_mode 는 호출부에서 40 으로 별도 처리).
 _ROUNDS_BY_LOAD = {"light": 10, "standard": 20, "heavy": 24}
+MAX_TOOL_ROUNDS_BY_LOAD = {"light": 2, "standard": 5, "heavy": 24}
+
+# Load-aware API budget (INT-1893 Phase 1) — reasoning_effort None = provider default.
+LOAD_BUDGET: dict[str, dict] = {
+    "light": {"max_tokens": 1200, "reasoning_effort": "low"},
+    "standard": {"max_tokens": 4000, "reasoning_effort": None},
+    "heavy": {"max_tokens": 8000, "reasoning_effort": None},
+}
+
+_VALID_LOADS = frozenset({"light", "standard", "heavy"})
 
 
 def rounds_for_load(user_text: str, research_mode: bool = False) -> int:
@@ -108,3 +118,100 @@ def rounds_for_load(user_text: str, research_mode: bool = False) -> int:
     if research_mode:
         return 40
     return _ROUNDS_BY_LOAD.get(route_load(user_text), 20)
+
+
+def user_content_blob_from_messages(messages: list[dict], preamble: str = "") -> str:
+    """stream_gpt 가 LLM 에 보내는 user_content 재구성 — before/after 측정·회귀용 (INT-1893)."""
+    if not messages:
+        return preamble.strip()
+    if len(messages) == 1:
+        user_content = messages[-1].get("content", "")
+    else:
+        turns = []
+        for m in messages[:-1]:
+            label = "User" if m.get("role") in ("user", "human") else "VEGA"
+            turns.append(f"[{label}]: {m.get('content', '')}")
+        history_block = "\n".join(turns)
+        user_content = (
+            f"[대화 히스토리]\n{history_block}\n\n[현재 메시지]\n{messages[-1].get('content', '')}"
+        )
+    if preamble.strip():
+        user_content = f"{preamble.strip()}\n\n---\n\n{user_content}"
+    return user_content
+
+
+def classify_load_ambiguous(route_text: str, base_load: str) -> str:
+    """80–200자 애매 구간 — optional local SLM (VEGA_LOAD_CLASSIFIER=1) or standard bump."""
+    import os
+
+    text = (route_text or "").strip()
+    if base_load != "light" or len(text) <= 80 or len(text) > 200:
+        return base_load
+    if _match_any(text, _HEAVY_LOAD):
+        return "heavy"
+    if os.getenv("VEGA_LOAD_CLASSIFIER", "").strip() not in ("1", "true", "yes"):
+        return base_load
+    try:
+        from pipeline.llm_gateway import get_provider_for_tier
+
+        prov = get_provider_for_tier("local")
+        if not prov or prov.get("auth_type") == "none" and "127.0.0.1" not in (prov.get("base_url") or ""):
+            pass
+        import json
+        import urllib.request
+
+        base_url = (prov.get("base_url") or "http://127.0.0.1:1234/v1").rstrip("/")
+        model = prov.get("default_model") or "local"
+        body = json.dumps({
+            "model": model,
+            "messages": [
+                {"role": "system", "content": "Reply with exactly one word: light, standard, or heavy."},
+                {"role": "user", "content": f"Classify task load:\n{text[:400]}"},
+            ],
+            "max_tokens": 5,
+            "temperature": 0,
+        }).encode()
+        req = urllib.request.Request(
+            f"{base_url}/chat/completions",
+            data=body,
+            method="POST",
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=8) as r:
+            data = json.loads(r.read().decode())
+        raw = ((data.get("choices") or [{}])[0].get("message") or {}).get("content", "")
+        tag = raw.strip().lower().split()[0] if raw else ""
+        if tag in _VALID_LOADS:
+            return tag
+    except Exception:
+        pass
+    return "standard"
+
+
+def resolve_load_routing(
+    messages: list[dict],
+    *,
+    research_mode: bool = False,
+    load_override: str | None = None,
+) -> dict:
+    """현재 턴 부하·라운드 상한 — streaming telemetry 입력 (INT-1893)."""
+    route_text = routing_text_from_messages(messages)
+    if load_override in _VALID_LOADS:
+        load = load_override
+    else:
+        load = route_load(route_text)
+        load = classify_load_ambiguous(route_text, load)
+    budget = LOAD_BUDGET.get(load, LOAD_BUDGET["standard"])
+    max_rounds = 40 if research_mode else _ROUNDS_BY_LOAD.get(load, 20)
+    return {
+        "route_text": route_text,
+        "load": load,
+        "max_rounds": max_rounds,
+        "max_tool_rounds": MAX_TOOL_ROUNDS_BY_LOAD.get(load, 5),
+        "budget": dict(budget),
+    }
+
+
+def legacy_load_from_user_blob(messages: list[dict], preamble: str = "") -> str:
+    """구버그 재현 — preamble+히스토리 전체 blob 으로 route_load (before 측정용)."""
+    return route_load(user_content_blob_from_messages(messages, preamble=preamble))

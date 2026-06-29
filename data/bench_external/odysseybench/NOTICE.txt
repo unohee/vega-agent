@@ -1,0 +1,14 @@
+OdysseyBench (Excel portable subset) — data attribution
+
+Task specifications and golden reference files:
+  microsoft/OdysseyBench  (MIT License)
+  https://github.com/microsoft/OdysseyBench
+
+Input testbed files (tasks/*/testbed/data/*.xlsx):
+  zlwang-cs/OfficeBench   (Apache-2.0 License)
+  https://github.com/zlwang-cs/OfficeBench
+
+VEGA adapts a 9-task Excel subset (delete/sort/swap operations) into the
+stream_gpt agent harness with deterministic exact_match verification.
+See scripts/bench_external/ingest.py:ingest_odysseybench and
+scripts/bench_lib.py:verify_odyssey_eval.

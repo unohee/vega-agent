@@ -1,10 +1,13 @@
 {
-  "_comment": "VEGA 업무별 모델 벤치마크 태스크 + rubric (EPIC INT-1876). scripts/bench_models.py 가 읽는다. category: office(INT-1889) / swe(INT-1890) / multilingual(INT-1891). rubric 각 항목은 평가자(Claude Sonnet)가 0~2점으로 채점.",
+  "_comment": "VEGA 업무별 모델 벤치마크 (INT-1876). harness: smoke|agent|both. verify: office|swe|none. agent 태스크는 required_tools로 도구 호출 채점.",
   "categories": {
     "office": [
       {
         "id": "press_release_single",
+        "harness": "both",
+        "verify": "none",
         "prompt": "다음 정보로 K-pop 싱글 보도자료를 작성해줘. 아티스트: 1300, 신곡: 'ILL', 발매일: 6/24, 공연: 7/26. 기존 국문 자료에 '5년 만의 복귀', 한국 아티스트 협업(기리보이·수민) 정보가 있음. 영문 More Info에는 삼성 갤럭시 협업·Apple TV 등 부가 정보가 있음.",
+        "agent_prompt": "다음 정보로 K-pop 싱글 보도자료를 작성해줘. 아티스트: 1300, 신곡: 'ILL', 발매일: 6/24, 공연: 7/26. 기존 국문 자료에 '5년 만의 복귀', 한국 아티스트 협업(기리보이·수민) 정보가 있음.",
         "rubric": [
           "스트리밍·뮤직비디오·SNS 링크 자리표를 포함했는가",
           "공연 일정(7/26)과 문의처 자리표가 있는가",
@@ -16,7 +19,12 @@
       },
       {
         "id": "excel_calc",
+        "harness": "both",
+        "verify": "office",
+        "required_tools": ["xlsx_create"],
+        "min_tool_rounds": 1,
         "prompt": "월별 매출 [120, 95, 140, 110, 130] (단위 만원)의 합계·평균·전월대비 증감률을 계산하고, xlsx로 저장할 수 있는 표 구조(시트명·헤더·행 데이터)를 JSON으로 제시해줘.",
+        "agent_prompt": "월별 매출 [120, 95, 140, 110, 130] (단위 만원) 표를 xlsx_create 도구로 작업 폴더에 sales.xlsx 로 저장해줘. 합계·평균·전월대비 증감률(%) 열을 포함해.",
         "rubric": [
           "합계(595)·평균(119)이 정확한가",
           "전월대비 증감률 계산이 맞는가",
@@ -24,18 +32,219 @@
         ]
       },
       {
+        "id": "excel_create_e2e",
+        "harness": "agent",
+        "verify": "office",
+        "required_tools": ["xlsx_create"],
+        "min_tool_rounds": 1,
+        "prompt": "",
+        "agent_prompt": "월별 매출 [120, 95, 140, 110, 130] (단위 만원) 표를 xlsx_create 로 monthly_sales.xlsx 파일을 만들어줘. 시트명 '매출', 헤더(월, 매출, 전월대비%) 포함.",
+        "rubric": [
+          "xlsx 파일이 생성되었는가",
+          "합계 595·평균 119가 맞는가",
+          "전월대비 증감률이 포함되었는가"
+        ]
+      },
+      {
+        "id": "excel_read_fix",
+        "harness": "agent",
+        "verify": "office",
+        "required_tools": ["xlsx_read"],
+        "min_tool_rounds": 1,
+        "fixture": "sales_wrong_sum.xlsx",
+        "prompt": "",
+        "agent_prompt": "첨부 xlsx 파일을 xlsx_read 로 읽고, 합계 행의 잘못된 값을 찾아 올바른 값과 셀 위치를 JSON {cell, wrong, correct} 형식으로 제시해줘.",
+        "rubric": [
+          "틀린 셀과 올바른 합계(595)를 식별했는가",
+          "JSON 구조가 명확한가"
+        ]
+      },
+      {
+        "id": "excel_read_fix_save",
+        "harness": "agent",
+        "verify": "office",
+        "required_tools": ["xlsx_read", "xlsx_create"],
+        "min_tool_rounds": 2,
+        "fixture": "sales_wrong_sum.xlsx",
+        "prompt": "",
+        "agent_prompt": "첨부 xlsx를 xlsx_read 로 읽고 합계 오류를 수정한 뒤 xlsx_create 로 sales_fixed.xlsx 파일을 저장해줘. 합계 595·평균 119가 맞아야 한다.",
+        "rubric": [
+          "xlsx_read로 원본을 읽었는가",
+          "수정된 xlsx에 합계 595가 반영되었는가",
+          "sales_fixed.xlsx가 생성되었는가"
+        ]
+      },
+      {
+        "id": "python_calc_xlsx",
+        "harness": "agent",
+        "verify": "office",
+        "required_tools": ["python_exec", "xlsx_create"],
+        "min_tool_rounds": 2,
+        "prompt": "",
+        "agent_prompt": "월별 매출 [120, 95, 140, 110, 130] (단위 만원)의 합계·평균·전월대비 증감률(%)을 python_exec로 계산한 뒤, 결과 표를 xlsx_create 로 calc_sales.xlsx에 저장해줘.",
+        "rubric": [
+          "python_exec로 계산했는가",
+          "xlsx 파일이 생성되었는가",
+          "합계 595·평균 119가 맞는가"
+        ]
+      },
+      {
+        "id": "web_search_summarize",
+        "harness": "agent",
+        "verify": "none",
+        "required_tools": ["web_search"],
+        "min_tool_rounds": 1,
+        "prompt": "",
+        "agent_prompt": "web_search 도구로 '2026 Apple WWDC 주요 발표'를 검색하고, 확인한 사실만 5문장 이내로 한국어 요약해줘. 검색하지 않고 추측하지 마라.",
+        "rubric": [
+          "web_search를 사용해 최신 정보를 조회했는가",
+          "요약이 5문장 이내인가",
+          "검색 결과와 무관한 허위 사실이 없는가",
+          "한국어로 자연스럽게 작성했는가"
+        ]
+      },
+      {
         "id": "pdf_summarize",
+        "harness": "smoke",
+        "verify": "none",
         "prompt": "다음 계약서 발췌를 3문장으로 요약하고 핵심 의무사항 2가지를 뽑아줘: '갑은 을에게 매월 말일 로열티를 지급한다. 을은 분기별 정산 내역을 갑에게 제출한다. 본 계약은 2년간 유효하며 자동 갱신된다.'",
         "rubric": [
           "지급 주기(매월 말일)와 정산 의무(분기별)를 정확히 포착했는가",
           "계약 기간·자동 갱신을 누락하지 않았는가",
           "요약이 3문장 내외로 간결한가"
         ]
+      },
+      {
+        "id": "biz_email_reply",
+        "harness": "smoke",
+        "verify": "none",
+        "prompt": "협력사 메일: '납기 2주 연기 요청드립니다. 대안 일정 제안 부탁드립니다.' — 정중한 한국어 회신 초안을 작성해줘. 거절하되 7/10 또는 7/17 대안을 제시.",
+        "rubric": [
+          "존댓말·정중한 톤인가",
+          "거절과 대안 일정(7/10 또는 7/17)을 모두 포함했는가",
+          "200자 내외로 간결한가"
+        ]
+      },
+      {
+        "id": "meeting_minutes_struct",
+        "harness": "smoke",
+        "verify": "none",
+        "prompt": "다음 회의 메모를 [결정사항]과 [액션아이템: 담당·기한] 형식 회의록으로 정리해줘.\n- Q3 예산 10% 삭감 논의\n- 마케팅 A팀이 6/30까지 대안안 제출하기로\n- 신규 채용은 7월 보류 결정\n- 보안 점검 7/15까지 IT팀 진행",
+        "rubric": [
+          "모든 액션에 담당·기한이 있는가",
+          "결정과 논의가 구분되었는가",
+          "1페이지 분량으로 간결한가"
+        ]
+      },
+      {
+        "id": "slide_outline_json",
+        "harness": "smoke",
+        "verify": "office",
+        "prompt": "로컬 AI 워크스페이스 'VEGA' 제품 런칭을 위한 5장 슬라이드 구조를 JSON으로 제시해줘. 형식: {\"slides\": [{\"title\": \"...\", \"bullets\": [\"...\"]}]}. 필수 슬라이드: 문제 정의, 솔루션, 핵심 기능 3가지, 가격·도입, 다음 단계.",
+        "rubric": [
+          "5장 슬라이드가 모두 있는가",
+          "각 슬라이드에 title과 bullets가 있는가",
+          "VEGA·로컬·AI 워크스페이스 맥락이 반영되었는가",
+          "JSON만 출력했는가"
+        ]
+      },
+      {
+        "id": "slide_deck_create",
+        "harness": "agent",
+        "verify": "office",
+        "required_tools": ["pptx_create"],
+        "min_tool_rounds": 1,
+        "prompt": "",
+        "agent_prompt": "로컬 AI 워크스페이스 'VEGA' 제품 소개 피치덱을 pptx_create 로 vega_pitch.pptx 파일을 만들어줘. 최소 5장: (1) 문제 (2) 솔루션 (3) 핵심 기능 3가지 (4) 가격·도입 (5) 문의·다음 단계. 각 슬라이드 title과 body를 채워줘.",
+        "rubric": [
+          "pptx 파일이 생성되었는가",
+          "5장 이상 슬라이드가 있는가",
+          "VEGA·로컬·AI 키워드가 포함되었는가"
+        ]
+      },
+      {
+        "id": "proposal_rfp",
+        "harness": "smoke",
+        "verify": "none",
+        "prompt": "다음 RFP 요구에 맞는 IT 아웃소싱 제안서 초안을 작성해줘.\n\n[발주] 중소 제조사 M사, ERP·그룹웨어 통합\n[기간] 6개월, 2026년 9월 착수\n[예산] 8,000만원(부가세 별도)\n[필수] ISO27001, 24×7 장애 대응, 3개월 무상 하자보수\n\n섹션: 1) 사업 이해 2) 수행 범위·일정 3) 수행 조직 4) 유사 실적 1건 5) 예산 개요",
+        "rubric": [
+          "요구된 5개 섹션이 모두 있는가",
+          "6개월·9월 착수·8,000만원·ISO27001·24×7·하자보수를 반영했는가",
+          "과장·허위 실적 없이 현실적인 톤인가",
+          "한국어 비즈니스 문체인가"
+        ]
+      },
+      {
+        "id": "proposal_rfp_agent",
+        "harness": "agent",
+        "verify": "none",
+        "required_tools": ["web_search"],
+        "min_tool_rounds": 1,
+        "prompt": "",
+        "agent_prompt": "다음 RFP에 맞는 IT 아웃소싱 제안서 초안을 작성해줘. ISO27001·ERP 통합 관련 최신 동향은 web_search로 1회 이상 확인한 뒤 반영하라.\n\n[발주] 중소 제조사 M사, ERP·그룹웨어 통합\n[기간] 6개월, 2026년 9월 착수\n[예산] 8,000만원(부가세 별도)\n[필수] ISO27001, 24×7 장애 대응, 3개월 무상 하자보수\n\n섹션: 1) 사업 이해 2) 수행 범위·일정 3) 수행 조직 4) 유사 실적 1건 5) 예산 개요",
+        "rubric": [
+          "web_search로 ISO27001 또는 ERP 관련 사실을 확인했는가",
+          "요구된 5개 섹션이 모두 있는가",
+          "6개월·9월·8,000만원·ISO27001·24×7·하자보수를 반영했는가",
+          "검색 결과와 무관한 허위 실적이 없는가"
+        ]
+      },
+      {
+        "id": "proposal_json",
+        "harness": "smoke",
+        "verify": "office",
+        "prompt": "중소 제조사 ERP·그룹웨어 통합 RFP(6개월, 9월 착수, 예산 8,000만원, ISO27001 필수)에 대한 제안서 구조를 JSON으로 제시해줘.\n\n키: 배경, 과업범위, 일정, 예산, 수행조직 — 각 값은 2~4문장 문자열.\n\n```json\n{\"배경\":\"...\",\"과업범위\":\"...\",\"일정\":\"...\",\"예산\":\"...\",\"수행조직\":\"...\"}\n```",
+        "rubric": [
+          "5개 필수 키가 모두 있는가",
+          "6개월·9월·8,000만원·ISO27001이 내용에 반영되었는가",
+          "JSON 형식이 파싱 가능한가"
+        ]
+      },
+      {
+        "id": "ad_copy_campaign",
+        "harness": "smoke",
+        "verify": "none",
+        "prompt": "로컬 우선 AI 워크스페이스 'VEGA'를 타깃(비개발자 LLM 파워유저)에게 Instagram 광고 카피 3종(A/B/C)을 작성해줘. 각 변형: 헤드라인(30자 이내), 본문(150자 이내), CTA, 해시태그 3~5개. 톤: 전문적이지만 친근, 과장 금지.",
+        "rubric": [
+          "3종 변형(A/B/C)이 모두 있는가",
+          "헤드라인·본문·CTA·해시태그가 각 변형에 있는가",
+          "터미널 없이·로컬·프라이버시 등 핵심 가치가 드러나는가",
+          "과장·허위 기능 주장이 없는가"
+        ]
+      },
+      {
+        "id": "ad_copy_research",
+        "harness": "agent",
+        "verify": "none",
+        "required_tools": ["web_search"],
+        "min_tool_rounds": 1,
+        "prompt": "",
+        "agent_prompt": "로컬 AI 워크스페이스 'VEGA' Instagram 광고 1종을 작성해줘. web_search로 'AI desktop workspace privacy 2026' 또는 유사 키워드를 검색해 트렌드 1가지를 반영하라. 헤드라인(30자 이내), 본문(150자 이내), CTA, 해시태그 3개 이상.",
+        "rubric": [
+          "web_search를 사용했는가",
+          "헤드라인·본문·CTA·해시태그가 있는가",
+          "VEGA·로컬·프라이버시 맥락이 반영되었는가",
+          "검색 없이 지어낸 트렌드가 아닌가"
+        ]
+      },
+      {
+        "id": "ad_copy_json",
+        "harness": "smoke",
+        "verify": "office",
+        "prompt": "로컬 AI 워크스페이스 'VEGA' Instagram 광고 1종을 JSON으로 작성해줘.\n\n```json\n{\"headline\":\"30자 이내\",\"body\":\"150자 이내\",\"cta\":\"행동 유도 문구\",\"hashtags\":[\"#태그1\",\"#태그2\",\"#태그3\"]}\n```\n\n타깃: 비개발자 LLM 파워유저. 로컬·프라이버시·터미널 불필요 강조.",
+        "rubric": [
+          "headline·body·cta·hashtags 4키가 있는가",
+          "headline 30자·body 150자 이내인가",
+          "hashtags 3개 이상인가",
+          "VEGA·로컬 맥락이 반영되었는가"
+        ]
       }
     ],
     "swe": [
       {
         "id": "py_bugfix",
+        "harness": "smoke",
+        "verify": "swe",
         "prompt": "다음 파이썬 함수의 버그를 찾아 고쳐줘: `def avg(xs):\\n    return sum(xs) / len(xs)` — 빈 리스트에서 ZeroDivisionError가 난다. 빈 리스트면 0.0을 반환하도록 수정하고 수정본만 보여줘.",
         "rubric": [
           "빈 리스트 가드(len==0 또는 try)를 정확히 추가했는가",
@@ -45,17 +254,54 @@
       },
       {
         "id": "py_implement",
+        "harness": "smoke",
+        "verify": "swe",
         "prompt": "문자열에서 가장 빈번한 단어와 횟수를 반환하는 `top_word(text: str) -> tuple[str, int]` 를 구현해줘. 대소문자 무시, 구두점 제거.",
         "rubric": [
           "대소문자 무시·구두점 제거를 처리했는가",
           "최빈 단어와 횟수를 정확히 반환하는가",
           "표준 라이브러리만으로 간결하게 구현했는가"
         ]
+      },
+      {
+        "id": "py_is_palindrome",
+        "harness": "smoke",
+        "verify": "swe",
+        "prompt": "대소문자·공백·구두점을 무시하고 회문인지 판별하는 `is_palindrome(text: str) -> bool` 함수를 구현해줘. 예: 'A man, a plan, a canal: Panama' → True.",
+        "rubric": [
+          "공백·구두점·대소문자를 정규화했는가",
+          "회문 판별이 정확한가",
+          "함수 시그니처가 요구와 일치하는가"
+        ]
+      },
+      {
+        "id": "py_fizzbuzz",
+        "harness": "smoke",
+        "verify": "swe",
+        "prompt": "1부터 n까지 FizzBuzz 규칙(3의 배수→'Fizz', 5의 배수→'Buzz', 둘 다→'FizzBuzz')을 적용한 문자열 리스트를 반환하는 `fizzbuzz(n: int) -> list[str]` 를 구현해줘.",
+        "rubric": [
+          "3·5·15 규칙이 정확한가",
+          "1..n 순서 리스트를 반환하는가",
+          "엣지(n=0)를 안전하게 처리했는가"
+        ]
+      },
+      {
+        "id": "py_clamp",
+        "harness": "smoke",
+        "verify": "swe",
+        "prompt": "값을 [lo, hi] 범위로 제한하는 `clamp(val: float, lo: float, hi: float) -> float` 함수를 구현해줘. lo > hi 이면 ValueError.",
+        "rubric": [
+          "범위 밖 값이 lo/hi로 잘리는가",
+          "lo > hi 일 때 ValueError를 발생시키는가",
+          "경계값(lo, hi)을 그대로 반환하는가"
+        ]
       }
     ],
     "multilingual": [
       {
         "id": "ko_reasoning",
+        "harness": "smoke",
+        "verify": "none",
         "prompt": "철수는 영희보다 키가 크고, 영희는 민수보다 크다. 민수가 가장 작다면, 셋을 키 순으로 정렬하고 그 이유를 한국어로 설명해줘.",
         "rubric": [
           "정렬(철수>영희>민수)이 정확한가",
@@ -64,6 +310,8 @@
       },
       {
         "id": "lang_hallucination_guard",
+        "harness": "smoke",
+        "verify": "none",
         "prompt": "'안녕하세요, 오늘 날씨가 좋네요'를 자연스러운 한국어 문장 3개로 확장해줘. 반드시 한국어로만 답하라.",
         "rubric": [
           "출력에 한자·일본어 가나·중국어 간체 등 비한국어 문자가 혼입되지 않았는가",

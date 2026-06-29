@@ -203,6 +203,15 @@ class TestSessionsRouter:
             resp = client.delete("/api/sessions/test-sid")
         assert resp.status_code == 200
 
+    def test_session_delete_clears_research_mode(self, client):
+        # Deep Thinking 모드 상태가 세션 삭제 시 정리되는지 (누수 방지)
+        import web.state as _state
+        _state._RESEARCH_MODE["leak-sid"] = True
+        with patch("pipeline.session_store.delete_session"):
+            resp = client.delete("/api/sessions/leak-sid")
+        assert resp.status_code == 200
+        assert "leak-sid" not in _state._RESEARCH_MODE
+
     def test_get_plan_mode_default_false(self, client):
         resp = client.get("/api/sessions/new-sid-xyz/plan-mode")
         assert resp.status_code == 200

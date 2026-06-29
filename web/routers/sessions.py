@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 
 from web.state import (
     _ACCESS,
+    _LOAD_MODE,
     _PLAN_MODE,
     _RESEARCH_MODE,
     _SESSION_HISTORY,
@@ -170,6 +171,28 @@ async def set_research_mode_ep(sid: str, request: Request):
     return await _toggle_mode(request, sid, _RESEARCH_MODE, "research_mode")
 
 
+@router.get("/api/sessions/{sid}/load-mode")
+async def get_load_mode(sid: str):
+    mode = _LOAD_MODE.get(sid, "auto")
+    return JSONResponse({"load_mode": mode})
+
+
+@router.post("/api/sessions/{sid}/load-mode")
+async def set_load_mode_ep(sid: str, request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    mode = (body.get("load_mode") or body.get("mode") or "auto").strip().lower()
+    if mode == "auto":
+        _LOAD_MODE.pop(sid, None)
+    elif mode in ("light", "standard", "heavy", "fast"):
+        _LOAD_MODE[sid] = "light" if mode == "fast" else mode
+    else:
+        return JSONResponse({"error": f"unknown load_mode: {mode}"}, status_code=400)
+    return JSONResponse({"load_mode": _LOAD_MODE.get(sid, "auto")})
+
+
 @router.post("/api/sessions/{sid}/yolo-mode")
 async def set_yolo_mode_ep(sid: str, request: Request):
     global _YOLO_GLOBAL
@@ -288,5 +311,6 @@ async def session_delete(sid: str):
     delete_session(sid)
     _SESSION_HISTORY.pop(sid, None)
     _PLAN_MODE.pop(sid, None)
+    _RESEARCH_MODE.pop(sid, None)  # Deep Thinking 모드 상태 — 누수 방지
     _ACCESS.pop(sid, None)
     return JSONResponse({"ok": True})

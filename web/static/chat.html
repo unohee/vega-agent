@@ -1920,6 +1920,9 @@ button.status-item:hover { background: var(--surface2); color: var(--text); }
         </div>
         <!-- Research — permission과 직교한 작업 스타일(별도 토글) -->
         <button type="button" class="mode-chip" data-mode="research" title="심층 사고 모드 — reasoning effort 최대. 깊게 추론(단순 인터넷 조사 아님), 검색은 사실 확인 보조">🔬 심층사고</button>
+        <button type="button" class="mode-chip" data-load-mode="auto" title="부하 자동 분류 — 질문 길이·키워드로 light/standard/heavy">⚖ 자동</button>
+        <button type="button" class="mode-chip" data-load-mode="light" title="빠른 답변 — 도구·추론 최소 (INT-1893)">⚡ 빠름</button>
+        <button type="button" class="mode-chip" data-load-mode="heavy" title="깊은 작업 — 넉넉한 라운드·도구">🧠 깊게</button>
       </div>
       <div id="image-preview-bar"></div>
       <form id="input-form">
@@ -3710,6 +3713,38 @@ async function toggleResearchMode() {
   } catch { if (chip) chip.classList.remove('pending'); }
 }
 
+function updateLoadModeIndicator(mode) {
+  const m = mode || 'auto';
+  document.querySelectorAll('.mode-chip[data-load-mode]').forEach(chip => {
+    chip.classList.toggle('active', chip.dataset.loadMode === m);
+    chip.classList.remove('pending');
+  });
+}
+
+async function refreshLoadMode() {
+  if (!currentSid) { updateLoadModeIndicator('auto'); return; }
+  try {
+    const res = await fetch(`/api/sessions/${currentSid}/load-mode`);
+    const data = await res.json();
+    updateLoadModeIndicator(data.load_mode || 'auto');
+  } catch { updateLoadModeIndicator('auto'); }
+}
+
+async function setLoadMode(mode) {
+  if (!currentSid) { currentSid = await ensureSession(); if (!currentSid) return; }
+  document.querySelectorAll('.mode-chip[data-load-mode]').forEach(c => c.classList.add('pending'));
+  try {
+    const res = await fetch(`/api/sessions/${currentSid}/load-mode`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ load_mode: mode }),
+    });
+    const data = await res.json();
+    updateLoadModeIndicator(data.load_mode || 'auto');
+  } catch {
+    document.querySelectorAll('.mode-chip[data-load-mode]').forEach(c => c.classList.remove('pending'));
+  }
+}
+
 // currentSid가 없을 때 빈 세션 생성 — 모드 설정이 첫 메시지 전에도 작동하게.
 async function ensureSession() {
   if (currentSid) return currentSid;
@@ -3741,6 +3776,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // Research 칩
   const rc = document.querySelector('.mode-chip[data-mode="research"]');
   if (rc) rc.addEventListener('click', toggleResearchMode);
+  document.querySelectorAll('.mode-chip[data-load-mode]').forEach(chip => {
+    chip.addEventListener('click', () => setLoadMode(chip.dataset.loadMode));
+  });
+  refreshLoadMode();
   // 바깥 클릭 시 메뉴 닫기
   document.addEventListener('click', (e) => {
     const wrap = document.getElementById('perm-mode-wrap');
@@ -4191,6 +4230,7 @@ function _handleSseEvent(event, payload, bub, typer, tokenBufRef) {
     refreshSessions();
     refreshPlanMode();
     refreshResearchMode();
+    refreshLoadMode();
     refreshYoloMode();
     // usage-meta·컨텍스트 갱신은 typer 최종 렌더가 끝난 뒤에 실행 — 그래야 메타 라인이
     // 본문 세그먼트 "뒤"에 붙고, 이후 getStreamContent가 메타 라인 뒤에 새 세그먼트를
@@ -4544,6 +4584,7 @@ async function loadSession(sid, name, opts) {
     refreshWorkdir();
     refreshPlanMode();
     refreshResearchMode();
+    refreshLoadMode();
     refreshYoloMode();
     // 터미널이 열려있으면 새 세션으로 재연결
     if (_termOpen) _termConnect(sid);
@@ -6019,6 +6060,7 @@ const llmModelPickerCount = document.getElementById('llm-model-picker-count');
 let _modelPickerProvider = null;
 let _allModels = [];
 let _currentModelId = null;
+let _currentAutoRoute = false;  // 업무별 자동 라우터 활성 여부 (openrouter)
 let _modelSortKey = 'default';
 let _favorites = new Set(JSON.parse(localStorage.getItem('vega_model_favorites') || '[]'));
 
@@ -6086,7 +6128,8 @@ async function editLlmModel(name) {
     const { providers } = await r.json();
     const p = providers.find(p => p.name === name);
     _currentModelId = p?.default_model || null;
-  } catch { _currentModelId = null; }
+    _currentAutoRoute = !!p?.auto_route;
+  } catch { _currentModelId = null; _currentAutoRoute = false; }
   try {
     const r = await fetch(`/api/llm/models?provider=${encodeURIComponent(name)}`);
     const data = await r.json();
@@ -6177,10 +6220,19 @@ function renderModelList() {
     llmModelList.innerHTML = `<div class="dir-empty" style="padding:18px;text-align:center;font-size:11px">${emptyMsg}</div>`;
     return;
   }
-  llmModelList.innerHTML = filtered.slice(0, 200).map(m => {
+  // 업무별 자동 라우터 — openrouter 목록 최상단 고정. data-id="auto" 로 기존 선택 핸들러 재사용.
+  const autoRow = (_modelPickerProvider === 'openrouter') ? `
+      <div class="llm-model-row${_currentAutoRoute ? ' current' : ''}" data-id="auto">
+        <div class="llm-model-row-info">
+          <div class="llm-model-row-id">⚙ 자동 (업무별)</div>
+          <div class="llm-model-row-name">벤치 결과로 작업 부하별 모델 자동 선택</div>
+        </div>
+        <div class="llm-model-row-meta"><span class="pill">auto</span></div>
+      </div>` : '';
+  llmModelList.innerHTML = autoRow + filtered.slice(0, 200).map(m => {
     const mods = (m.modalities || []).filter(x => x !== 'text');
     const pin = m.price_in_per_mtok;
-    const isCur = m.id === _currentModelId;
+    const isCur = !_currentAutoRoute && m.id === _currentModelId;
     const isFav = _favorites.has(m.id);
     return `
       <div class="llm-model-row${isCur ? ' current' : ''}" data-id="${esc(m.id)}">
@@ -6233,7 +6285,7 @@ async function _selectModel(modelId) {
     });
     const data = await r.json();
     if (!r.ok) { showToast(data.error || '실패'); return; }
-    showToast(`${modelId} 선택됨`);
+    showToast(modelId === 'auto' ? '자동 (업무별) 라우팅 켜짐' : `${modelId} 선택됨`);
     llmModelPicker.classList.add('hidden');
     await loadLlmProviders();
     await loadActiveLlmLabel();
@@ -6246,8 +6298,11 @@ async function loadActiveLlmLabel() {
     const { providers, active } = await r.json();
     const cur = providers.find(p => p.name === active);
     if (cur) {
-      statusLlmLabel.textContent = cur.default_model || cur.label;
-      statusLlm.title = `${cur.label} · ${cur.default_model} (클릭해 변경)`;
+      const auto = !!cur.auto_route;
+      statusLlmLabel.textContent = auto ? '자동 (업무별)' : (cur.default_model || cur.label);
+      statusLlm.title = auto
+        ? `${cur.label} · 자동 (업무별) 라우팅 (클릭해 변경)`
+        : `${cur.label} · ${cur.default_model} (클릭해 변경)`;
     }
   } catch {}
 }

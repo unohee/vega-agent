@@ -404,7 +404,8 @@ class TestStreamGptLoop:
 
         captured_input = []
 
-        def fake_build_request(input_items, system, ce_mode=False, research_mode=False, tier=None):
+        def fake_build_request(input_items, system, ce_mode=False, research_mode=False,
+                               tier=None, model_override=None, load=None, **kwargs):
             captured_input.extend(input_items)
             return self._build_req_mock()
 

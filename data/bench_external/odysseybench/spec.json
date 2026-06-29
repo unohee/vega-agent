@@ -1,0 +1,101 @@
+[
+ {
+  "id": "ext_odysseybench_000",
+  "dir": "1-8",
+  "sub": "0",
+  "instruction": "delete all students' scores and the headers in score excel file",
+  "input": "score.xlsx",
+  "result_file": "score.xlsx",
+  "input_rel": "odysseybench/files/000/score.xlsx",
+  "golden_rel": "odysseybench/golden/000__score.xlsx",
+  "eval": "exact_match"
+ },
+ {
+  "id": "ext_odysseybench_001",
+  "dir": "1-8",
+  "sub": "1",
+  "instruction": "remove all students' class and the header in class member excel file",
+  "input": "class_member.xlsx",
+  "result_file": "class_member.xlsx",
+  "input_rel": "odysseybench/files/001/class_member.xlsx",
+  "golden_rel": "odysseybench/golden/001__class_member.xlsx",
+  "eval": "exact_match"
+ },
+ {
+  "id": "ext_odysseybench_002",
+  "dir": "1-8",
+  "sub": "2",
+  "instruction": "delete all amounts in salary excel file",
+  "input": "salary.xlsx",
+  "result_file": "salary.xlsx",
+  "input_rel": "odysseybench/files/002/salary.xlsx",
+  "golden_rel": "odysseybench/golden/002__salary.xlsx",
+  "eval": "exact_match"
+ },
+ {
+  "id": "ext_odysseybench_003",
+  "dir": "1-8",
+  "sub": "3",
+  "instruction": "delete everything in company budget excel file",
+  "input": "company_budget.xlsx",
+  "result_file": "company_budget.xlsx",
+  "input_rel": "odysseybench/files/003/company_budget.xlsx",
+  "golden_rel": "odysseybench/golden/003__company_budget.xlsx",
+  "eval": "exact_match"
+ },
+ {
+  "id": "ext_odysseybench_004",
+  "dir": "1-8",
+  "sub": "4",
+  "instruction": "delete all amounts in shopping list excel file",
+  "input": "shopping_list.xlsx",
+  "result_file": "shopping_list.xlsx",
+  "input_rel": "odysseybench/files/004/shopping_list.xlsx",
+  "golden_rel": "odysseybench/golden/004__shopping_list.xlsx",
+  "eval": "exact_match"
+ },
+ {
+  "id": "ext_odysseybench_005",
+  "dir": "1-11",
+  "sub": "0",
+  "instruction": "sort students score descently by midterm1, save as a new excel file as sorted_score.xlsx",
+  "input": "score.xlsx",
+  "result_file": "sorted_score.xlsx",
+  "input_rel": "odysseybench/files/005/score.xlsx",
+  "golden_rel": "odysseybench/golden/005__sorted_score.xlsx",
+  "eval": "exact_match"
+ },
+ {
+  "id": "ext_odysseybench_006",
+  "dir": "1-14",
+  "sub": "2",
+  "instruction": "swap the lowest and highest incoming item in salary excel file",
+  "input": "salary.xlsx",
+  "result_file": "salary.xlsx",
+  "input_rel": "odysseybench/files/006/salary.xlsx",
+  "golden_rel": "odysseybench/golden/006__salary.xlsx",
+  "eval": "exact_match"
+ },
+ {
+  "id": "ext_odysseybench_007",
+  "dir": "1-14",
+  "sub": "3",
+  "instruction": "swap the fewest and the most shopped item in shopping list excel file",
+  "input": "shopping_list.xlsx",
+  "result_file": "shopping_list.xlsx",
+  "input_rel": "odysseybench/files/007/shopping_list.xlsx",
+  "golden_rel": "odysseybench/golden/007__shopping_list.xlsx",
+  "eval": "exact_match"
+ },
+ {
+  "id": "ext_odysseybench_008",
+  "dir": "1-14",
+  "sub": "4",
+  "instruction": "swap the highest and second highest item in budget excel file",
+  "input": "company_budget.xlsx",
+  "result_file": "company_budget.xlsx",
+  "input_rel": "odysseybench/files/008/company_budget.xlsx",
+  "golden_rel": "odysseybench/golden/008__company_budget.xlsx",
+  "eval": "exact_match"
+ }
+]

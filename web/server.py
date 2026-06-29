@@ -283,6 +283,7 @@ from web.state import (  # noqa: E402
     _SESSION_HISTORY,
     _PLAN_MODE,
     _RESEARCH_MODE,
+    _LOAD_MODE,
     _YOLO_MODE,
     _GOAL_MODE,
     _TASK_REGISTRY,
@@ -1810,6 +1811,9 @@ async def _run_gpt_task(sid: str, history: list[dict], images: list[dict]) -> No
         if _GOAL_MODE.get(sid):
             system_prompt = _GOAL_MODE_GUIDE + "\n\n---\n\n" + system_prompt
         usage_stats: dict = {}
+        _load_ov = _LOAD_MODE.get(sid)
+        if _load_ov == "fast":
+            _load_ov = "light"
         parent_spawn_context = {
             "parent_session_id": sid,
             "parent_agent_id": None,
@@ -1841,6 +1845,7 @@ async def _run_gpt_task(sid: str, history: list[dict], images: list[dict]) -> No
                 plan_mode=_PLAN_MODE.get(sid, False),
                 ce_mode=_ce_mode_from_access(_ACCESS.get(sid, "local")),
                 research_mode=_RESEARCH_MODE.get(sid, False),
+                load_override=_load_ov,
                 spawn_context=parent_spawn_context,
             ))
             _wd = asyncio.ensure_future(_watchdog(_gpt_task))
@@ -1868,6 +1873,11 @@ async def _run_gpt_task(sid: str, history: list[dict], images: list[dict]) -> No
         history.append({"role": "assistant", "content": slim_text})
         # Cost calculation + model identification — must finish before DB save so it's persisted in usage_meta
         _llm_router.enrich_usage_stats(usage_stats)
+        try:
+            from pipeline.overthinking_telemetry import record_turn
+            record_turn(sid, usage_stats)
+        except Exception:
+            pass
         if full_text:
             # 도구가 하나라도 쓰였으면 인터리빙 events 저장 → 재방문 시 시간순 복원.
             # 순수 텍스트 응답은 events 불필요(텍스트 폴백이 더 가벼움).
