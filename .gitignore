@@ -104,3 +104,9 @@ pytest_output.log
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
 .wrangler/
+data/bench_fixtures/*.bak
+
+# 개인 금융 파일 (office 도구 테스트 잔여물) — 절대 커밋 금지
+samsungcard_*.xlsx
+*card_detail_*.xlsx
+agent-onboard.md

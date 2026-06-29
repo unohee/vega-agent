@@ -39,6 +39,8 @@
       "api_key_env": "OPENROUTER_API",
       "base_url": "https://openrouter.ai/api/v1",
       "default_model": "deepseek/deepseek-v4-flash",
+      "auto_route": true,
+      "_auto_route_comment": "업무별 자동 라우터(벤치 기반 per-turn 모델). 사용자가 특정 모델을 고르면 false로 꺼지고 default_model 고정 — 수동 선택 우선 (INT-1892)",
       "extra_headers": {
         "HTTP-Referer": "https://github.com/unohee/VEGA",
         "X-Title": "VEGA"

@@ -68,6 +68,9 @@ _LIGHT_ALLOWED_TOOLS: frozenset[str] = frozenset({
     "web_search", "web_fetch", "file_read", "memory_search", "memory_read",
     "memory_recall", "vega_query", "gmail_search", "calendar_list_events",
     "ask_user_question",
+    # 병렬 조사용 sub-agent — 검색 등 동시 호출이 필요한 단순 작업에서 fan-out 허용.
+    # 순차 툴 라운드 대신 자식 에이전트로 병렬화 (overthinking 없이 wall-clock 단축).
+    "dispatch_agent",
 })
 
 

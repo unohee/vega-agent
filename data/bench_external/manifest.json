@@ -1,0 +1,146 @@
+{
+  "_comment": "External benchmark routing subsets for VEGA (INT-1876). Run: python scripts/bench_external/ingest.py --suite all --routing",
+  "schema_version": 1,
+  "routing_suites": [
+    "humaneval",
+    "mbpp",
+    "swebench_lite",
+    "presentbench",
+    "slidesgen",
+    "deckbench",
+    "odysseybench",
+    "officeeval",
+    "creativity",
+    "adbench",
+    "bizgeneval"
+  ],
+  "suites": {
+    "humaneval": {
+      "title": "OpenAI HumanEval",
+      "license": "MIT",
+      "source_url": "https://github.com/openai/human-eval",
+      "routing_limit": 20,
+      "category": "swe",
+      "harness": "smoke",
+      "verify": "swe",
+      "routing_default": true
+    },
+    "mbpp": {
+      "title": "Google MBPP",
+      "license": "CC-BY-4.0",
+      "source_url": "https://github.com/google-research/google-research/tree/master/mbpp",
+      "routing_limit": 20,
+      "category": "swe",
+      "harness": "smoke",
+      "verify": "swe",
+      "routing_default": true
+    },
+    "swebench_lite": {
+      "title": "SWE-bench Lite (micro adapt)",
+      "license": "MIT",
+      "source_url": "https://www.swebench.com/lite",
+      "routing_limit": 10,
+      "category": "swe",
+      "harness": "agent",
+      "verify": "swe",
+      "routing_default": true
+    },
+    "presentbench": {
+      "title": "PresentBench (adapted subset)",
+      "license": "research",
+      "source_url": "https://arxiv.org/pdf/2603.07244",
+      "routing_limit": 15,
+      "category": "office",
+      "harness": "agent",
+      "verify": "office",
+      "required_tools": [
+        "pptx_create"
+      ],
+      "routing_default": true
+    },
+    "slidesgen": {
+      "title": "SlidesGen-Bench (adapted)",
+      "license": "research",
+      "source_url": "https://github.com/YunqiaoYang/SlidesGen-Bench",
+      "routing_limit": 10,
+      "category": "office",
+      "harness": "agent",
+      "verify": "office",
+      "required_tools": [
+        "pptx_create"
+      ],
+      "routing_default": true
+    },
+    "deckbench": {
+      "title": "DECKBench (adapted)",
+      "license": "research",
+      "source_url": "https://github.com/morgan-heisler/DeckBench",
+      "routing_limit": 5,
+      "category": "office",
+      "harness": "agent",
+      "verify": "none",
+      "required_tools": [
+        "pptx_create"
+      ],
+      "routing_default": true
+    },
+    "odysseybench": {
+      "title": "OdysseyBench (Excel portable subset)",
+      "license": "MIT (specs/golden) + Apache-2.0 (OfficeBench inputs)",
+      "source_url": "https://github.com/microsoft/OdysseyBench",
+      "input_source_url": "https://github.com/zlwang-cs/OfficeBench",
+      "routing_limit": 9,
+      "category": "office",
+      "harness": "agent",
+      "verify": "office",
+      "routing_default": true,
+      "note": "실데이터 이식: OdysseyBench subtasks_plus 지시문+reference 골든 + OfficeBench testbed 입력. 결정적 exact_match verify (judge 불필요). 입력/골든 xlsx는 odysseybench/{files,golden}/에 커밋."
+    },
+    "officeeval": {
+      "title": "OfficeEval Excel adapt",
+      "license": "research",
+      "source_url": "https://arxiv.org/html/2606.10956",
+      "routing_limit": 10,
+      "category": "office",
+      "harness": "agent",
+      "verify": "office",
+      "required_tools": [
+        "xlsx_create"
+      ],
+      "routing_default": true
+    },
+    "creativity": {
+      "title": "Creativity Benchmark (adapted)",
+      "license": "research",
+      "source_url": "https://arxiv.org/pdf/2509.09702",
+      "routing_limit": 10,
+      "category": "creative",
+      "harness": "smoke",
+      "verify": "none",
+      "routing_default": true
+    },
+    "adbench": {
+      "title": "AD-Bench (mock analytics adapt)",
+      "license": "research",
+      "source_url": "https://arxiv.org/html/2602.14257",
+      "routing_limit": 5,
+      "category": "office",
+      "harness": "agent",
+      "verify": "office",
+      "required_tools": [
+        "python_exec"
+      ],
+      "routing_default": true
+    },
+    "bizgeneval": {
+      "title": "BizGenEval slide-text adapt",
+      "license": "MIT",
+      "source_url": "https://github.com/microsoft/BizGenEval",
+      "routing_limit": 3,
+      "category": "creative",
+      "harness": "smoke",
+      "verify": "office",
+      "routing_default": true
+    }
+  }
+}

@@ -795,6 +795,9 @@ async def stream_gpt(
 
             call_id = tc["call_id"]
 
+            if stats is not None and name:
+                stats.setdefault("tools_called", []).append(name)
+
             if on_tool_start:
                 await on_tool_start(name, args, call_id)
 
