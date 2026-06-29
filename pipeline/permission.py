@@ -47,6 +47,7 @@ _TOOL_LEVELS: dict[str, Level] = {
     "gmail_modify_labels": Level.WRITE,
     "gmail_batch_modify": Level.WRITE,
     "gmail_download_attachment": Level.WRITE,
+    "gmail_collect_attachments": Level.WRITE,
     "calendar_create_event": Level.WRITE,
     "calendar_update_event": Level.WRITE,
     "file_edit": Level.WRITE,

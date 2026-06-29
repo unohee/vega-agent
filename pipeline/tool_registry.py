@@ -80,7 +80,7 @@ WORKSPACE_TOOLSETS: dict[str, dict] = {
         "tools": [
             "gmail_search", "gmail_read", "gmail_send", "gmail_draft",
             "gmail_modify_labels", "gmail_batch_modify",
-            "gmail_list_attachments", "gmail_download_attachment",
+            "gmail_list_attachments", "gmail_download_attachment", "gmail_collect_attachments",
             "calendar_list_events", "calendar_create_event",
             "calendar_update_event", "calendar_delete_event",
             "drive_search", "drive_read",
