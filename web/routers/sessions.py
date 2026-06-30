@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 
 from web.state import (
     _ACCESS,
+    _GOAL_MODE,
     _LOAD_MODE,
     _PLAN_MODE,
     _RESEARCH_MODE,
@@ -313,4 +314,9 @@ async def session_delete(sid: str):
     _PLAN_MODE.pop(sid, None)
     _RESEARCH_MODE.pop(sid, None)  # Deep Thinking 모드 상태 — 누수 방지
     _ACCESS.pop(sid, None)
+    # 나머지 per-session in-memory 상태도 모두 정리 — stale 누수 방지 (INT-2234)
+    _YOLO_MODE.pop(sid, None)
+    _LOAD_MODE.pop(sid, None)
+    _GOAL_MODE.pop(sid, None)
+    _TASK_REGISTRY.pop(sid, None)
     return JSONResponse({"ok": True})
