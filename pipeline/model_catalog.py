@@ -29,6 +29,18 @@ _CACHING_PREFIXES = ("anthropic/", "openai/", "deepseek/", "google/", "qwen/")
 # OpenRouter 전체 노출 대신 이 5개 계열로 고정한다 (EPIC INT-1876 / INT-1892).
 _ALLOWED_PROVIDERS = ("qwen", "deepseek", "google", "openai", "anthropic")
 
+# 이 계열은 가격·caching 게이트 없이 카탈로그 전체를 노출한다 (INT-2002 재개방).
+# 사용자가 플래그십(claude-opus, gpt-5.x, gemini-pro 등 $1 초과 모델)을 직접 고를 수 있게 한다.
+# 단 가격 미상(None) 모델이 auto-route 최저가 픽을 오염시키지 않도록 정렬에서 맨 뒤로 보낸다
+# (_price_sort_key — INT-2002/INT-1999).
+_ALWAYS_OPEN_PROVIDERS = ("google", "openai", "anthropic")
+
+
+def _price_sort_key(m: dict) -> float:
+    """out 가격 오름차순 정렬 키. 가격 미상(None)은 맨 뒤로(최저가 오인 방지)."""
+    po = m.get("price_out_per_mtok")
+    return po if po is not None else float("inf")
+
 
 def provider_of(model_id: str) -> str:
     """OpenRouter 모델 id 의 provider 계열 prefix (예: 'anthropic/claude-...' → 'anthropic')."""
@@ -64,17 +76,23 @@ def curate_models(models: list[dict]) -> list[dict]:
         mid = m.get("id", "")
         if not provider_allowed(mid):
             continue  # Qwen/Deepseek/Google/OpenAI/Anthropic 계열만 노출 (INT-1892)
-        if not within_budget(m):
-            continue
-        if not supports_caching(mid):
-            continue  # Prompt Caching 필수
+        always_open = provider_of(mid) in _ALWAYS_OPEN_PROVIDERS
+        if not always_open:
+            if not within_budget(m):
+                continue
+            if not supports_caching(mid):
+                continue  # Prompt Caching 필수
         out.append({
             **m,
-            "caching": True,
+            "caching": supports_caching(mid),
             "curated": True,
-            "curated_reason": "≤$1/Mtok in+out, prompt caching, allowed provider (INT-1888/1892)",
+            "curated_reason": (
+                "google/openai/anthropic full catalog (INT-2002)"
+                if always_open and not within_budget(m)
+                else "≤$1/Mtok in+out, prompt caching, allowed provider (INT-1888/1892)"
+            ),
         })
-    out.sort(key=lambda m: (m.get("price_out_per_mtok") or 0.0))
+    out.sort(key=_price_sort_key)
     return out
 
 
@@ -144,7 +162,7 @@ def select_model_for_load(
                 return min(
                     scored,
                     key=lambda m: (
-                        m.get("price_out_per_mtok") or 0.0,
+                        _price_sort_key(m),
                         -bench_scores[m["id"]],
                     ),
                 )
@@ -159,7 +177,7 @@ def select_model_for_load(
                 )
             ranked = sorted(scored, key=lambda m: bench_scores[m["id"]])
             return ranked[len(ranked) // 2]
-    by_price = sorted(curated, key=lambda m: (m.get("price_out_per_mtok") or 0.0))
+    by_price = sorted(curated, key=_price_sort_key)
     if load == "light":
         return by_price[0]
     if load == "heavy":

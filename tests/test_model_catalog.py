@@ -21,13 +21,40 @@ def _m(mid, pin, pout):
 
 
 def test_filters_out_over_budget():
+    # 예산 필터는 always-open(google/openai/anthropic) 외 provider 에만 적용 (INT-2002).
     out = curate_models([
         _m("deepseek/deepseek-v4-flash", 0.1, 0.3),
-        _m("anthropic/claude-opus-4-8", 15.0, 75.0),  # 프런티어 — $1 초과
+        _m("deepseek/deepseek-r2", 5.0, 20.0),  # deepseek 프런티어 — $1 초과 → 제외
     ])
     ids = [m["id"] for m in out]
     assert "deepseek/deepseek-v4-flash" in ids
-    assert "anthropic/claude-opus-4-8" not in ids
+    assert "deepseek/deepseek-r2" not in ids
+
+
+def test_always_open_providers_bypass_budget():
+    # google/openai/anthropic 플래그십은 $1 초과여도 노출 (INT-2002 재개방).
+    out = curate_models([
+        _m("anthropic/claude-opus-4-8", 15.0, 75.0),
+        _m("openai/gpt-5.5", 5.0, 15.0),
+        _m("google/gemini-3-pro", 2.0, 10.0),
+    ])
+    ids = [m["id"] for m in out]
+    assert "anthropic/claude-opus-4-8" in ids
+    assert "openai/gpt-5.5" in ids
+    assert "google/gemini-3-pro" in ids
+
+
+def test_always_open_unknown_price_exposed_but_sorted_last():
+    # 가격 미상 always-open 모델도 노출하되, auto-route 최저가 픽 오염을 막기 위해
+    # 정렬 맨 뒤로 보낸다 (INT-2002/INT-1999).
+    out = curate_models([
+        _m("openai/gpt-mystery", None, None),
+        _m("google/gemini-cheap", 0.1, 0.2),
+    ])
+    ids = [m["id"] for m in out]
+    assert ids[0] == "google/gemini-cheap"      # 실가격 최저가가 맨 앞
+    assert "openai/gpt-mystery" in ids          # None 도 노출(always-open)
+    assert ids[-1] == "openai/gpt-mystery"      # None 은 맨 뒤
 
 
 def test_caching_required():
