@@ -132,11 +132,16 @@ def save_command(name: str, description: str, body: str,
     if dest.exists() and not overwrite:
         return {"ok": False, "error": f"'/{name}' 이미 존재. 덮어쓰려면 overwrite=true"}
 
-    fm_lines = ["---", f"name: {name}", f"description: {description.strip()}"]
+    # YAML frontmatter 는 safe_dump 로 직렬화 (INT-2236) — description/argument_hint 에
+    # newline·quote·colon·# 이 들어가도 frontmatter 가 깨지거나 본문으로 새지 않는다
+    # (load_commands 가 safe_load 로 파싱하므로 round-trip 안전).
+    fm = {"name": name, "description": description.strip()}
     if argument_hint.strip():
-        fm_lines.append(f'argument-hint: "{argument_hint.strip()}"')
-    fm_lines.append("---")
-    content = "\n".join(fm_lines) + "\n\n" + body.strip() + "\n"
+        fm["argument-hint"] = argument_hint.strip()
+    frontmatter = yaml.safe_dump(
+        fm, allow_unicode=True, sort_keys=False, default_flow_style=False
+    ).strip()
+    content = "---\n" + frontmatter + "\n---\n\n" + body.strip() + "\n"
     dest.write_text(content, encoding="utf-8")
     return {"ok": True, "path": str(dest), "name": name}
 

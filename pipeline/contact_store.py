@@ -284,12 +284,22 @@ def get_contact_by_phone(phone: str) -> dict | None:
 
 def update_memo(name: str, memo: str) -> bool:
     """Update a contact's relationship memo. Returns True on success."""
+    name = (name or "").strip()
+    if not name:
+        # 빈 이름은 fallback LIKE '%' 가 돼 모든 연락처 memo 를 덮어쓴다 — 거부 (INT-2236)
+        return False
     con = _open_db()
     # 정확 일치 우선 — LIKE '%name%'는 동명 부분일치 전체 덮어씀(INT-1523)
     cur = con.execute("UPDATE contacts SET memo=? WHERE name=?", (memo, name))
     if cur.rowcount == 0:
-        # 정확 일치 없으면 접두사/접미사 LIKE (앵커 추가)
-        cur = con.execute("UPDATE contacts SET memo=? WHERE name LIKE ?", (memo, f"{name}%"))
+        # 정확 일치 없으면 접두사 LIKE — 단 wildcard('%'/'_') 이스케이프 + 단일 행만 (INT-2236).
+        # 미이스케이프 시 입력의 와일드카드/공통 prefix 가 여러 연락처를 한꺼번에 덮어쓴다.
+        like = name.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+        cur = con.execute(
+            "UPDATE contacts SET memo=? WHERE id = ("
+            "SELECT id FROM contacts WHERE name LIKE ? ESCAPE '\\' ORDER BY name LIMIT 1)",
+            (memo, like),
+        )
     con.commit()
     con.close()
     return cur.rowcount > 0

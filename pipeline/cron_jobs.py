@@ -5,7 +5,9 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
+import threading
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -13,6 +15,36 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 KST = ZoneInfo("Asia/Seoul")
+
+_cron_lock_local = threading.Lock()
+
+
+@contextlib.contextmanager
+def _cron_lock():
+    """load-modify-save 직렬화 (INT-2236) — UI/API create/toggle/delete 와 heartbeat
+    mark_run 의 동시 변경에서 lost update 방지. 스레드 락 + 프로세스 간 fcntl flock(POSIX).
+    Windows 는 fcntl 부재라 스레드 락만 적용."""
+    with _cron_lock_local:
+        try:
+            import fcntl
+        except ImportError:
+            yield
+            return
+        from pipeline.data_paths import data_dir
+        try:
+            lock_path = data_dir() / "cron_jobs.lock"
+        except Exception:
+            lock_path = _path().with_suffix(".lock")
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        f = open(lock_path, "w")
+        try:
+            fcntl.flock(f, fcntl.LOCK_EX)
+            yield
+        finally:
+            try:
+                fcntl.flock(f, fcntl.LOCK_UN)
+            finally:
+                f.close()
 
 
 def _path() -> Path:
@@ -114,9 +146,10 @@ def create_job(prompt: str, schedule: str, label: str = "", *, now_iso: str | No
     entry = _create_entry(prompt, schedule, label, now_iso=now_iso, is_slot=False)
     if "error" in entry:
         return entry
-    jobs = _load()
-    jobs.append(entry)
-    _save(jobs)
+    with _cron_lock():
+        jobs = _load()
+        jobs.append(entry)
+        _save(jobs)
     return entry
 
 
@@ -132,28 +165,31 @@ def create_slot(
     entry = _create_entry(prompt, schedule, label, now_iso=now_iso, is_slot=True, icon=icon)
     if "error" in entry:
         return entry
-    jobs = _load()
-    jobs.append(entry)
-    _save(jobs)
+    with _cron_lock():
+        jobs = _load()
+        jobs.append(entry)
+        _save(jobs)
     return entry
 
 
 def delete_job(job_id: str) -> dict:
-    jobs = _load()
-    new = [j for j in jobs if j.get("id") != job_id]
-    if len(new) == len(jobs):
-        return {"error": "작업을 찾을 수 없음"}
-    _save(new)
+    with _cron_lock():
+        jobs = _load()
+        new = [j for j in jobs if j.get("id") != job_id]
+        if len(new) == len(jobs):
+            return {"error": "작업을 찾을 수 없음"}
+        _save(new)
     return {"ok": True, "deleted": job_id}
 
 
 def set_enabled(job_id: str, enabled: bool) -> dict:
-    jobs = _load()
-    for j in jobs:
-        if j.get("id") == job_id:
-            j["enabled"] = enabled
-            _save(jobs)
-            return {"ok": True, "id": job_id, "enabled": enabled}
+    with _cron_lock():
+        jobs = _load()
+        for j in jobs:
+            if j.get("id") == job_id:
+                j["enabled"] = enabled
+                _save(jobs)
+                return {"ok": True, "id": job_id, "enabled": enabled}
     return {"error": "작업을 찾을 수 없음"}
 
 
@@ -178,13 +214,14 @@ def due_jobs(now: datetime | None = None) -> list[dict]:
 def mark_run(job_id: str, status: str, *, now: datetime | None = None, session_id: str | None = None) -> None:
     """실행 후 last_run/last_status 기록 + next_run 재계산. slot이면 last_session_id도 기록."""
     now = now or datetime.now(KST)
-    jobs = _load()
-    for j in jobs:
-        if j.get("id") == job_id:
-            j["last_run"] = now.isoformat()
-            j["last_status"] = status
-            j["next_run"] = _next_run(j["schedule"], now)
-            if j.get("is_slot") and session_id:
-                j["last_session_id"] = session_id
-            break
-    _save(jobs)
+    with _cron_lock():
+        jobs = _load()
+        for j in jobs:
+            if j.get("id") == job_id:
+                j["last_run"] = now.isoformat()
+                j["last_status"] = status
+                j["next_run"] = _next_run(j["schedule"], now)
+                if j.get("is_slot") and session_id:
+                    j["last_session_id"] = session_id
+                break
+        _save(jobs)
