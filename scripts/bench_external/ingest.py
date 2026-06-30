@@ -302,7 +302,11 @@ def ingest_odysseybench(limit: int) -> list[dict]:
     spec.json 은 download 스크립트가 생성(원본 task 지시문 + eval 함수 보존)."""
     spec_path = OUT_ROOT / "odysseybench" / "spec.json"
     if not spec_path.is_file():
-        return []
+        # 빈 리스트를 조용히 반환하면 ingest_suite 가 빈 tasks.jsonl 을 성공으로 기록해
+        # 데이터 누락이 green 으로 보인다 — 실패로 드러낸다 (INT-2237).
+        raise FileNotFoundError(
+            f"odysseybench spec.json 없음: {spec_path} — download 스크립트를 먼저 실행하세요."
+        )
     spec = json.loads(spec_path.read_text(encoding="utf-8"))
     out: list[dict] = []
     for i, s in enumerate(spec[:limit]):
