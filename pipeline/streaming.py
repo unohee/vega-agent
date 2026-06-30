@@ -328,6 +328,43 @@ def _strip_model_artifacts(text: str) -> tuple[str, int]:
     return _MODEL_ARTIFACT_RE.sub(_sub, text), n
 
 
+# Degeneration 안전망 (INT-1999 b). (a) penalty 가 주 처방이고, 이것은 그래도 새는
+# 잔여 케이스를 잡는 백엔드 안전망 — 도구 라운드의 중간 텍스트가 degenerate 하면
+# history 오염을 막고(round_text 폐기) auto_route 면 다음 라운드부터 sturdier 모델로 전환.
+_DEGEN_MAX_RETRIES = 1
+
+
+def _detect_degeneration(text: str, artifact_count: int = 0, *, artifact_threshold: int = 5) -> bool:
+    """라운드 텍스트가 degeneration(특수토큰 누수·반복 붕괴)인지 휴리스틱 판정.
+
+    오탐을 피하려 보수적으로 — 정상 텍스트(다양한 어휘)는 통과시킨다.
+    artifact_count: 이 라운드에서 strip 된 모델 특수토큰 누적 수."""
+    if artifact_count >= artifact_threshold:
+        return True
+    if len(text) < 300:
+        return False  # 짧은 텍스트는 반복 판단 불가 — 보류
+    tail = text[-400:]
+    words = tail.split()
+    if len(words) >= 20 and len(set(words)) / len(words) < 0.25:
+        return True  # 어휘 다양성 붕괴(같은 단어/구절 반복)
+    seg = tail[-40:]
+    if len(seg) == 40 and tail.count(seg) >= 3:
+        return True  # 동일 40자 구절 3회+ 반복
+    return False
+
+
+def _sturdier_model(current: str | None) -> str | None:
+    """auto_route 활성 시 더 견고한(heavy) 모델 id. 아니면 None(수동 선택 존중 → 전환 안 함)."""
+    try:
+        from pipeline.model_catalog import resolve_turn_model
+        m = resolve_turn_model("heavy")
+        if m and m != current:
+            return m
+    except Exception:
+        pass
+    return None
+
+
 def _iter_sse_lines(resp):
     """Generator that reads line-by-line from an http.client HTTPResponse."""
     buf = b""
@@ -515,6 +552,8 @@ def _stream_sse(
                 if content:
                     content, _na = _strip_model_artifacts(content)
                     if _na:
+                        if stats_out is not None:
+                            stats_out["artifact_count"] = stats_out.get("artifact_count", 0) + _na
                         logger.warning("[degeneration] 모델 특수토큰 %d개 제거 (model=%s)",
                                        _na, (stats_out or {}).get("model", "?"))
                     if content:
@@ -542,6 +581,8 @@ def _stream_sse(
                 delta = ev.get("delta", "")
                 if delta:
                     delta, _na = _strip_model_artifacts(delta)
+                    if _na and stats_out is not None:
+                        stats_out["artifact_count"] = stats_out.get("artifact_count", 0) + _na
                     if delta:
                         _queue_put(token_q, delta, loop)
 
@@ -711,6 +752,7 @@ async def stream_gpt(
     actual_rounds = 0
     tool_rounds = 0
     suppress_tools = False
+    degen_retries = 0
 
     # for timing measurement
     import time as _t
@@ -815,6 +857,26 @@ async def stream_gpt(
             if stats is not None:
                 stats["tool_round_cap_hit"] = True
             suppress_tools = True
+
+        # Degeneration 안전망 (INT-1999 b): 도구 라운드의 중간 텍스트가 degenerate 하면
+        # history 에 넣지 않고(오염 전파 차단) auto_route 면 다음 라운드부터 sturdier 모델로 전환.
+        # 최종 답변 라운드(no tools)의 degeneration 은 (a) penalty 에 의존 — 프론트 롤백 비용 때문에 제외.
+        _artifact_n = stats.get("artifact_count", 0) if stats is not None else 0
+        if degen_retries < _DEGEN_MAX_RETRIES and _detect_degeneration(round_text, _artifact_n):
+            if stats is not None:
+                stats["degenerated"] = True
+                stats.setdefault("degen_rounds", []).append(
+                    {"round": actual_rounds, "model": stats.get("model"), "artifacts": _artifact_n}
+                )
+            _sturdier = _sturdier_model(model_override)
+            if _sturdier:
+                model_override = _sturdier
+                degen_retries += 1
+                if stats is not None:
+                    stats["degen_switched_to"] = _sturdier
+            round_text = ""  # 오염 텍스트는 history 에 넣지 않는다
+            if stats is not None:
+                stats["artifact_count"] = 0  # 다음 라운드용 카운터 리셋
 
         # Preserve the assistant text from a tool-calling round in history. If dropped,
         # the model re-emits the same intro every round (echo) — INT-1411 regression.
