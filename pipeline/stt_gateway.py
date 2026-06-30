@@ -46,6 +46,22 @@ _WELL_KNOWN_ENDPOINTS: dict[str, str] = {
 # 서버(openai/groq/local)는 multipart 라 분기한다.
 _JSON_B64_PROVIDERS = {"openrouter"}
 
+# 보안 (INT-2231): 클라이언트가 set_stt_config 로 persist 할 수 있는 endpoint·api_key_env 제한.
+# 미검증 시 임의 endpoint 로 keychain/env 시크릿을 Bearer 로 유출(SSRF+exfiltration) 가능.
+_ALLOWED_KEY_ENVS = {"OPENAI_API_KEY", "GROQ_API_KEY", "OPENROUTER_API", ""}
+
+
+def _endpoint_allowed(url: str) -> bool:
+    """well-known transcription endpoint 또는 loopback 호스트만 허용."""
+    if url in _WELL_KNOWN_ENDPOINTS.values():
+        return True
+    try:
+        from urllib.parse import urlparse
+        host = (urlparse(url).hostname or "").lower()
+    except Exception:
+        return False
+    return host in ("localhost", "127.0.0.1", "::1")
+
 
 def _read_config() -> dict:
     for path in (_PROVIDERS_PATH, _REPO_PROVIDERS_PATH):
@@ -64,7 +80,18 @@ def get_stt_config() -> dict:
 
 
 def set_stt_config(stt_cfg: dict) -> None:
-    """Persists the STT configuration into llm_providers.json."""
+    """Persists the STT configuration into llm_providers.json.
+
+    Validates endpoint/api_key_env against a whitelist (INT-2231) — without it a client
+    could redirect uploaded audio and a chosen keychain/env secret to an attacker endpoint.
+    Raises ValueError on a disallowed endpoint or api_key_env.
+    """
+    ep = stt_cfg.get("endpoint")
+    if ep and not _endpoint_allowed(ep):
+        raise ValueError(f"허용되지 않은 STT endpoint: {ep}")
+    ke = stt_cfg.get("api_key_env")
+    if ke is not None and ke not in _ALLOWED_KEY_ENVS:
+        raise ValueError(f"허용되지 않은 api_key_env: {ke}")
     for path in (_PROVIDERS_PATH, _REPO_PROVIDERS_PATH):
         if path.exists():
             try:

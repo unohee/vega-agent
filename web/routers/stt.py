@@ -50,5 +50,8 @@ async def stt_set_config(request: Request):
     body = await request.json()
     allowed = {"provider", "model", "language", "response_format", "endpoint", "api_key_env"}
     cleaned = {k: v for k, v in body.items() if k in allowed}
-    set_stt_config(cleaned)
+    try:
+        set_stt_config(cleaned)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
     return JSONResponse({"ok": True})

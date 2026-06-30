@@ -294,6 +294,11 @@ async def widget_run(req: Request):
     async def on_waiting():
         await queue.put(("thinking", {}))
 
+    async def on_consent(name: str, args: dict, call_id: str = "") -> bool:
+        # widget 은 자동 실행 컨텍스트라 사용자 동의를 받을 수 없으므로, consent 가 필요한
+        # 위험 도구(삭제/주문/전송 등)는 거부한다 — chat turn 의 consent 게이트 우회 차단 (INT-2231).
+        return False
+
     async def runner():
         try:
             loop = asyncio.get_event_loop()
@@ -306,6 +311,7 @@ async def widget_run(req: Request):
                 on_tool_start=on_tool_start,
                 on_tool_done=on_tool_done,
                 on_waiting=on_waiting,
+                on_consent=on_consent,
                 working_dir=None,
                 stats=stats,
             )
@@ -315,21 +321,27 @@ async def widget_run(req: Request):
         finally:
             await queue.put((None, None))
 
-    asyncio.create_task(runner())
+    runner_task = asyncio.create_task(runner())
 
     async def event_gen():
-        while True:
-            try:
-                event, data = await asyncio.wait_for(queue.get(), timeout=5.0)
-            except asyncio.TimeoutError:
-                yield ": keepalive\n\n"
-                continue
-            if event is None:
-                break
-            payload = json.dumps(data, ensure_ascii=False)
-            yield f"event: {event}\ndata: {payload}\n\n"
-            if event in ("done", "error"):
-                break
+        # 클라이언트가 SSE 를 끊으면(GeneratorExit) background runner 도 취소해
+        # 도구·모델 자원이 계속 소비되지 않게 한다 (INT-2231).
+        try:
+            while True:
+                try:
+                    event, data = await asyncio.wait_for(queue.get(), timeout=5.0)
+                except asyncio.TimeoutError:
+                    yield ": keepalive\n\n"
+                    continue
+                if event is None:
+                    break
+                payload = json.dumps(data, ensure_ascii=False)
+                yield f"event: {event}\ndata: {payload}\n\n"
+                if event in ("done", "error"):
+                    break
+        finally:
+            if not runner_task.done():
+                runner_task.cancel()
 
     return StreamingResponse(
         event_gen(),

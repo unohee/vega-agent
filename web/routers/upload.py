@@ -79,6 +79,11 @@ async def upload_image_base64(request: Request):
     if not data_str:
         return JSONResponse({"error": "data 필드가 없습니다"}, status_code=400)
 
+    # 크기 제한 (INT-2231): multipart 경로의 MAX_SIZE 가 base64 경로엔 적용 안 돼,
+    # 거대 페이로드로 메모리/디스크 소진이 가능했다. 디코드 전후로 차단.
+    if len(data_str) > 28 * 1024 * 1024:  # ~20MB raw 의 base64 상한
+        return JSONResponse({"error": "이미지가 너무 큽니다 (최대 20MB)"}, status_code=413)
+
     ext_map = {"image/png": "png", "image/jpeg": "jpg", "image/jpg": "jpg",
                "image/webp": "webp", "image/gif": "gif"}
     ext = ext_map.get(media_type, "png")
@@ -86,6 +91,9 @@ async def upload_image_base64(request: Request):
     if not safe_name.endswith(f".{ext}"):
         safe_name = safe_name.rsplit(".", 1)[0] + f".{ext}"
 
+    raw = _b64.b64decode(data_str)
+    if len(raw) > 20 * 1024 * 1024:
+        return JSONResponse({"error": "이미지가 너무 큽니다 (최대 20MB)"}, status_code=413)
     dest = _UPLOAD_DIR / safe_name
-    dest.write_bytes(_b64.b64decode(data_str))
+    dest.write_bytes(raw)
     return JSONResponse({"path": str(dest), "filename": safe_name})
