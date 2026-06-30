@@ -151,8 +151,8 @@ event_entities(event_id, entity_id, match_text)
 
 ## Product / Business Boundary
 
-Rather than directly replacing model companies' apps head-on, VEGA is better positioned as a
-**personal agent workspace** that bridges multiple models and work tools. Claude, ChatGPT, Codex,
+Rather than directly replacing model companies' apps head-on, VEGA is better positioned as an
+**open agent workspace** that bridges multiple models and work tools. Claude, ChatGPT, Codex,
 OpenRouter, and local models are all swappable action/reasoning engines; VEGA's assets are sessions,
 memory, permissions, tool connections, execution records, and user workflows.
 
