@@ -32,7 +32,7 @@ from telegram.ext import (
     filters,
 )
 
-from pipeline.channels.core import run_agent_turn, reset_session
+from pipeline.channels.core import run_agent_turn, reset_session, split_for_channel
 
 _EDIT_INTERVAL = 0.7  # edit_message_text 최소 간격(초) — 텔레그램 rate limit 회피
 _TG_MAX = 4000        # 텔레그램 메시지 안전 길이(4096 한계 미만)
@@ -70,7 +70,9 @@ def _should_handle(update: Update, bot_username: str) -> bool:
     text = msg.text or ""
     if bot_username and f"@{bot_username}" in text:
         return True
-    if msg.reply_to_message and msg.reply_to_message.from_user and msg.reply_to_message.from_user.is_bot:
+    # 이 봇 자신에게 온 답글만 처리 (INT-2235) — 그룹의 다른 봇 답글을 가로채지 않는다.
+    replied = msg.reply_to_message and msg.reply_to_message.from_user
+    if replied and replied.is_bot and bot_username and replied.username == bot_username:
         return True
     return False
 
@@ -148,13 +150,17 @@ async def _on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     # 마지막 확정 렌더 (throttle 로 누락된 마지막 토큰 반영)
     chunk = final[state["base_len"]:] if final else ""
     if chunk:
+        # 잔여분이 _TG_MAX 를 넘어도 잘라 버리지 않고 분할 전송 (INT-2235).
+        parts = split_for_channel(chunk, _TG_MAX)
         if state["msg"] is None:
-            await ctx.bot.send_message(chat_id=chat_id, text=chunk[:_TG_MAX])
-        elif chunk[:_TG_MAX] != state["shown"]:
+            await ctx.bot.send_message(chat_id=chat_id, text=parts[0])
+        elif parts[0] != state["shown"]:
             try:
-                await state["msg"].edit_text(chunk[:_TG_MAX])
+                await state["msg"].edit_text(parts[0])
             except Exception:
                 pass
+        for extra in parts[1:]:
+            await ctx.bot.send_message(chat_id=chat_id, text=extra)
     elif state["msg"] is None and not final:
         await ctx.bot.send_message(chat_id=chat_id, text="(빈 응답)")
 

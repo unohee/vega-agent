@@ -1913,8 +1913,15 @@ TOOL_FUNCTIONS.update(GITHUB_TOOL_FUNCTIONS)
 
 def dispatch_tool(name: str, arguments: dict) -> str:
     """Invoke a tool → return JSON string. MCP tools use a separate async path (dispatch_tool_async)."""
-    # CE 게이트는 당분간 비활성 — 모든 진입점에서 전체 도구 실행 허용.
-    # (원격 노출 시 재활성화하려면 _CE_MODE_VAR + _CE_ALLOWED_TOOLS 차단을 되살릴 것.)
+    # 원격 채널(ce_mode) 실패폐쇄 게이트 (INT-2235): _CE_ALLOWED_TOOLS(로컬 exec/파일/iMessage
+    # 제외, SaaS read/write 는 서버 자격 위임으로 허용) + MCP 읽기 도구 외 전부 차단.
+    # 채널(Telegram/Slack)만 set_ce_mode(True) 하므로 로컬 세션(ce_mode=False)은 영향 없음 —
+    # CE 제거(로컬 전체 노출) 결정을 유지하면서 원격 채널만 다시 게이트한다.
+    if _CE_MODE_VAR.get(False) and name not in _CE_ALLOWED_TOOLS and not _is_light_mcp_read(name):
+        return json.dumps({
+            "error": f"원격 채널에서는 '{name}' 도구를 사용할 수 없습니다 (로컬 시스템 접근 차단).",
+            "ce_blocked": True,
+        }, ensure_ascii=False)
     # Block write/exec/external-send tools in /plan mode. ask_user_question and exit_plan_mode are allowed.
     if _PLAN_MODE_VAR.get() and name in _PLAN_BLOCKED_TOOLS:
         return json.dumps({
