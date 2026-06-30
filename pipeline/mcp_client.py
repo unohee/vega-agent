@@ -290,3 +290,13 @@ async def call_mcp_tool(qualified_name: str, arguments: dict) -> str:
 
 def is_mcp_tool(name: str) -> bool:
     return name in _tool_server
+
+
+def server_loaded(name: str) -> bool:
+    """MCP 서버가 init_mcp_tools 로 도구를 실제 로드했는지 (런타임 활성 여부).
+
+    네이티브 도구가 동급 MCP 서버로 대체됐는지 판정하는 데 쓴다 — 예: 공식
+    superthread-mcp 가 로드되면 열등한 네이티브 superthread read 도구를 숨긴다
+    (pipeline/tool_registry.py, INT-2009). 연결 실패로 서버가 스킵되면 False →
+    네이티브 도구가 fallback 으로 남는다."""
+    return bool(_tool_cache.get(name))

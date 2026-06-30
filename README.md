@@ -8,9 +8,10 @@ developer-only terminal/CLI agent setups. It gives non-developer power users the
 kind of control that technical users already build for themselves with shells,
 MCP servers, scripts, local daemons, and custom model routing.
 
-> VEGA Agent is the open, generalized layer extracted from a production personal agent.
-> It ships with the harness infrastructure; you supply the domain knowledge via
-> `data/agents/_default.md` and let users evolve behavior through natural language.
+> VEGA Agent is an open, generalized agent harness — the workspace, context, memory,
+> and workflow layer that wraps interchangeable models. It ships with the harness
+> infrastructure; you supply the domain knowledge via `data/agents/_default.md` and
+> let users evolve behavior through natural language.
 
 ---
 
@@ -86,14 +87,10 @@ cd desktop
 cargo tauri dev
 ```
 
-### 3. Code sandbox (optional — required for `bash_exec` / `python_exec`)
+Code execution (`python_exec` / `bash_exec` / `host_exec`) runs **host-first, out of
+the box** — no Docker or extra setup required.
 
-```bash
-cd sandbox
-docker compose up -d
-```
-
-### 4. Web search (optional — required for `web_search`)
+### 3. Web search (optional — required for `web_search`)
 
 Run a [SearXNG](https://docs.searxng.org/) instance and point `VEGA_SEARXNG_URL` at it.
 For team deployments, one shared instance is enough for all users.
@@ -156,12 +153,11 @@ pipeline/llm_gateway.py   Multi-provider router (ChatGPT / OpenRouter / LM Studi
 pipeline/tools*.py        Tool layer (Google / Code / Office / Memory / RULES)
 pipeline/compaction.py    20-turn compaction — summary + memory update + rule retrospect
 pipeline/tool_telemetry.py  Per-tool call stats (SQLite)
-pipeline/self_improve.py  Tool failure → GPT patch → sandbox verify → user approval
+pipeline/self_improve.py  Tool failure → GPT patch → host verify → user approval
 pipeline/session_store.py Session + message persistence (SQLite)
 desktop/                  Tauri v2 desktop app
 data/agents/_default.md   Operator constitution (immutable)
 data/agents/RULES.md      User behavior rules (mutable via rule_save)
-sandbox/                  Code execution Docker container
 ```
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full module reference.
