@@ -112,3 +112,4 @@ samsungcard_*.xlsx
 agent-onboard.md
 .claude/hooks/
 .claude/.last-ticket-sweep
+.claude/agents/
