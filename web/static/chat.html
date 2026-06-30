@@ -6519,13 +6519,14 @@ async function openFilePreview(path, name) {
     return;
   }
 
-  // PDF — pdf.js 캔버스 렌더 (실패 시 iframe 폴백)
+  // PDF — pdf.js 캔버스 렌더. WKWebView 의 네이티브 iframe PDF 는 빈 화면이라
+  // 폴백으로 쓰지 않는다(INT-2003). 실패 시 실제 오류를 표면화한다.
   if (_PDF_EXTS.has(dotExt)) {
     previewMeta.textContent = 'PDF';
     try {
       await renderPdfPreview(path);
     } catch (e) {
-      previewBody.innerHTML = `<iframe src="/api/fs/download?path=${encodeURIComponent(path)}" style="width:100%;height:100%;border:none;background:white"></iframe>`;
+      previewBody.innerHTML = `<div class="preview-error">PDF를 표시할 수 없습니다: ${esc(e.message || String(e))}</div>`;
     }
     return;
   }

@@ -5,6 +5,9 @@
 from __future__ import annotations
 
 import asyncio
+import errno
+import subprocess
+import time
 from pathlib import Path
 
 from fastapi import APIRouter, Request
@@ -14,6 +17,55 @@ router = APIRouter()
 
 
 from pipeline.path_guard import guard_path as _guard_path
+
+
+# ── iCloud dataless 파일 가드 (INT-2003) ──────────────────────────────────────
+# macOS File Provider 는 iCloud-evicted("dataless") 파일을 동기 read 할 때
+# EDEADLK(errno 11, "Resource deadlock avoided")를 던진다. 파일 미리보기/다운로드의
+# 세 증상(텍스트·이미지 raw OSError, docx "Package not found", PDF 흰 화면)은 모두
+# 이 한 트리거가 서로 다른 경로에서 표면화한 것이다 — 읽기 전에 동기 다운로드한다.
+
+def _ensure_materialized(p: Path) -> str | None:
+    """dataless 파일이면 동기 다운로드를 시도한다.
+
+    작은 probe read 로 EDEADLK 를 감지하고, 감지되면 brctl 로 다운로드를 트리거한 뒤
+    짧게 폴링한다. 읽기 가능/불필요 시 None, 끝내 실패하면 사용자용 한국어 메시지를 반환.
+    EDEADLK 가 아닌 OSError(없는 파일·권한 등)는 None 을 반환해 각 핸들러가 표면화하게 둔다.
+    블로킹 호출이므로 run_in_executor 로 감싸 호출할 것."""
+    def _probe() -> None:
+        with open(p, "rb") as f:
+            f.read(1)
+
+    try:
+        _probe()
+        return None
+    except OSError as e:
+        if e.errno != errno.EDEADLK:
+            return None
+
+    import shutil
+    if shutil.which("brctl"):
+        try:
+            subprocess.run(["brctl", "download", str(p)], check=False, timeout=30)
+        except Exception:
+            pass
+    for _ in range(40):  # 최대 ~10초 폴링
+        time.sleep(0.25)
+        try:
+            _probe()
+            return None
+        except OSError as e:
+            if e.errno != errno.EDEADLK:
+                return None
+    return ("iCloud에 보관된 파일이라 바로 열 수 없습니다. 다운로드가 끝나지 않았습니다 — "
+            "Finder에서 파일을 먼저 내려받은 뒤 다시 시도하세요.")
+
+
+def _humanize_oserror(e: Exception) -> str:
+    """read 경로에서 새어나오는 raw OSError 를 사용자용 메시지로 바꾼다."""
+    if isinstance(e, OSError) and e.errno == errno.EDEADLK:
+        return "iCloud에 보관된 파일이라 읽을 수 없습니다. Finder에서 먼저 내려받아 주세요."
+    return str(e)
 
 
 # ── Directory listing ─────────────────────────────────────────────────────────
@@ -113,6 +165,9 @@ async def fs_read(path: str):
         return JSONResponse({"error": f"경로 없음: {path}"}, status_code=404)
     if not p.is_file():
         return JSONResponse({"error": "파일이 아님"}, status_code=400)
+    mat_err = await asyncio.get_event_loop().run_in_executor(None, _ensure_materialized, p)
+    if mat_err:
+        return JSONResponse({"error": mat_err}, status_code=503)
     ext = p.suffix.lower()
     size = p.stat().st_size
 
@@ -148,7 +203,13 @@ async def fs_read(path: str):
                 "truncated": False, "kind": "markdown", "text": md,
             })
         except Exception as e:
-            return JSONResponse({"error": f"{ext} 변환 실패: {e}"}, status_code=500)
+            msg = str(e)
+            if "Package not found" in msg or "not a zip file" in msg.lower():
+                return JSONResponse(
+                    {"error": f"{ext} 파일을 열 수 없습니다 — 손상되었거나 유효한 {ext} 형식이 아닙니다."},
+                    status_code=500,
+                )
+            return JSONResponse({"error": f"{ext} 변환 실패: {_humanize_oserror(e)}"}, status_code=500)
 
     if ext in {".csv", ".tsv"}:
         try:
@@ -185,7 +246,7 @@ async def fs_read(path: str):
             "truncated": truncated, "kind": "text", "text": text,
         })
     except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
+        return JSONResponse({"error": _humanize_oserror(e)}, status_code=500)
 
 
 @router.get("/api/fs/download")
@@ -199,6 +260,9 @@ async def fs_download(path: str):
         return JSONResponse({"error": "파일 없음"}, status_code=404)
     if p.stat().st_size > 50 * 1024 * 1024:
         return JSONResponse({"error": "50MB 초과"}, status_code=413)
+    mat_err = await asyncio.get_event_loop().run_in_executor(None, _ensure_materialized, p)
+    if mat_err:
+        return JSONResponse({"error": mat_err}, status_code=503)
     ext = p.suffix.lower()
     media_type = {
         ".pdf": "application/pdf",
@@ -262,6 +326,9 @@ async def fs_read_image(path: str):
     media = _IMG_MEDIA.get(p.suffix.lower())
     if not media:
         return JSONResponse({"error": f"지원 안 하는 이미지 형식: {p.suffix}"}, status_code=400)
+    mat_err = await asyncio.get_event_loop().run_in_executor(None, _ensure_materialized, p)
+    if mat_err:
+        return JSONResponse({"error": mat_err}, status_code=503)
     try:
         raw = p.read_bytes()
         if len(raw) > _MAX_IMG_BYTES:
@@ -269,7 +336,7 @@ async def fs_read_image(path: str):
         b64 = _b64.b64encode(raw).decode()
         return JSONResponse({"data": b64, "media_type": media, "name": p.name})
     except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
+        return JSONResponse({"error": _humanize_oserror(e)}, status_code=500)
 
 
 # ── 외부 에디터로 열기 ────────────────────────────────────────────────────────
