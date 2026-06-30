@@ -110,3 +110,5 @@ data/bench_fixtures/*.bak
 samsungcard_*.xlsx
 *card_detail_*.xlsx
 agent-onboard.md
+.claude/hooks/
+.claude/.last-ticket-sweep
