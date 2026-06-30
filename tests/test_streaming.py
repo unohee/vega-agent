@@ -507,3 +507,61 @@ def test_strip_model_artifacts_leaves_normal_content_unchanged():
     ]:
         out, n = _strip_model_artifacts(text)
         assert n == 0 and out == text
+
+
+class TestDetectDegeneration:
+    """_detect_degeneration — 반복 붕괴·특수토큰 누수 휴리스틱 (INT-1999 b)"""
+
+    def test_normal_long_text_passes(self):
+        from pipeline.streaming import _detect_degeneration
+        normal = (
+            "VEGA는 로컬 우선 AI 워크스페이스입니다. 모델을 자유롭게 교체하면서도 "
+            "메모리와 워크플로를 한 곳에서 관리할 수 있습니다. 터미널 없이도 강력한 "
+            "기능을 쓰도록 설계했고, 권한 경계와 승인 흐름으로 안전을 보장합니다. "
+            "파일 접근, 도구 실행, 앱 연동은 모두 가시적인 허가 아래 동작하며 "
+            "사용자가 언제든 되돌릴 수 있습니다. 클라우드는 부가 기능이고 핵심은 "
+            "로컬에서 완결됩니다. 자신의 AI 계정을 그대로 연결해 쓰면 됩니다. "
+            "온보딩은 UI 중심으로 진행되어 복잡한 설정 파일을 직접 만질 필요가 없고, "
+            "프로바이더 키는 안전한 저장소에 보관됩니다. 세션과 기억은 모델을 바꿔도 "
+            "끊기지 않고 이어지며, 위험한 작업에는 명시적 확인을 요구합니다."
+        )
+        assert len(normal) >= 300
+        assert _detect_degeneration(normal) is False
+
+    def test_repetition_collapse_detected(self):
+        from pipeline.streaming import _detect_degeneration
+        assert _detect_degeneration("답변입니다 " * 80) is True
+
+    def test_artifact_count_over_threshold(self):
+        from pipeline.streaming import _detect_degeneration
+        assert _detect_degeneration("짧은 텍스트", artifact_count=5) is True
+
+    def test_short_text_held(self):
+        from pipeline.streaming import _detect_degeneration
+        # 300자 미만은 반복 판단 보류(오탐 방지)
+        assert _detect_degeneration("반복 반복 반복 반복") is False
+
+    def test_repeated_segment_detected(self):
+        from pipeline.streaming import _detect_degeneration
+        phrase = "0123456789" * 4  # 40자, 공백 없음 → seg 경로
+        assert _detect_degeneration(phrase * 10) is True
+
+
+class TestSturdierModel:
+    """_sturdier_model — auto_route 일 때만 모델 전환 (INT-1999 b)"""
+
+    def test_none_when_resolve_returns_none(self):
+        # resolve_turn_model None(수동 선택/auto_route off) → 전환 안 함
+        import pipeline.streaming as s
+        with patch("pipeline.model_catalog.resolve_turn_model", return_value=None):
+            assert s._sturdier_model("current/model") is None
+
+    def test_switches_on_autoroute(self):
+        import pipeline.streaming as s
+        with patch("pipeline.model_catalog.resolve_turn_model", return_value="anthropic/claude-opus"):
+            assert s._sturdier_model("deepseek/flash") == "anthropic/claude-opus"
+
+    def test_no_switch_when_same_model(self):
+        import pipeline.streaming as s
+        with patch("pipeline.model_catalog.resolve_turn_model", return_value="deepseek/flash"):
+            assert s._sturdier_model("deepseek/flash") is None
