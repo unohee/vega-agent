@@ -78,6 +78,63 @@ class TestFilterAvailableSchemas:
         assert "web_search" in names
 
 
+# ── MCP 대체: superthread 네이티브 read 도구 (INT-2009) ──────────────────────────
+
+def _set_superthread_auth(monkeypatch, value: bool):
+    import pipeline.auth.superthread as st
+    monkeypatch.setattr(st, "is_authenticated", lambda: value)
+
+
+def _set_mcp_loaded(monkeypatch, server: str, loaded: bool):
+    import pipeline.mcp_client as mc
+    cache = dict(mc._tool_cache)
+    if loaded:
+        cache[server] = [object()]  # 비어있지 않으면 로드된 것으로 간주
+    else:
+        cache.pop(server, None)
+    monkeypatch.setattr(mc, "_tool_cache", cache)
+
+
+_ST_SCHEMAS = [
+    {"type": "function", "name": "web_search"},
+    {"type": "function", "name": "superthread_search_cards"},
+    {"type": "function", "name": "superthread_get_card"},
+    {"type": "function", "name": "superthread_create_card"},
+    {"type": "function", "name": "superthread-mcp__find_tasks"},
+]
+
+
+class TestMcpSupersedesSuperthread:
+    def test_mcp_loaded_hides_native_read_keeps_create(self, monkeypatch):
+        _set_superthread_auth(monkeypatch, True)
+        _set_mcp_loaded(monkeypatch, "superthread-mcp", True)
+        names = [s["name"] for s in reg.filter_available_schemas(_ST_SCHEMAS)]
+        # 네이티브 read 도구는 숨겨진다
+        assert "superthread_search_cards" not in names
+        assert "superthread_get_card" not in names
+        # create_card 는 유지 (INT-1571 markdown→HTML)
+        assert "superthread_create_card" in names
+        # MCP 도구·코어 도구는 그대로
+        assert "superthread-mcp__find_tasks" in names
+        assert "web_search" in names
+
+    def test_mcp_not_loaded_keeps_native_fallback(self, monkeypatch):
+        _set_superthread_auth(monkeypatch, True)
+        _set_mcp_loaded(monkeypatch, "superthread-mcp", False)
+        names = [s["name"] for s in reg.filter_available_schemas(_ST_SCHEMAS)]
+        # MCP 미로드 → 네이티브 read 도구가 fallback 으로 남는다
+        assert "superthread_search_cards" in names
+        assert "superthread_get_card" in names
+
+    def test_unauth_superthread_filtered_regardless_of_mcp(self, monkeypatch):
+        # 미인증이면 toolset 게이트로 네이티브 전부 제외 (MCP 로드 여부와 무관)
+        _set_superthread_auth(monkeypatch, False)
+        _set_mcp_loaded(monkeypatch, "superthread-mcp", False)
+        names = [s["name"] for s in reg.filter_available_schemas(_ST_SCHEMAS)]
+        assert "superthread_search_cards" not in names
+        assert "superthread_create_card" not in names
+
+
 # ── 디스패치 게이트 ────────────────────────────────────────────────────────────
 
 class TestDispatchGate:

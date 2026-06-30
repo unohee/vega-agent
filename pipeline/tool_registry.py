@@ -124,6 +124,31 @@ _TOOL_TO_TOOLSET: dict[str, str] = {
 }
 
 
+# ── MCP 대체 (INT-2009) ────────────────────────────────────────────────────────
+# 공식 MCP 서버가 로드되면, 그와 중복되는 열등한 네이티브 도구를 스키마에서 숨긴다.
+# 네이티브 superthread read 도구(검색/단건/보드목록)는 카드 제목·본문 텍스트 매칭만
+# 가능해 보드/리스트 전수 열거·assignee/due 필터·체크리스트/댓글 조회를 못 한다.
+# 공식 superthread-mcp 의 find_tasks/task_list/checklist_list/comment_list 가 이를
+# 우월하게 대체하므로, MCP 로드 시 네이티브 read 도구를 노출하지 않아야 약한 모델이
+# 단순한 이름의 네이티브 검색을 골라 열거에 실패하는 일을 막는다. create_card 는
+# INT-1571 의 markdown→HTML 처리가 있어 대체 대상에서 제외(유지).
+_MCP_SUPERSEDED_TOOLS: dict[str, str] = {
+    "superthread_list_projects": "superthread-mcp",
+    "superthread_list_boards": "superthread-mcp",
+    "superthread_search_cards": "superthread-mcp",
+    "superthread_get_card": "superthread-mcp",
+}
+
+
+def _superseded_native_tools() -> set[str]:
+    """대체 MCP 서버가 현재 로드된 네이티브 도구 집합. MCP 미로드 시 빈 집합 → 네이티브 fallback."""
+    try:
+        from pipeline.mcp_client import server_loaded
+    except Exception:
+        return set()
+    return {t for t, srv in _MCP_SUPERSEDED_TOOLS.items() if server_loaded(srv)}
+
+
 # ── check_fn TTL 캐시 ─────────────────────────────────────────────────────────
 # hermes-agent tools/registry.py에서 차용. 원문 주석 인용:
 #   "For a long-lived CLI or gateway process, calling them on every
@@ -180,13 +205,16 @@ def is_toolset_available(toolset: str) -> bool:
 def filter_available_schemas(schemas: list[dict]) -> list[dict]:
     """미연결 toolset의 도구 스키마 제외 — hermes get_definitions()의 check_fn 필터에 해당.
 
-    워크스페이스 toolset에 속하지 않는 도구(코어/MCP)는 그대로 통과한다."""
+    워크스페이스 toolset에 속하지 않는 도구(코어/MCP)는 그대로 통과한다.
+    단, 동급 MCP 서버가 로드되어 대체된 네이티브 도구는 숨긴다 (INT-2009)."""
     unavailable = {ts for ts in WORKSPACE_TOOLSETS if not is_toolset_available(ts)}
-    if not unavailable:
+    superseded = _superseded_native_tools()
+    if not unavailable and not superseded:
         return schemas
     return [
         s for s in schemas
         if _TOOL_TO_TOOLSET.get(str(s.get("name", ""))) not in unavailable
+        and str(s.get("name", "")) not in superseded
     ]
 
 
