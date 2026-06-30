@@ -122,5 +122,12 @@ def set_wireguard(config: WireGuardConfigIn) -> dict:
     if config.persistent_keepalive is not None:
         lines.append(f"PersistentKeepalive = {config.persistent_keepalive}")
 
-    (wg_dir / "client.conf").write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+    conf_path = wg_dir / "client.conf"
+    conf_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+    # client.conf 에 PrivateKey 가 평문으로 들어가므로 소유자 전용 권한 (INT-2232) —
+    # 기본 umask(0644)면 같은 머신의 다른 사용자/프로세스가 개인키를 읽을 수 있다.
+    try:
+        conf_path.chmod(0o600)
+    except OSError:
+        pass
     return _redacted_wg_config()

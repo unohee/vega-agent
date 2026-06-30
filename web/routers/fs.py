@@ -172,6 +172,13 @@ async def fs_read(path: str):
     size = p.stat().st_size
 
     if ext in _OFFICE_MD_EXTS:
+        # office/PDF 변환은 파일 전체를 메모리로 올린다(텍스트 preview 와 달리 cap 없음).
+        # 큰 파일 한 건으로 메모리·CPU 폭증을 막기 위해 50MB 상한 (INT-2232).
+        if size > 50 * 1024 * 1024:
+            return JSONResponse(
+                {"error": f"미리보기는 50MB 까지만 지원합니다 ({size // 1024 // 1024}MB)"},
+                status_code=413,
+            )
         try:
             if ext == ".docx":
                 from pipeline.tools_google import _docx_to_html
@@ -270,10 +277,11 @@ async def fs_download(path: str):
         ".gif": "image/gif", ".svg": "image/svg+xml", ".webp": "image/webp",
     }.get(ext, "application/octet-stream")
     # 미리보기 뷰어(PDF iframe 등) 전용 — content_disposition_type="inline" 으로 서빙해야
-    # WebView/브라우저가 다운로드 대신 인라인 렌더한다. 기존엔 filename= 만 줘서 Starlette 가
-    # Content-Disposition: attachment 를 붙였고, iframe 이 이를 다운로드로 취급 → 빈 화면이었다
-    # (PDF 안 보임의 직접 원인). filename 은 유지하되 type 을 inline 으로 명시.
-    return FileResponse(str(p), media_type=media_type, filename=p.name, content_disposition_type="inline")
+    # WebView/브라우저가 다운로드 대신 인라인 렌더한다. filename 은 유지하되 type 을 inline 으로.
+    # 단 SVG 는 inline 으로 열면 활성 문서로 렌더돼 localhost origin 에서 스크립트 실행(XSS)이
+    # 가능하므로 강제 다운로드한다 (INT-2232). PDF inline 동작은 보존.
+    disposition = "attachment" if ext == ".svg" else "inline"
+    return FileResponse(str(p), media_type=media_type, filename=p.name, content_disposition_type=disposition)
 
 
 @router.post("/api/fs/reveal")

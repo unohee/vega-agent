@@ -116,6 +116,9 @@ async def data_wipe(request: Request):
     targets = list(_DATA_ASSETS)
     if include_tokens:
         targets += _TOKEN_ASSETS
+    # 과거 export zip(include_tokens=true 로 만든 것은 토큰 포함)도 삭제 — export 가 wipe
+    # 사각이라 토큰 사본이 디스크에 잔존하던 문제 (INT-2232). include_tokens 무관하게 정리.
+    targets.append("exports")
 
     # trash 경유 삭제 (복구 가능). trash CLI가 없으면 거부 — 직접 rm 금지(가드 원칙).
     trash_bin = shutil.which("trash")
