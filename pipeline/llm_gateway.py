@@ -428,6 +428,13 @@ def _has_image_input(input_items: list) -> bool:
     return False
 
 
+# Degeneration 완화 샘플링 (INT-1999). temperature 는 건드리지 않는다(보도자료 등 창의
+# 작업 보호). repetition/frequency penalty 로 반복 붕괴(garbage word spew)만 억제한다.
+# 미지원 provider 는 해당 필드를 무시한다(safe — 멀티 프로바이더 payload 공통 전달).
+_FREQUENCY_PENALTY = 0.3
+_REPETITION_PENALTY = 1.1
+
+
 def build_request(input_items: list, system: str, tool_schemas: list[dict], research_mode: bool = False, tier: str | None = None, model_override: str | None = None, load: str | None = None):
     """Builds a urllib.request.Request for the active provider (or the given tier).
     Replaces _build_request in streaming.py. Returns a (Request, kind) tuple.
@@ -536,7 +543,7 @@ def build_request(input_items: list, system: str, tool_schemas: list[dict], rese
         # Only set token limit when not ChatGPT Codex and in research mode
         if research_mode and not _is_chatgpt:
             payload["max_output_tokens"] = _res_max
-        elif load == "light" and not _is_chatgpt and _load_max:
+        elif not _is_chatgpt and _load_max:
             payload["max_output_tokens"] = _load_max
         _effort = prov.get("reasoning_effort") or (_load_effort if load == "light" else None) or ("high" if research_mode else None)
         if _effort:
@@ -556,7 +563,7 @@ def build_request(input_items: list, system: str, tool_schemas: list[dict], rese
             "model": model,
             "system": system_blocks,
             "messages": messages,
-            "max_tokens": _res_max if research_mode else (_load_max if load == "light" and _load_max else 8000),
+            "max_tokens": _res_max if research_mode else (_load_max or 8000),
             "stream": True,
         }
         if an_tools:
@@ -580,11 +587,16 @@ def build_request(input_items: list, system: str, tool_schemas: list[dict], rese
             "usage": {"include": True},  # OpenRouter: include usage in stream
             "stream_options": {"include_usage": True},  # OpenAI-compat (mlx-server, etc.): usage in last chunk
         }
-        # max_tokens: research > load budget > provider default
+        # max_tokens: research > load budget. 모든 load 에 상한을 둬 무한 spew 를 막는다 (INT-1999).
         if research_mode:
             payload["max_tokens"] = _res_max
-        elif load == "light" and _load_max:
+        elif _load_max:
             payload["max_tokens"] = _load_max
+        else:
+            payload["max_tokens"] = 8000
+        # Degeneration 완화: repetition/frequency penalty (INT-1999).
+        payload["frequency_penalty"] = _FREQUENCY_PENALTY
+        payload["repetition_penalty"] = _REPETITION_PENALTY
         if cc_tools:
             payload["tools"] = cc_tools
             payload["tool_choice"] = "auto"
