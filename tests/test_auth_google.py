@@ -124,8 +124,8 @@ class TestMultiAccount:
                    side_effect=lambda rt, c, s: "access_" + rt):
             assert get_access_token("b@y.com") == "access_tok_b"
             assert get_access_token("a@x.com") == "access_tok_a"
-            # 미일치 식별자 → 기본(첫) 계정 폴백
-            assert get_access_token("nobody@nowhere") == "access_tok_a"
+            # 미일치 식별자 → strict fail-closed: 기본 계정으로 폴백하지 않음 (INT-2233)
+            assert get_access_token("nobody@nowhere") is None
 
     def test_get_access_token_resolves_profile_key(self, fake_kc):
         """user_profile email_accounts 의 key('personal' 등)로도 계정을 찾는다."""
@@ -150,11 +150,13 @@ class TestMultiAccount:
     def test_exchange_code_first_account_writes_slot_and_mirror(self, fake_kc):
         """첫 계정 — 계정별 슬롯 + 레거시 미러 둘 다 기록 (INT-1471)."""
         token_resp = {"access_token": "at", "refresh_token": "tok_first"}
+        import pipeline.auth.google as _g
+        _g._pending_state["state"] = "s1"  # state 검증 강화 (INT-2233): 유효 state 세팅
         with patch("pipeline.auth.google._load_client", return_value=_FAKE_CLIENT), \
              patch("pipeline.auth.google._token_request", return_value=token_resp), \
              patch("pipeline.auth.google.urllib.request.urlopen",
                    return_value=self._userinfo_resp("user@example.com")):
-            result = exchange_code(code="4/0AY0e-gAbc...", state=None)
+            result = exchange_code(code="4/0AY0e-gAbc...", state="s1")
         assert result["ok"] is True
         assert result["email"] == "user@example.com"
         assert fake_kc.load(_token_slot("user@example.com")) == "tok_first"
@@ -168,11 +170,13 @@ class TestMultiAccount:
         fake_kc.save("email", "a@x.com")
         fake_kc.save(_token_slot("a@x.com"), "tok_a")
         token_resp = {"access_token": "at", "refresh_token": "tok_b"}
+        import pipeline.auth.google as _g
+        _g._pending_state["state"] = "s1"  # state 검증 강화 (INT-2233): 유효 state 세팅
         with patch("pipeline.auth.google._load_client", return_value=_FAKE_CLIENT), \
              patch("pipeline.auth.google._token_request", return_value=token_resp), \
              patch("pipeline.auth.google.urllib.request.urlopen",
                    return_value=self._userinfo_resp("b@y.com")):
-            result = exchange_code(code="code", state=None)
+            result = exchange_code(code="code", state="s1")
         assert result["ok"] is True
         assert json.loads(fake_kc.load(_ACCOUNTS_INDEX_SLOT)) == ["a@x.com", "b@y.com"]
         assert fake_kc.load(_token_slot("b@y.com")) == "tok_b"

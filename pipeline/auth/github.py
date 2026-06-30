@@ -9,10 +9,15 @@ from __future__ import annotations
 from pipeline import keychain as _kc
 
 KEY_ENV = "GITHUB_PERSONAL_ACCESS_TOKEN"
+# logout tombstone (INT-2233) — Keychain→.env→env fallback 때문에 Keychain delete 만으론
+# logout 후에도 인증 유지. 플래그로 token()을 차단하고 재연결(onboarding save) 시 해제.
+_LOGOUT_FLAG = KEY_ENV + "_logged_out"
 
 
 def token() -> str | None:
-    """저장된 GitHub PAT (Keychain → .env → 환경변수 순)."""
+    """저장된 GitHub PAT (Keychain → .env → 환경변수). logout 후엔 None (INT-2233)."""
+    if _kc.get_secret(_LOGOUT_FLAG):
+        return None
     return _kc.get(KEY_ENV) or None
 
 
@@ -27,3 +32,4 @@ def is_configured() -> bool:
 
 def logout() -> None:
     _kc.delete_secret(KEY_ENV)
+    _kc.set_secret(_LOGOUT_FLAG, "1")

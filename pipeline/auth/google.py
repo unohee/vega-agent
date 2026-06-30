@@ -176,8 +176,12 @@ def save_byo_client(client_id: str, client_secret: str) -> bool:
     if not _kc.set_secret(BYO_CLIENT_ID_SLOT, cid, service=KEYCHAIN_SERVICE):
         raise RuntimeError("client_id 저장 실패(secure store 미가용)")
     if not _kc.set_secret(BYO_CLIENT_SECRET_SLOT, csec, service=KEYCHAIN_SERVICE):
-        # partial-write 롤백 — id 만 남아 stale 한 짝 안 맞는 상태 방지
-        _kc.delete_secret(BYO_CLIENT_ID_SLOT, service=KEYCHAIN_SERVICE)
+        # partial-write 롤백 (INT-2233) — id 를 무조건 삭제하면 기존에 동작하던 BYO 설정이
+        # 파괴된다. 이전 client_id 가 있으면 복원하고, 없을 때만 삭제한다.
+        if prev_id:
+            _kc.set_secret(BYO_CLIENT_ID_SLOT, prev_id, service=KEYCHAIN_SERVICE)
+        else:
+            _kc.delete_secret(BYO_CLIENT_ID_SLOT, service=KEYCHAIN_SERVICE)
         raise RuntimeError("client_secret 저장 실패(secure store 미가용)")
     return _invalidate_tokens_if_client_changed(prev_id)
 
@@ -263,9 +267,10 @@ def stored_accounts() -> list[dict]:
     return [{"email": e, "is_default": i == 0} for i, e in enumerate(_ensure_account_index())]
 
 
-def _resolve_account_email(account: str | None) -> str | None:
+def _resolve_account_email(account: str | None, strict: bool = False) -> str | None:
     """계정 식별자(이메일 · user_profile key('personal' 등) · 로컬파트) → 인덱스의 이메일.
-    미지정·미일치면 기본(첫) 계정. 연결 계정이 없으면 None."""
+    account 미지정이면 기본(첫) 계정. strict=True 면 명시 account 미일치 시 None(fail closed),
+    strict=False(레거시)면 미일치도 기본 계정. 연결 계정이 없으면 None."""
     emails = _ensure_account_index()
     if not emails:
         return None
@@ -287,17 +292,21 @@ def _resolve_account_email(account: str | None) -> str | None:
         for e in emails:
             if e.split("@")[0].lower() == a:
                 return e
+        if strict:
+            # 명시 account 가 어디에도 안 맞으면 기본 계정으로 떨어지지 않는다 (INT-2233):
+            # 오타/stale account 키로 엉뚱한 사용자 토큰을 쓰는 것을 막는다.
+            return None
     return emails[0]
 
 
 def stored_refresh_token_for(account: str | None = None) -> str | None:
-    """계정 지정 토큰 조회. account 미지정이면 레거시 단일 슬롯 경로(하위호환)."""
-    if account:
-        email = _resolve_account_email(account)
-        if email:
-            token = keychain_load(_token_slot(email))
-            if token:
-                return token
+    """계정 지정 토큰 조회. account 미지정이면 레거시 단일 슬롯 경로(하위호환).
+
+    account 가 명시되면 fail-closed (INT-2233): 미해결/토큰 없음이면 기본 계정으로
+    fallback 하지 않고 None — 명시 계정이 아닌 다른 사용자로 실행되는 것을 방지."""
+    if account is not None:
+        email = _resolve_account_email(account, strict=True)
+        return keychain_load(_token_slot(email)) if email else None
     return stored_refresh_token()
 
 
@@ -404,7 +413,8 @@ def _token_request(payload: dict) -> dict:
 def exchange_code(code: str, state: str | None = None) -> dict:
     """code → tokens → refresh_token Keychain 저장.
     반환: {"ok", "email", "error"}. 백엔드 GET /google/callback 가 호출."""
-    if state is not None and _pending_state.get("state") and state != _pending_state["state"]:
+    # state 정확 일치 필수 (INT-2233): 누락/pending 부재 시 통과하면 login CSRF·세션 주입.
+    if not _pending_state.get("state") or state != _pending_state["state"]:
         return {"ok": False, "email": None, "error": "state 불일치 — 보안상 중단"}
     try:
         client = _load_client()

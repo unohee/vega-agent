@@ -348,6 +348,7 @@ async def configure_provider(payload: ProviderPayload):
             return JSONResponse({"ok": False, "error": err or "키 검증 실패"}, status_code=400)
         key_env = entry["key_env"]
         keychain.set_secret(key_env, key)
+        keychain.delete_secret(f"{key_env}_logged_out")  # 재연결 시 logout tombstone 해제 (INT-2233)
         os.environ[key_env] = key  # 현재 프로세스 즉시 반영
         prov_entry = _provider_json_for(entry, payload.model)
         upsert_provider(entry["id"], prov_entry)
@@ -420,6 +421,7 @@ async def configure_plugin_key(payload: PluginKeyPayload):
     from pipeline import keychain
     key_env = entry["key_env"]
     keychain.set_secret(key_env, key)
+    keychain.delete_secret(f"{key_env}_logged_out")  # 재연결 시 logout tombstone 해제 (INT-2233)
     os.environ[key_env] = key  # 현재 프로세스 즉시 반영
     try:
         from pipeline.tool_registry import invalidate_check_fn_cache

@@ -74,6 +74,12 @@ _COMMON_MULTI_LABEL_PUBLIC_SUFFIXES = {
     "co.kr", "ne.kr", "or.kr", "ac.kr", "go.kr",
     "com.br", "net.br", "org.br", "gov.br",
     "com.cn", "net.cn", "org.cn", "gov.cn",
+    # 공용 앱 호스팅 도메인 (INT-2233): 이게 없으면 portal.github.io 와
+    # attacker.github.io 가 same-site 로 오판돼, 브로커 자격이 같은 public suffix 의
+    # 공격자 서브도메인으로 샌다. 완전한 PSL 은 아니므로 흔한 호스팅 suffix 만 우선 차단
+    # (durable fix 는 publicsuffix2 의존성 추가 — INT-2233 코멘트 참조).
+    "github.io", "pages.dev", "workers.dev", "herokuapp.com",
+    "vercel.app", "netlify.app", "web.app", "firebaseapp.com",
 }
 
 

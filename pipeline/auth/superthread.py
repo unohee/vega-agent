@@ -248,7 +248,8 @@ def _post_json(url: str, payload: dict, headers: dict | None = None) -> dict:
 def exchange_code(code: str, state: str | None = None) -> dict:
     """code → PKCE 토큰 교환 → access_token → PAT 발급 → Keychain 저장.
     반환: {"ok", "expires_at", "error"}. 백엔드 GET /superthread/callback 가 호출."""
-    if state is not None and _pending_state.get("state") and state != _pending_state["state"]:
+    # state 정확 일치 필수 (INT-2233): 누락/pending 부재 시 통과하면 login CSRF·세션 주입.
+    if not _pending_state.get("state") or state != _pending_state["state"]:
         return {"ok": False, "expires_at": None, "error": "state 불일치 — 보안상 중단"}
 
     verifier = _pending_state.get("code_verifier")
