@@ -35,6 +35,7 @@ def test_build_request_light_sets_max_tokens_chat_completions():
     import pipeline.llm_gateway as gw
 
     with patch.object(gw, "get_provider_for_tier", return_value=_FAKE_OPENROUTER), \
+         patch.object(gw, "get_active_provider", return_value=_FAKE_OPENROUTER), \
          patch.dict("os.environ", {"OPENROUTER_API": "sk-test"}):
         req, kind = gw.build_request(
             [{"role": "user", "content": "hi"}],
@@ -52,6 +53,7 @@ def test_build_request_all_loads_cap_max_tokens():
     import pipeline.llm_gateway as gw
 
     with patch.object(gw, "get_provider_for_tier", return_value=_FAKE_OPENROUTER), \
+         patch.object(gw, "get_active_provider", return_value=_FAKE_OPENROUTER), \
          patch.dict("os.environ", {"OPENROUTER_API": "sk-test"}):
         for load, expected in (("light", 1200), ("standard", 4000), ("heavy", 8000)):
             req, kind = gw.build_request(
@@ -68,6 +70,7 @@ def test_build_request_adds_degeneration_penalties():
     import pipeline.llm_gateway as gw
 
     with patch.object(gw, "get_provider_for_tier", return_value=_FAKE_OPENROUTER), \
+         patch.object(gw, "get_active_provider", return_value=_FAKE_OPENROUTER), \
          patch.dict("os.environ", {"OPENROUTER_API": "sk-test"}):
         req, kind = gw.build_request(
             [{"role": "user", "content": "hi"}], "system", [], load="standard"
