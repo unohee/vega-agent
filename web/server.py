@@ -239,15 +239,17 @@ app.include_router(_network_router.router)
 
 # CORS — allow Tauri app origin + localhost only. Wildcard removed to block cross-origin CSRF.
 from fastapi.middleware.cors import CORSMiddleware
+# 허용 Origin — Tauri 앱 + localhost 전용. CORS 미들웨어와 WebSocket Origin 검증이 공유.
+_ALLOWED_ORIGINS = [
+    "tauri://localhost",  # cxt-ignore: fake_data
+    "http://localhost:8100",  # cxt-ignore: fake_data
+    "http://127.0.0.1:8100",  # cxt-ignore: fake_data
+    "http://localhost:8101",  # cxt-ignore: fake_data
+    "http://127.0.0.1:8101",  # cxt-ignore: fake_data
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "tauri://localhost",  # cxt-ignore: fake_data
-        "http://localhost:8100",  # cxt-ignore: fake_data
-        "http://127.0.0.1:8100",  # cxt-ignore: fake_data
-        "http://localhost:8101",  # cxt-ignore: fake_data
-        "http://127.0.0.1:8101",  # cxt-ignore: fake_data
-    ],
+    allow_origins=_ALLOWED_ORIGINS,
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -1103,13 +1105,33 @@ async def approve_command(req: Request):
 
     # host_exec approval — execute, then push result to session approval_queue → resumes VEGA loop
     command = body.get("command", "")
+    call_id = body.get("call_id", "")
+    reg = _TASK_REGISTRY.get(sid)
 
     if not approved:
-        # Rejected: push rejection signal to queue
-        reg = _TASK_REGISTRY.get(sid)
-        if reg and "approval_queue" in reg:
-            await reg["approval_queue"].put({"approved": False, "result": None})
+        # Rejected: push rejection signal to queue + pending 정리
+        if reg:
+            reg.get("_pending_approvals", {}).pop(call_id, None)
+            if "approval_queue" in reg:
+                await reg["approval_queue"].put({"approved": False, "result": None})
         return JSONResponse({"ok": False, "result": "거절됨"})
+
+    # 무결성 (INT-2231): body 의 command 를 그대로 실행하지 않는다. 모델 요청 시 call_id 로
+    # 저장해 둔 pending command 만 실행 — 일치하는 pending 이 없으면 거부(임의 명령 실행 차단).
+    pending = reg.get("_pending_approvals", {}) if reg else {}
+    server_cmd = None
+    if call_id and call_id in pending:
+        server_cmd = pending.pop(call_id)
+    elif command:
+        for cid, c in list(pending.items()):
+            if c == command:
+                server_cmd = pending.pop(cid)
+                break
+    if server_cmd is None:
+        return JSONResponse(
+            {"ok": False, "result": "승인 대기 중인 명령과 일치하지 않습니다"}, status_code=400
+        )
+    command = server_cmd
 
     try:
         from pipeline.tools_code import host_exec
@@ -1117,7 +1139,6 @@ async def approve_command(req: Request):
     except Exception as e:
         exec_result = {"error": str(e)}
 
-    reg = _TASK_REGISTRY.get(sid)
     if reg and "approval_queue" in reg:
         await reg["approval_queue"].put({"approved": True, "result": exec_result})
 
@@ -1590,6 +1611,9 @@ async def _run_gpt_task(sid: str, history: list[dict], images: list[dict]) -> No
                         "summary": summary,
                     }})
                     return actual
+                # 승인 무결성 (INT-2231): /api/approve 가 body 의 임의 command 를 실행하지
+                # 못하도록, 모델이 요청한 command 를 call_id 로 서버에 저장해 둔다.
+                reg.setdefault("_pending_approvals", {})[call_id] = command
                 _push_event(reg, {"event": "approval", "data": {
                     "call_id": call_id, "name": name,
                     "command": command,
@@ -1963,7 +1987,14 @@ def _persist_attached_image(img: dict) -> str:
     dest_dir = _uploads_dir()
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest = dest_dir / f"{_uuid.uuid4().hex[:8]}_attached.{ext}"
-    dest.write_bytes(_b64.b64decode(img["data"]))
+    # 크기 제한 (INT-2231) — 거대 base64 페이로드로 메모리/디스크 소진 방지.
+    b64data = img.get("data") or ""
+    if len(b64data) > 28 * 1024 * 1024:  # ~20MB raw 의 base64 상한
+        raise ValueError("첨부 이미지가 너무 큽니다 (최대 20MB)")
+    raw = _b64.b64decode(b64data)
+    if len(raw) > 20 * 1024 * 1024:
+        raise ValueError("첨부 이미지가 너무 큽니다 (최대 20MB)")
+    dest.write_bytes(raw)
     return str(dest)
 
 
@@ -2137,6 +2168,14 @@ async def chat_stream(request: Request):
 async def terminal_ws(websocket: WebSocket, sid: str):
     import subprocess
     await websocket.accept()
+    # CSWSH 방어 (INT-2231): WebSocket 은 CORS preflight 대상이 아니므로, 브라우저가 보낸
+    # Origin 이 화이트리스트에 없으면 거부한다. IP 게이트만으로는 같은 머신의 악성 웹페이지가
+    # ws://127.0.0.1:8100/ws/terminal 로 cross-site 연결(loopback peer → IP 게이트 통과)하는
+    # 것을 못 막는다. Origin 이 없는 경우(native/CLI 클라이언트)는 아래 IP 게이트로만 판정.
+    _origin = websocket.headers.get("origin")
+    if _origin and _origin not in _ALLOWED_ORIGINS:
+        await websocket.close(code=1008)
+        return
     # HTTP 미들웨어는 WebSocket scope를 커버하지 않으므로 여기서 직접 원격 게이트.
     # loopback 또는 허용된 원격(Tailscale/enterprise key)이 아니면 즉시 닫는다.
     if not _state_mod.is_remote_allowed(websocket):
