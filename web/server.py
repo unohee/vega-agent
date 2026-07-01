@@ -371,7 +371,8 @@ _RESEARCH_MODE_GUIDE = """## 연구 모드 (Research Mode) 활성화
 # "local"      : loopback connection (Tauri app, local terminal)
 # "enterprise" : remote client with valid X-VEGA-Key header
 # 원격 차단은 _remote_access_gate 미들웨어 + state.is_remote_allowed 가 담당.
-_ACCESS: dict[str, str] = {}
+# _ACCESS 는 web.state 에서 import 한 공유 dict 를 그대로 쓴다 — 여기서 재할당하면
+# web.routers.sessions 의 access 정리가 다른 객체를 봐 분열된다 (INT-2234).
 
 _ENT_KEY_KC = "vega-enterprise-keys"   # Keychain service name
 
@@ -459,7 +460,8 @@ _GOAL_MODE_GUIDE = """## 장기작업 모드 (Goal Mode) 활성
 #   "done": bool,                  # task fully finished
 #   "consumer": asyncio.Event,     # signals new event arrival
 # }
-_TASK_REGISTRY: dict[str, dict] = {}
+# _TASK_REGISTRY 는 web.state 에서 import 한 공유 dict — 여기서 재할당하면 web.routers.sessions
+# 의 active/resume/zombie cleanup 이 빈 registry 를 보게 된다 (INT-2234, CRITICAL).
 
 
 def _get_history(sid: str) -> list[dict]:

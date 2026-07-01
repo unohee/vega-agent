@@ -124,7 +124,14 @@ async def scheduler_set_time(payload: ScheduleTime):
 
     label = _job_label(payload.job)
     subprocess.run(["launchctl", "unload", str(plist)], capture_output=True, timeout=5)
-    subprocess.run(["launchctl", "load", str(plist)], capture_output=True, timeout=5)
+    # unload 는 미로드 상태면 non-zero 라 load 결과로만 성공 판정 (INT-2234) — 실패를
+    # 무시하고 ok=true 를 반환하면 스케줄이 안 바뀌었는데 성공으로 오보된다.
+    r_load = subprocess.run(["launchctl", "load", str(plist)], capture_output=True, text=True, timeout=5)
+    if r_load.returncode != 0:
+        return JSONResponse(
+            {"ok": False, "job": payload.job, "error": (r_load.stderr or "launchctl load 실패").strip()},
+            status_code=500,
+        )
 
     return JSONResponse({
         "ok": True,
