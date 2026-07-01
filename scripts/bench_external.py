@@ -62,7 +62,8 @@ def main() -> int:
     ap.add_argument("--limit-tasks", type=int, default=0)
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--out", default="build_output/bench_external_merged.json")
-    ap.add_argument("--wrapper", default="none", choices=("none", "slidesgen", "presentbench"))
+    # --wrapper 제거 (INT-2237): runner 가 wrapper 모듈을 실제로 호출하지 않아 메타데이터만
+    # 거짓 기록했다. presentbench 채점은 verify_office 가 자동 수행(플래그 무관).
     ap.add_argument("--judge", default="", help="openrouter|claude-cli (or env VEGA_BENCH_JUDGE)")
     args = ap.parse_args()
 
@@ -93,7 +94,7 @@ def main() -> int:
 
     total = len(smoke_tasks) + len(agent_tasks)
     print(f"[bench-external] suites={suites} smoke={len(smoke_tasks)} agent={len(agent_tasks)} "
-          f"models={len(models)} wrapper={args.wrapper}")
+          f"models={len(models)}")
 
     if args.dry_run:
         for t in smoke_tasks[:3] + agent_tasks[:3]:
@@ -125,7 +126,6 @@ def main() -> int:
 
     artifact = bl.build_artifact(results, harness="external")
     artifact["external_suites"] = suites
-    artifact["wrapper"] = args.wrapper
     out = REPO / args.out
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(artifact, ensure_ascii=False, indent=2), encoding="utf-8")

@@ -188,7 +188,10 @@ def _verify_ad_copy_json(blob: Any) -> tuple[bool, str | None, list[str]]:
     return True, None, checks
 
 
-def _verify_pptx_deck(paths: list[str], *, min_slides: int = 5) -> tuple[bool, str | None, list[str], str | None]:
+def _verify_pptx_deck(paths: list[str], *, min_slides: int = 5,
+                      require_keyword: str | None = "vega") -> tuple[bool, str | None, list[str], str | None]:
+    # require_keyword=None 이면 키워드 검사를 생략한다 (INT-2237) — slidesgen/deckbench 처럼
+    # 'vega' 를 요구하지 않는 generic 덱이 false negative 로 떨어지지 않게.
     from pipeline.tools_office import pptx_read
 
     checks: list[str] = []
@@ -203,9 +206,10 @@ def _verify_pptx_deck(paths: list[str], *, min_slides: int = 5) -> tuple[bool, s
         texts = " ".join(
             t for s in (rd.get("slides") or []) for t in (s.get("texts") or [])
         ).lower()
-        if "vega" not in texts:
-            continue
-        checks.append("vega_keyword")
+        if require_keyword:
+            if require_keyword not in texts:
+                continue
+            checks.append(f"{require_keyword}_keyword")
         return True, None, checks, p
     return False, "pptx_verify_fail", checks, None
 
@@ -372,6 +376,11 @@ def verify_officeeval_spec(task: dict, output: str, artifacts: list[str] | None 
     if rd.get("error"):
         return {"exec_pass": False, "exec_error": rd["error"][:120], "checks": []}
     flat = json.dumps(rd, ensure_ascii=False)
+    # verifier 가 실제로 검사하는 키는 sum/avg/headers 뿐 (INT-2237). spec 에 이 중 하나도
+    # 없으면(values/mom/sheets/unique/sorted/filtered_min 만 있는 태스크) 아무 xlsx 나 통과하는
+    # false positive 가 된다 — 검증 불가로 fail-closed 처리.
+    if not ({"sum", "avg", "headers"} & set(spec)):
+        return {"exec_pass": False, "exec_error": "officeeval_spec_unverifiable", "checks": []}
     if "sum" in spec and str(spec["sum"]) not in flat:
         return {"exec_pass": False, "exec_error": f"sum_not_{spec['sum']}", "checks": []}
     if "avg" in spec and str(spec["avg"]) not in flat:
@@ -656,7 +665,10 @@ def verify_office(
         if not paths:
             return {"exec_pass": False, "exec_error": "no_pptx_artifact", "checks": checks}
         min_slides = int(task.get("min_slides") or 5)
-        ok, err, pptx_checks, artifact = _verify_pptx_deck(paths, min_slides=min_slides)
+        # 이 분기는 slidesgen/deckbench 만 도달(presentbench 는 위에서 return) — 'vega' 키워드
+        # 요구 없이 슬라이드 수만 검증한다 (INT-2237 false negative 방지).
+        ok, err, pptx_checks, artifact = _verify_pptx_deck(
+            paths, min_slides=min_slides, require_keyword=None)
         checks.extend(pptx_checks)
         out = {"exec_pass": ok, "exec_error": err, "checks": checks}
         if artifact:
@@ -999,13 +1011,18 @@ def judge(
     )
     usr = f"[과제]\n{task['prompt']}\n\n[출력]\n{output}\n\n[rubric]\n{rubric}"
     backend = judge_backend or resolve_judge_backend()
-    if backend == "claude-cli":
-        res = _claude_cli_chat(sys, usr)
-    else:
-        if not key:
-            return {"ratio": 0.0, "pass": False, "scores": [], "error": "no_openrouter_key"}
-        res = _or_chat(judge_model, [{"role": "system", "content": sys},
-                                     {"role": "user", "content": usr}], key, max_tokens=900)
+    try:
+        if backend == "claude-cli":
+            res = _claude_cli_chat(sys, usr)
+        else:
+            if not key:
+                return {"ratio": 0.0, "pass": False, "scores": [], "error": "no_openrouter_key"}
+            res = _or_chat(judge_model, [{"role": "system", "content": sys},
+                                         {"role": "user", "content": usr}], key, max_tokens=900)
+    except Exception as e:
+        # judge backend(네트워크/provider) 예외가 배치 전체를 abort 하지 않게 per-row 기록 (INT-2237).
+        return {"ratio": 0.0, "pass": False, "scores": [],
+                "error": f"judge_exception:{type(e).__name__}", "judge_backend": backend}
     if res.get("error"):
         return {"ratio": 0.0, "pass": False, "scores": [], "error": res["error"],
                 "judge_backend": backend}

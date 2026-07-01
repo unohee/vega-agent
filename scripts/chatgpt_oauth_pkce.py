@@ -234,9 +234,18 @@ def _load_profile() -> Optional[dict]:
         return None
 
 def _save_profile(profile: dict) -> None:
+    import os
     TOKEN_PATH.parent.mkdir(parents=True, exist_ok=True)
-    TOKEN_PATH.write_text(json.dumps(profile, indent=2))
-    TOKEN_PATH.chmod(0o600)  # owner read/write only
+    # 0600 으로 생성 + atomic replace (INT-2237): write_text 후 chmod 는 그 사이 토큰이
+    # 0644(world/group-readable)로 노출되고, 중간 크래시 시 파일이 손상된다. 처음부터
+    # 좁은 권한으로 임시 파일에 쓰고 원자적으로 교체한다.
+    tmp = str(TOKEN_PATH) + ".tmp"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        os.write(fd, json.dumps(profile, indent=2).encode("utf-8"))
+    finally:
+        os.close(fd)
+    os.replace(tmp, str(TOKEN_PATH))
 
 # ── 공개 API ──────────────────────────────────────────────────────────────────
 
