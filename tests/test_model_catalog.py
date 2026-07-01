@@ -6,10 +6,14 @@
 from __future__ import annotations
 
 from pipeline.model_catalog import (
+    compute_value_scores,
     curate_models,
+    estimate_cost_per_task,
     load_bench_scores,
+    model_quality_score,
     provider_allowed,
     provider_of,
+    provider_reliability,
     select_model_for_load,
     supports_caching,
     within_budget,
@@ -150,6 +154,44 @@ def test_select_model_for_load_uses_bench_scores():
     ]
     scores = {"a/cheap": 0.95, "b/strong": 0.5}
     assert select_model_for_load("heavy", cat, bench_scores=scores)["id"] == "a/cheap"
+
+
+def test_value_score_prefers_quality_when_gap_is_large():
+    # INT-2283: 모델 선택은 단순 최저가가 아니라 quality/cost/reliability 합성값.
+    cat = [
+        _m("deepseek/cheap-but-weak", 0.05, 0.10),
+        _m("openai/stronger", 0.20, 0.60),
+    ]
+    scores = {"deepseek/cheap-but-weak": 0.45, "openai/stronger": 0.95}
+    picked = select_model_for_load("standard", cat, bench_scores=scores)
+    assert picked["id"] == "openai/stronger"
+
+
+def test_value_score_penalizes_degen_rate():
+    cat = [
+        {**_m("deepseek/unstable", 0.05, 0.10), "degen_rate": 0.9, "reliability_score": 0.6},
+        {**_m("qwen/stable", 0.05, 0.10), "degen_rate": 0.0, "reliability_score": 0.9},
+    ]
+    scores = {"deepseek/unstable": 0.8, "qwen/stable": 0.8}
+    values = compute_value_scores(cat, scores, load="light")
+    assert values["qwen/stable"]["value"] > values["deepseek/unstable"]["value"]
+    assert select_model_for_load("light", cat, bench_scores=scores)["id"] == "qwen/stable"
+
+
+def test_value_score_cost_norm_and_cached_cost():
+    cached = {**_m("openai/cached", 1.0, 1.0), "caching": True}
+    uncached = {**_m("openai/uncached", 1.0, 1.0), "caching": False}
+    assert estimate_cost_per_task(cached, "standard") < estimate_cost_per_task(uncached, "standard")
+
+    values = compute_value_scores([cached, uncached], {"openai/cached": 0.8, "openai/uncached": 0.8})
+    assert values["openai/cached"]["cost_norm"] == 0.0
+    assert values["openai/uncached"]["cost_norm"] == 1.0
+
+
+def test_quality_score_uses_optional_metrics():
+    model = {"id": "qwen/x", "div_avg": 1.0, "tool_calling_accuracy": 0.5, "degen_rate": 0.2}
+    assert model_quality_score(model, bench_score=0.1) == 0.5 * 1.0 + 0.4 * 0.5 + 0.1 * 0.8
+    assert provider_reliability("openai/gpt") > provider_reliability("deepseek/flash")
 
 
 def test_load_bench_scores_category_filter(tmp_path):

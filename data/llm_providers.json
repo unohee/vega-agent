@@ -14,11 +14,11 @@
   },
   "_stt_comment": "STT(음성→텍스트) 설정. OpenAI Whisper API 호환 엔드포인트를 사용한다. provider: openai|groq|local|lmstudio 또는 임의 이름. endpoint를 직접 지정하면 provider 무시.",
   "stt": {
-    "provider": "openai",
-    "model": "whisper-1",
+    "provider": "openrouter",
+    "model": "openai/whisper-large-v3",
     "language": null,
     "response_format": "text",
-    "_note": "language: null=자동감지, 'ko'=한국어 강제, 'en'=영어 강제. provider=local 시 endpoint를 직접 지정 가능."
+    "_note": "language: null=자동감지, 'ko'=한국어 강제, 'en'=영어 강제. provider=openrouter는 OPENROUTER_API를 재사용한다. provider=local 시 endpoint를 직접 지정 가능."
   },
   "providers": {
     "chatgpt": {
