@@ -275,6 +275,10 @@ from typing import Callable, Any
 _GOOGLE_SYNC_THREAD_LOCK = threading.Lock()
 _GOOGLE_SYNC_DELAY_SEC = float(os.environ.get("VEGA_GOOGLE_HEARTBEAT_DELAY_SEC", "2.0"))
 _GOOGLE_SYNC_MIN_INTERVAL_SEC = float(os.environ.get("VEGA_GOOGLE_HEARTBEAT_MIN_INTERVAL_SEC", "300"))
+# Max continuation rounds per source per run: when an ingest returns
+# ``complete: False`` (page budget exhausted mid-window) the orchestrator keeps
+# draining in the same run, bounded by this cap to prevent an unbounded loop.
+_GOOGLE_SYNC_MAX_ROUNDS = int(os.environ.get("VEGA_GOOGLE_HEARTBEAT_MAX_ROUNDS", "20"))
 _GOOGLE_SYNC_LAST_RUN = 0.0
 
 
@@ -414,12 +418,29 @@ def heartbeat_google_incremental_sync(*, force: bool = False) -> None:
             try:
                 cursor = source.read_cursor(source.name)
                 print(f"[heartbeat][google] {source.name}: incremental sync start")
-                next_cursor = source.ingest(cursor)
-                if not _valid_next_google_cursor(next_cursor):
-                    print(f"[heartbeat][google] {source.name}: ingest succeeded but returned no valid next cursor; cursor not advanced")
-                    continue
-                source.write_cursor(source.name, next_cursor)
-                print(f"[heartbeat][google] {source.name}: cursor advanced")
+                rounds = 0
+                while rounds < _GOOGLE_SYNC_MAX_ROUNDS:
+                    next_cursor = source.ingest(cursor)
+                    if not _valid_next_google_cursor(next_cursor):
+                        print(f"[heartbeat][google] {source.name}: ingest succeeded but returned no valid next cursor; cursor not advanced")
+                        break
+                    source.write_cursor(source.name, next_cursor)
+                    rounds += 1
+                    # Sources without the continuation contract omit ``complete``;
+                    # treat that as fully drained (advance once, stop).
+                    if bool(next_cursor.get("complete", True)):
+                        print(f"[heartbeat][google] {source.name}: cursor advanced (drained)")
+                        break
+                    prev_token = cursor.get("pageToken") if isinstance(cursor, dict) else None
+                    new_token = next_cursor.get("pageToken")
+                    if not new_token or new_token == prev_token:
+                        # No forward progress: stop to avoid re-fetching the same page.
+                        print(f"[heartbeat][google] {source.name}: continuation token did not advance; stopping")
+                        break
+                    print(f"[heartbeat][google] {source.name}: continuation page persisted; more remaining")
+                    cursor = next_cursor
+                else:
+                    print(f"[heartbeat][google] {source.name}: max continuation rounds reached; resuming next cycle")
             except Exception as exc:
                 if _google_auth_error(exc):
                     print(f"[heartbeat][google] {source.name}: auth invalid/reauth required; stopping Google sync ({exc})")
