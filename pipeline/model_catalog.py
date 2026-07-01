@@ -29,11 +29,12 @@ _CACHING_PREFIXES = ("anthropic/", "openai/", "deepseek/", "google/", "qwen/")
 # OpenRouter 전체 노출 대신 이 5개 계열로 고정한다 (EPIC INT-1876 / INT-1892).
 _ALLOWED_PROVIDERS = ("qwen", "deepseek", "google", "openai", "anthropic")
 
-# auto_route 자동 선택에서 제외할 degeneration 상습 모델 (INT-2269, TECH #4322/#4294).
-# deepseek-v4-flash 가 최저가라 light 자동 라우팅에 뽑히는데, 최종 답변 라운드에서
-# raw vocab spew(외계어)로 붕괴하는 사례가 반복됐다. UI 수동 선택은 여전히 허용하고
-# (사용자 책임) auto_route 만 안정 모델을 고르도록 자동 후보에서만 뺀다.
-_AUTO_ROUTE_EXCLUDED_MODELS = {"deepseek/deepseek-v4-flash"}
+# auto_route 자동 선택에서 제외할 degeneration 상습 모델 (INT-2269).
+# 과거 deepseek-v4-flash 를 여기서 배제(INT-2269 B)했으나, INT-2269 (d) 안전망으로 대체 —
+# flash 복귀, 필터 인프라는 유지. streaming.py 의 최종 답변 라운드 degeneration 감지+재생성
+# 안전망(TECH #4322)이 붕괴 시 sturdier 모델로 자동 재생성하므로 배제가 불필요해졌다.
+# 상수·resolve_turn_model 필터 로직은 향후 다른 상습 모델 배제에 재사용하려 남긴다.
+_AUTO_ROUTE_EXCLUDED_MODELS: set[str] = set()
 
 # 이 계열은 가격·caching 게이트 없이 카탈로그 전체를 노출한다 (INT-2002 재개방).
 # 사용자가 플래그십(claude-opus, gpt-5.x, gemini-pro 등 $1 초과 모델)을 직접 고를 수 있게 한다.

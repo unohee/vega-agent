@@ -1,6 +1,8 @@
 # Created: 2026-07-01
-# Purpose: Regression for INT-2269 — auto_route must exclude the degeneration-prone
-#          deepseek-v4-flash from automatic model selection (TECH #4322/#4294).
+# Purpose: Regression for INT-2269 — flash is BACK in auto_route (the (d) streaming
+#          safety net replaces the temporary exclusion), while the exclusion filter
+#          infrastructure (_AUTO_ROUTE_EXCLUDED_MODELS + resolve_turn_model filter) is
+#          kept for future degeneration-prone models (TECH #4322).
 
 from __future__ import annotations
 
@@ -20,26 +22,32 @@ def _wire(monkeypatch, models):
     monkeypatch.setattr(mc, "load_bench_scores", lambda *a, **k: {})  # heuristic (by-price) path
 
 
-def test_light_would_pick_flash_without_exclusion():
-    """Sanity: flash is the cheapest, so unfiltered light routing WOULD pick it."""
+def test_light_picks_flash_when_cheapest():
+    """flash is the cheapest, so unfiltered light routing picks it (safety net handles degen)."""
     curated = mc.curate_models([_FLASH, _STABLE])
     pick = mc.select_model_for_load("light", curated, {})
     assert pick["id"] == "deepseek/deepseek-v4-flash"
 
 
-def test_resolve_turn_model_light_excludes_flash(monkeypatch):
+def test_exclusion_set_is_empty_flash_returned():
+    """INT-2269 (d): exclusion set is now empty — flash returns to auto_route."""
+    assert mc._AUTO_ROUTE_EXCLUDED_MODELS == set()
+
+
+def test_resolve_turn_model_light_returns_flash(monkeypatch):
+    """With flash no longer excluded, light auto_route resolves to the cheapest = flash."""
+    _wire(monkeypatch, [_FLASH, _STABLE])
+    assert mc.resolve_turn_model("light") == "deepseek/deepseek-v4-flash"
+
+
+def test_exclusion_filter_infra_preserved(monkeypatch):
+    """Filter infrastructure is kept: if a model is added to the set, it's excluded again."""
+    monkeypatch.setattr(mc, "_AUTO_ROUTE_EXCLUDED_MODELS", {"deepseek/deepseek-v4-flash"})
     _wire(monkeypatch, [_FLASH, _STABLE])
     assert mc.resolve_turn_model("light") == "deepseek/deepseek-v3.2-exp"
 
 
-def test_resolve_turn_model_no_flash_leak_any_load(monkeypatch):
-    _wire(monkeypatch, [_FLASH, _STABLE])
-    for load in ("light", "standard", "heavy"):
-        assert mc.resolve_turn_model(load) != "deepseek/deepseek-v4-flash"
-
-
 def test_flash_still_in_curate_for_manual_ui():
-    """UI manual selection pool (curate_models) keeps flash — only auto_route excludes it."""
+    """UI manual selection pool (curate_models) keeps flash."""
     ids = {m["id"] for m in mc.curate_models([_FLASH, _STABLE])}
     assert "deepseek/deepseek-v4-flash" in ids
-    assert "deepseek/deepseek-v4-flash" in mc._AUTO_ROUTE_EXCLUDED_MODELS
