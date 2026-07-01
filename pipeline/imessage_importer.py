@@ -221,8 +221,9 @@ def import_imessages(
     destination = Path(destination_arg).expanduser() if destination_arg is not None else db_path()
     destination.parent.mkdir(parents=True, exist_ok=True)
 
+    from contextlib import closing  # INT-2236: sqlite Connection __exit__ 는 commit 만 — close 안 함
     try:
-        with _connect_source(source) as src:
+        with closing(_connect_source(source)) as src:
             messages = _fetch_messages(src)
     except (PermissionError, sqlite3.OperationalError) as exc:
         if isinstance(exc, IMessageImportError):
@@ -233,7 +234,8 @@ def import_imessages(
             ) from exc
         raise
 
-    with sqlite3.connect(str(destination)) as dst:
+    # closing(close 보장) + with dst(transaction commit) 둘 다 필요 (INT-2236).
+    with closing(sqlite3.connect(str(destination))) as dst, dst:
         _ensure_destination(dst)
         inserted = _insert_messages(dst, messages)
 

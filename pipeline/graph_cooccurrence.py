@@ -163,10 +163,10 @@ def _iter_event_sources(conn: sqlite3.Connection) -> list[SourceEntities]:
 
 
 def _load_sources(conn: sqlite3.Connection) -> list[SourceEntities]:
-    message_sources = _iter_message_sources(conn)
-    if message_sources:
-        return message_sources
-    return _iter_event_sources(conn)
+    # message 와 event source 를 모두 포함 (INT-2236) — 기존엔 message 가 하나라도 있으면
+    # event co-occurrence edge 가 통째로 누락됐다. evidence 키가 source_type 으로
+    # namespace 돼(f"{source_type}:{source_id}") 두 리스트를 합쳐도 충돌하지 않는다.
+    return _iter_message_sources(conn) + _iter_event_sources(conn)
 
 
 def build_entity_cooccurrence_edges(db_path: str | Path | None = None) -> BuildResult:

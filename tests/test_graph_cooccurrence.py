@@ -128,7 +128,7 @@ def test_rerun_is_idempotent_and_weights_are_deterministic(tmp_path):
     assert json.loads(second_rows[0]["evidence_json"]) == ["event:1", "event:2"]
 
 
-def test_prefers_message_entity_sources_when_present(tmp_path):
+def test_includes_both_message_and_event_sources(tmp_path):
     db = tmp_path / "agent.db"
     conn = _init_event_db(db)
     conn.executescript(
@@ -144,7 +144,7 @@ def test_prefers_message_entity_sources_when_present(tmp_path):
         );
         """
     )
-    conn.execute("INSERT INTO events (event_date, title) VALUES ('2026-06-21', 'event ignored')")
+    conn.execute("INSERT INTO events (event_date, title) VALUES ('2026-06-21', 'event included')")
     conn.execute("INSERT INTO entities (name, kind) VALUES ('Alice', 'person')")
     conn.execute("INSERT INTO entities (name, kind) VALUES ('Bob', 'person')")
     conn.execute("INSERT INTO event_entities (event_id, entity_id, match_text) VALUES (1, 1, 'Alice')")
@@ -158,4 +158,8 @@ def test_prefers_message_entity_sources_when_present(tmp_path):
     build_entity_cooccurrence_edges(db)
 
     rows = _edge_rows(db)
-    assert json.loads(rows[0]["evidence_json"]) == ["message:msg-1"]
+    # message 와 event source 를 모두 반영한다 (INT-2236) — 기존엔 message 가 있으면
+    # event co-occurrence 가 통째로 누락됐다(이 테스트가 그 버그를 검증하고 있었음).
+    evidence = json.loads(rows[0]["evidence_json"])
+    assert "message:msg-1" in evidence
+    assert "event:1" in evidence
