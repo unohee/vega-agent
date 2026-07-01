@@ -846,6 +846,40 @@ async def stream_gpt(
             raise RuntimeError(f"LLM 스트림 오류: {stream_error}")
 
         if not pending_tools:
+            # 최종 답변 라운드 degeneration 안전망 (INT-2269 d, TECH #4322): 도구 없는
+            # 최종 답변이 degenerate 하면 sturdier 모델로 재생성한다. 도구-라운드 안전망
+            # (아래 861-)과 동일한 헬퍼·상수·stats 규약을 재사용한다. 이미 on_token 으로
+            # 방출된 오염 델타는 full_text 에서 잘라내고(round_text 는 full_text 끝에 누적),
+            # break 대신 continue 로 다음 (여전히 no-tool) 라운드에서 최종 답을 다시 만든다.
+            # 프론트 롤백(방출 델타 지우기)은 별도 이슈 — 여기선 재생성 답이 이어서 스트리밍된다.
+            _artifact_n = stats.get("artifact_count", 0) if stats is not None else 0
+            _sturdier = _sturdier_model(model_override)
+            if (
+                degen_retries < _DEGEN_MAX_RETRIES
+                and _detect_degeneration(round_text, _artifact_n)
+                and _sturdier is not None
+            ):
+                if stats is not None:
+                    stats["degenerated"] = True
+                    stats["degen_final_round"] = True
+                    stats.setdefault("degen_rounds", []).append(
+                        {
+                            "round": actual_rounds,
+                            "model": stats.get("model"),
+                            "final": True,
+                            "artifacts": _artifact_n,
+                        }
+                    )
+                    stats["degen_switched_to"] = _sturdier
+                model_override = _sturdier
+                degen_retries += 1
+                # 이미 방출된 오염 텍스트를 full_text 에서 제거 (round_text 가 끝에 누적됨)
+                if round_text:
+                    full_text = full_text[: len(full_text) - len(round_text)]
+                round_text = ""
+                if stats is not None:
+                    stats["artifact_count"] = 0
+                continue  # sturdier 모델로 최종 답변 재생성 (다음 라운드도 no-tool 최종 시도)
             break
 
         tool_rounds += 1
