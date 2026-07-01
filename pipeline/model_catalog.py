@@ -29,6 +29,12 @@ _CACHING_PREFIXES = ("anthropic/", "openai/", "deepseek/", "google/", "qwen/")
 # OpenRouter 전체 노출 대신 이 5개 계열로 고정한다 (EPIC INT-1876 / INT-1892).
 _ALLOWED_PROVIDERS = ("qwen", "deepseek", "google", "openai", "anthropic")
 
+# auto_route 자동 선택에서 제외할 degeneration 상습 모델 (INT-2269, TECH #4322/#4294).
+# deepseek-v4-flash 가 최저가라 light 자동 라우팅에 뽑히는데, 최종 답변 라운드에서
+# raw vocab spew(외계어)로 붕괴하는 사례가 반복됐다. UI 수동 선택은 여전히 허용하고
+# (사용자 책임) auto_route 만 안정 모델을 고르도록 자동 후보에서만 뺀다.
+_AUTO_ROUTE_EXCLUDED_MODELS = {"deepseek/deepseek-v4-flash"}
+
 # 이 계열은 가격·caching 게이트 없이 카탈로그 전체를 노출한다 (INT-2002 재개방).
 # 사용자가 플래그십(claude-opus, gpt-5.x, gemini-pro 등 $1 초과 모델)을 직접 고를 수 있게 한다.
 # 단 가격 미상(None) 모델이 auto-route 최저가 픽을 오염시키지 않도록 정렬에서 맨 뒤로 보낸다
@@ -200,7 +206,10 @@ def resolve_turn_model(load: str, bench_path: Path | str | None = None) -> str |
             return None  # 수동 선택 모델 우선 — 라우터 비활성
         from web.routers.llm import _fetch_models
 
-        curated = curate_models(_fetch_models("openrouter"))
+        curated = [
+            m for m in curate_models(_fetch_models("openrouter"))
+            if m.get("id") not in _AUTO_ROUTE_EXCLUDED_MODELS
+        ]
         import os
         bench_path = bench_path or os.getenv("VEGA_BENCH_PATH") or DEFAULT_BENCH_PATH
         if load == "standard":
