@@ -11,10 +11,16 @@ from pipeline import keychain as _kc
 
 # onboarding entry 의 key_env 와 일치해야 한다. kyte-portal 과 동일 키명 사용.
 KEY_ENV = "AIRTABLE_PERSONAL_ACCESS_TOKEN"
+# logout tombstone (INT-2233): _kc.get 는 Keychain→.env→env 로 fallback 하므로,
+# Keychain 만 지우면 .env/env 의 PAT 로 logout 후에도 인증 상태가 유지된다.
+# logout 시 이 플래그를 세우고 token()이 우선 확인 → 재연결(onboarding save) 시 해제.
+_LOGOUT_FLAG = KEY_ENV + "_logged_out"
 
 
 def token() -> str | None:
-    """저장된 Airtable PAT (Keychain → .env → 환경변수 순)."""
+    """저장된 Airtable PAT (Keychain → .env → 환경변수). logout 후엔 None (INT-2233)."""
+    if _kc.get_secret(_LOGOUT_FLAG):
+        return None
     return _kc.get(KEY_ENV) or None
 
 
@@ -29,5 +35,6 @@ def is_configured() -> bool:
 
 
 def logout() -> None:
-    """저장된 PAT 제거."""
+    """저장된 PAT 제거 + logout 플래그 — .env/env fallback 까지 무력화 (INT-2233)."""
     _kc.delete_secret(KEY_ENV)
+    _kc.set_secret(_LOGOUT_FLAG, "1")

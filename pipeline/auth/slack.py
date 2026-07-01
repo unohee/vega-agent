@@ -191,7 +191,8 @@ def authorize_url() -> str:
 def exchange_code(code: str, state: str | None = None) -> dict:
     """code → oauth.v2.access → user token(xoxp) 저장.
     반환: {"ok", "user", "team", "error"}. 백엔드 GET /slack/callback 가 호출."""
-    if state is not None and _pending_state.get("state") and state != _pending_state["state"]:
+    # state 정확 일치 필수 (INT-2233): 누락/pending 부재 시 통과하면 login CSRF·세션 주입.
+    if not _pending_state.get("state") or state != _pending_state["state"]:
         return {"ok": False, "user": None, "team": None, "error": "state 불일치 — 보안상 중단"}
     try:
         client = _load_client()
