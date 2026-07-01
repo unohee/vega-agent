@@ -28,7 +28,7 @@ class El {
   classList = { add: (c) => this._cls.add(c), contains: (c) => this._cls.has(c), remove: (c) => this._cls.delete(c) };
   set className(v) { this._cls = new Set(String(v).split(/\s+/).filter(Boolean)); }
   get className() { return [...this._cls].join(' '); }
-  set innerHTML(v) { this._html = v; this._text = String(v).replace(/<[^>]*>/g, ''); }
+  set innerHTML(v) { this.children = []; this._html = v; this._text = String(v).replace(/<[^>]*>/g, ''); }  // 실제 DOM: innerHTML= 은 기존 자식 제거 (INT-2238)
   get innerHTML() { return this._html; }
   appendChild(c) { this.children.push(c); c.parent = this; return c; }
   insertBefore(c, ref) { const i = ref ? this.children.indexOf(ref) : 0; this.children.splice(i < 0 ? this.children.length : i, 0, c); c.parent = this; return c; }
@@ -39,7 +39,7 @@ class El {
   get lastElementChild() { return this.children[this.children.length - 1] || null; }
   get firstChild() { return this.children[0] || null; }
   get textContent() { return this._text || this.children.map(c => c.textContent).join(''); }
-  set textContent(v) { this._text = v; }
+  set textContent(v) { this.children = []; this._text = v; }  // 실제 DOM: textContent= 도 자식 제거 (INT-2238)
   addEventListener() {}
 }
 const document = { createElement: (t) => new El(t) };
