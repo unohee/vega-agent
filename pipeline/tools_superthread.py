@@ -128,6 +128,70 @@ def superthread_search_cards(query: str) -> list[dict]:
     ]
 
 
+def _my_user_id() -> str | None:
+    """Current user's Superthread user_id via GET /v1/users/me (no workspace prefix)."""
+    tok = _auth.pat_token()
+    if not tok:
+        return None
+    try:
+        from pipeline.auth.superthread import _API_BASE as _AB, _get_json
+        me = _get_json(f"{_AB}/users/me", headers={"Authorization": f"Bearer {tok}"})
+        user = me.get("user") or me
+        uid = user.get("id")
+        return str(uid) if uid else None
+    except Exception:
+        return None
+
+
+def superthread_my_cards(role: str = "any", include_done: bool = False) -> list[dict]:
+    """Cards I am assigned to (assignee) or created (creator), across the whole workspace.
+
+    Superthread's REST search matches text only, so "all my cards" cannot be
+    pulled with a query. Instead this walks every project's boards and filters
+    each embedded card by its members (assignees) and user_id (creator).
+    role: 'assignee' | 'creator' | 'any'. include_done=False drops done-list cards.
+    Returns due_date/priority so the caller can sort by urgency.
+    """
+    me = _my_user_id()
+    if not me:
+        raise RuntimeError(_RECONNECT_MSG)
+    projects = _st("projects").get("projects", [])
+    seen: set[str] = set()
+    out: list[dict] = []
+    for p in projects:
+        for bid in p.get("board_order") or []:
+            try:
+                board = _st(f"boards/{bid}").get("board") or {}
+            except RuntimeError:
+                continue  # skip boards we cannot read rather than failing the whole sweep
+            for lst in board.get("lists") or []:
+                if not include_done and (lst.get("behavior") or "").lower() == "done":
+                    continue
+                for c in lst.get("cards") or []:
+                    cid = str(c.get("id") or "")
+                    if not cid or cid in seen:
+                        continue
+                    is_assignee = any(str(m.get("user_id")) == me for m in c.get("members") or [])
+                    is_creator = str(c.get("user_id")) == me
+                    if role == "assignee" and not is_assignee:
+                        continue
+                    if role == "creator" and not is_creator:
+                        continue
+                    if role == "any" and not (is_assignee or is_creator):
+                        continue
+                    seen.add(cid)
+                    out.append({
+                        "id": cid,
+                        "title": c.get("title"),
+                        "board": c.get("board_title") or board.get("title"),
+                        "list": lst.get("title"),
+                        "due_date": c.get("due_date"),
+                        "priority": c.get("priority"),
+                        "role": "assignee" if is_assignee else "creator",
+                    })
+    return out
+
+
 def superthread_get_card(card_id: str) -> dict:
     """카드 상세 (제목·본문·상태·멤버·마감일)."""
     card = _st(f"cards/{card_id}").get("card") or {}
@@ -193,6 +257,32 @@ SUPERTHREAD_TOOL_SCHEMAS: list[dict] = [
     },
     {
         "type": "function",
+        "name": "superthread_my_cards",
+        "description": (
+            "내가 담당(assignee)하거나 생성(creator)한 Superthread 카드를 워크스페이스 "
+            "전역에서 모은다. 텍스트 검색(superthread_search_cards)으로는 '내 카드 전체'를 "
+            "뽑을 수 없을 때 사용. due_date/priority 를 함께 반환하므로 급한 순 정렬에 쓴다."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "role": {
+                    "type": "string",
+                    "enum": ["any", "assignee", "creator"],
+                    "default": "any",
+                    "description": "any=담당 또는 생성, assignee=담당만, creator=생성만",
+                },
+                "include_done": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "true 면 완료(done) 리스트 카드도 포함",
+                },
+            },
+            "required": [],
+        },
+    },
+    {
+        "type": "function",
         "name": "superthread_get_card",
         "description": "Superthread 카드 상세(제목·본문·상태)를 조회한다.",
         "parameters": {
@@ -224,6 +314,7 @@ SUPERTHREAD_TOOL_FUNCTIONS: dict[str, Any] = {
     "superthread_list_projects": superthread_list_projects,
     "superthread_list_boards": superthread_list_boards,
     "superthread_search_cards": superthread_search_cards,
+    "superthread_my_cards": superthread_my_cards,
     "superthread_get_card": superthread_get_card,
     "superthread_create_card": superthread_create_card,
 }

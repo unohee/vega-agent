@@ -70,7 +70,8 @@ WORKSPACE_TOOLSETS: dict[str, dict] = {
         "description": "Superthread (프로젝트/보드/카드)",
         "tools": [
             "superthread_list_projects", "superthread_list_boards",
-            "superthread_search_cards", "superthread_get_card", "superthread_create_card",
+            "superthread_search_cards", "superthread_my_cards",
+            "superthread_get_card", "superthread_create_card",
         ],
         "check_fn": _superthread_check,
         "connect_hint": "설정 → 워크스페이스에서 Superthread 를 연결하라 (GET /superthread/auth).",
