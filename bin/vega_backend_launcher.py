@@ -6,6 +6,28 @@ import os
 import sys
 from pathlib import Path
 
+
+def _bootstrap_runtime() -> None:
+    """certifi CA env + UTF-8 stdout/stderr — run-code/run-python 조기 분기를 포함한 모든
+    진입에서 적용 (INT-2238). frozen 앱이 서버 없이 서브커맨드로 직접 호출돼도 clean-install
+    SSL 검증·Windows 비UTF-8 출력 방어가 보장된다(idempotent — main 경로 재호출 무해)."""
+    for _stream in (sys.stdout, sys.stderr):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+    try:
+        import certifi
+        ca_bundle = certifi.where()
+        if ca_bundle and os.path.exists(ca_bundle):
+            os.environ["SSL_CERT_FILE"] = ca_bundle
+            os.environ["REQUESTS_CA_BUNDLE"] = ca_bundle
+    except Exception:
+        pass
+
+
+_bootstrap_runtime()
+
 # ── frozen 인터프리터 재진입 (Docker 없이 로컬 코드 실행) ────────────────────────
 # `vega-backend run-code <code>` / `run-python <file> [args...]` 로 동봉된 Python 을
 # 격리 서브프로세스로 재사용한다. 서버 초기화(로깅/certifi/포트대기) 이전에 처리해
@@ -24,29 +46,8 @@ if len(sys.argv) >= 3 and sys.argv[1] in ("run-code", "run-python"):
 BUNDLE_ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
 os.environ.setdefault("VEGA_BUNDLE_ROOT", str(BUNDLE_ROOT))
 
-# Windows 콘솔 기본 인코딩(cp1252 등)에선 한국어 로그가 UnicodeEncodeError 로
-# "--- Logging error ---" 를 양산한다. stdout/stderr 를 UTF-8 로 강제 (INT-1438).
-for _stream in (sys.stdout, sys.stderr):
-    try:
-        _stream.reconfigure(encoding="utf-8", errors="replace")
-    except Exception:
-        pass  # 파이프/리다이렉트 등 reconfigure 미지원 스트림은 무시
-
-# 배포된 PyInstaller 앱은 새 사용자 맥에서 시스템 CA 경로를 못 찾는 경우가 있다.
-# 프로세스 시작 시 certifi 번들 경로를 표준 SSL env에 고정해 모든 HTTPS 클라이언트가 공유하게 한다.
-# setdefault 가 아니라 무조건 덮어쓴다 — 사용자 환경에 깨진 SSL_CERT_FILE 이 미리
-# 설정돼 있어도 번들의 certifi 를 신뢰 루트로 강제하기 위함. (env 누락/오염 양쪽 방어)
-try:
-    import certifi
-
-    ca_bundle = certifi.where()
-    if ca_bundle and os.path.exists(ca_bundle):
-        os.environ["SSL_CERT_FILE"] = ca_bundle
-        os.environ["REQUESTS_CA_BUNDLE"] = ca_bundle
-    else:
-        print(f"[vega-backend] certifi cacert.pem 부재: {ca_bundle!r}", file=sys.stderr)
-except Exception as _e:
-    print(f"[vega-backend] certifi CA 설정 실패(무시): {_e}", file=sys.stderr)
+# UTF-8 stdout/stderr 와 certifi CA env 는 위 _bootstrap_runtime() 에서 이미 적용됨
+# (run-code/run-python 조기 분기를 포함한 모든 진입 — INT-2238).
 
 # 작업 디렉터리를 번들 루트로 — 상대 경로 리소스(web/static, data/) 로딩 보장
 os.chdir(BUNDLE_ROOT)
