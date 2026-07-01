@@ -73,8 +73,15 @@ class TestBuildDashboardContext:
 
         import time as _time
 
+        # Hang far longer than the timeout so the assertion has a wide margin:
+        # if the timeout works, elapsed is just thread-pool overhead; if it does
+        # not, elapsed is >= HANG. The gap must survive slow CI runners (Windows
+        # thread-pool startup alone can take >0.1s), so keep HANG and the bound
+        # well apart rather than tuning a tight threshold.
+        HANG = 2.0
+
         def slow_calendar(*args, **kwargs):
-            _time.sleep(0.2)
+            _time.sleep(HANG)
             return {}
 
         start = _time.monotonic()
@@ -86,7 +93,8 @@ class TestBuildDashboardContext:
         elapsed = _time.monotonic() - start
 
         assert isinstance(result, str)
-        assert elapsed < 0.1
+        # Well below HANG (timeout honored) yet generous for slow runners.
+        assert elapsed < 1.0
 
     def test_linear_issues_rendered(self):
         from pipeline.streaming import _build_dashboard_context
