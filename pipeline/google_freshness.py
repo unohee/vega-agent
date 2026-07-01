@@ -14,6 +14,10 @@ from typing import Any
 _VALID_SOURCES = {"gmail", "calendar", "drive"}
 _DEFAULT_LOOKBACK_DAYS = int(os.environ.get("VEGA_GOOGLE_FRESHNESS_LOOKBACK_DAYS", "7"))
 _MAX_ITEMS_PER_SOURCE = int(os.environ.get("VEGA_GOOGLE_FRESHNESS_MAX_ITEMS", "50"))
+# Per-run page budget. Each ingest fetches at most this many API pages; if more
+# remain (drain incomplete) it stores a continuation token instead of advancing
+# the watermark, so the heartbeat resumes the same window on the next call.
+_MAX_PAGES_PER_RUN = int(os.environ.get("VEGA_GOOGLE_FRESHNESS_MAX_PAGES", "5"))
 
 
 def _utc_now() -> datetime:
@@ -168,45 +172,92 @@ def _gapi(path: str, account: str = "", params: dict | None = None, method: str 
 def ingest_gmail_incremental(cursor: dict[str, Any] | None, account: str = "") -> dict[str, Any]:
     """Fetch Gmail changes since the supplied heartbeat cursor and persist freshness records.
 
+    Paginates through the ``after:`` window instead of taking only the first page.
+    Because Gmail lists newest-first, a single page would permanently drop older
+    changes once the window exceeds one page. When more pages remain than the
+    per-run budget allows, the returned cursor keeps the current watermark and
+    carries a ``pageToken`` (``complete: False``) so the heartbeat resumes the
+    same window; the watermark only advances once the window is fully drained.
+
     Cursor advancement is intentionally left to the heartbeat owner after this function returns.
     """
     scan_started = _utc_now()
-    since = _cursor_time(cursor)
-    query = f"after:{int(since.timestamp())}"
     base = "gmail.googleapis.com/gmail/v1/users/me"
-    data = _gapi(f"{base}/messages", account=account, params={"q": query, "maxResults": _MAX_ITEMS_PER_SOURCE})
+    continuing = bool(cursor and cursor.get("pageToken"))
+    if continuing:
+        # Resume the in-progress window: reuse the original query the pageToken
+        # was issued against and hold the watermark where it was.
+        query = str(cursor.get("queryAfter") or f"after:{int(_cursor_time(cursor).timestamp())}")
+        since_iso = str(cursor.get("syncedAt") or _iso(_cursor_time(cursor)))
+        pending_synced = str(cursor.get("pendingSyncedAt") or since_iso)
+        page_token: str | None = str(cursor["pageToken"])  # type: ignore[index]
+    else:
+        since = _cursor_time(cursor)
+        query = f"after:{int(since.timestamp())}"
+        since_iso = _iso(since)
+        pending_synced = _iso(scan_started)
+        page_token = None
+
     records: list[dict[str, Any]] = []
     seen_ids = _existing_record_ids("gmail")
-    for message in data.get("messages", [])[:_MAX_ITEMS_PER_SOURCE]:
-        message_id = message.get("id")
-        if not message_id or str(message_id) in seen_ids:
-            continue
-        detail = _gapi(
-            f"{base}/messages/{message_id}",
-            account=account,
-            params={"format": "metadata", "metadataHeaders": ["From", "To", "Subject", "Date"]},
-        )
-        headers = {h.get("name", ""): h.get("value", "") for h in detail.get("payload", {}).get("headers", [])}
-        record_id = str(detail.get("id", message_id))
-        if record_id in seen_ids:
-            continue
-        seen_ids.add(record_id)
-        records.append({
-            "source": "gmail",
-            "id": record_id,
-            "threadId": detail.get("threadId", message.get("threadId", "")),
-            "historyId": detail.get("historyId", ""),
-            "internalDate": detail.get("internalDate", ""),
-            "snippet": detail.get("snippet", ""),
-            "headers": headers,
-            "ingestedAt": _iso(_utc_now()),
-        })
+    next_page_token: str | None = None
+    pages = 0
+    while pages < _MAX_PAGES_PER_RUN and len(records) < _MAX_ITEMS_PER_SOURCE:
+        params: dict[str, Any] = {"q": query, "maxResults": _MAX_ITEMS_PER_SOURCE}
+        if page_token:
+            params["pageToken"] = page_token
+        data = _gapi(f"{base}/messages", account=account, params=params)
+        for message in data.get("messages", []):
+            message_id = message.get("id")
+            if not message_id or str(message_id) in seen_ids:
+                continue
+            detail = _gapi(
+                f"{base}/messages/{message_id}",
+                account=account,
+                params={"format": "metadata", "metadataHeaders": ["From", "To", "Subject", "Date"]},
+            )
+            headers = {h.get("name", ""): h.get("value", "") for h in detail.get("payload", {}).get("headers", [])}
+            record_id = str(detail.get("id", message_id))
+            if record_id in seen_ids:
+                continue
+            seen_ids.add(record_id)
+            records.append({
+                "source": "gmail",
+                "id": record_id,
+                "threadId": detail.get("threadId", message.get("threadId", "")),
+                "historyId": detail.get("historyId", ""),
+                "internalDate": detail.get("internalDate", ""),
+                "snippet": detail.get("snippet", ""),
+                "headers": headers,
+                "ingestedAt": _iso(_utc_now()),
+            })
+        next_page_token = data.get("nextPageToken")
+        page_token = next_page_token
+        pages += 1
+        if not next_page_token:
+            break
     count = _append_records("gmail", records)
+    complete = not next_page_token
+
+    if not complete:
+        # More pages remain: hold the watermark, carry the continuation token.
+        return {
+            "syncedAt": since_iso,
+            "queryAfter": query,
+            "updatedMin": since_iso,
+            "pageToken": next_page_token,
+            "pendingSyncedAt": pending_synced,
+            "ingested": count,
+            "complete": False,
+        }
+
+    # Window drained: advance the watermark to the start of this scan chain.
     next_cursor: dict[str, Any] = {
-        "syncedAt": _iso(scan_started),
+        "syncedAt": pending_synced,
         "queryAfter": query,
-        "updatedMin": _iso(scan_started),
+        "updatedMin": pending_synced,
         "ingested": count,
+        "complete": True,
     }
     try:
         profile = _gapi(f"{base}/profile", account=account)
@@ -220,20 +271,34 @@ def ingest_gmail_incremental(cursor: dict[str, Any] | None, account: str = "") -
 
 
 def ingest_calendar_incremental(cursor: dict[str, Any] | None, account: str = "") -> dict[str, Any]:
+    """Fetch Calendar changes and persist freshness records.
+
+    ``maxResults`` is bounded by the per-source cap so each page maps cleanly to
+    the cap (no mid-page truncation, which would strand events the pageToken
+    cannot recover). When the page budget is exhausted before the sync/page
+    stream drains, the watermark is held and a ``pageToken`` continuation is
+    returned; the watermark advances (and ``syncToken`` is committed) only once
+    the stream is fully drained.
+    """
     scan_started = _utc_now()
     base = "www.googleapis.com/calendar/v3/calendars/primary/events"
     records: list[dict[str, Any]] = []
     seen_ids = _existing_record_ids("calendar")
-    page_token = None
+    continuing = bool(cursor and cursor.get("pageToken"))
+    page_token: str | None = str(cursor["pageToken"]) if continuing else None  # type: ignore[index]
     next_sync_token = None
     pages = 0
     use_sync_token = bool(cursor and cursor.get("syncToken"))
-    while pages < 5 and len(records) < _MAX_ITEMS_PER_SOURCE:
+    since_iso = _iso(_cursor_time(cursor))
+    pending_synced = (
+        str(cursor.get("pendingSyncedAt")) if (continuing and cursor and cursor.get("pendingSyncedAt")) else _iso(scan_started)
+    )
+    while pages < _MAX_PAGES_PER_RUN and len(records) < _MAX_ITEMS_PER_SOURCE:
         params: dict[str, Any] = {"maxResults": min(250, _MAX_ITEMS_PER_SOURCE), "showDeleted": True}
         if use_sync_token:
             params["syncToken"] = cursor["syncToken"]  # type: ignore[index]
         else:
-            params["updatedMin"] = _iso(_cursor_time(cursor))
+            params["updatedMin"] = since_iso
         if page_token:
             params["pageToken"] = page_token
         try:
@@ -264,37 +329,72 @@ def ingest_calendar_incremental(cursor: dict[str, Any] | None, account: str = ""
                 "htmlLink": event.get("htmlLink", ""),
                 "ingestedAt": _iso(_utc_now()),
             })
-            if len(records) >= _MAX_ITEMS_PER_SOURCE:
-                break
         next_sync_token = data.get("nextSyncToken") or next_sync_token
         page_token = data.get("nextPageToken")
         pages += 1
         if not page_token:
             break
     count = _append_records("calendar", records)
-    next_cursor = {"syncedAt": _iso(scan_started), "ingested": count}
+    complete = not page_token
+
+    if not complete:
+        # Page budget exhausted mid-stream: hold watermark, carry continuation.
+        next_cursor: dict[str, Any] = {
+            "syncedAt": since_iso,
+            "pageToken": page_token,
+            "pendingSyncedAt": pending_synced,
+            "ingested": count,
+            "complete": False,
+        }
+        if use_sync_token and cursor and cursor.get("syncToken"):
+            next_cursor["syncToken"] = str(cursor["syncToken"])
+        return next_cursor
+
+    next_cursor = {"syncedAt": pending_synced, "ingested": count, "complete": True}
     if next_sync_token:
         next_cursor["syncToken"] = next_sync_token
     return next_cursor
 
 
 def ingest_drive_incremental(cursor: dict[str, Any] | None, account: str = "") -> dict[str, Any]:
+    """Fetch Drive changes and persist freshness records.
+
+    Adds ``orderBy=modifiedTime`` so paging is deterministic (unordered results
+    could non-deterministically drop files at the page/item cap) and dedupes
+    against already-persisted ids. When the page budget is exhausted before the
+    result set drains, the watermark is held and a ``pageToken`` continuation is
+    returned so the next run resumes the same query window.
+    """
     scan_started = _utc_now()
     since = _cursor_time(cursor)
-    query = f"modifiedTime > '{_iso(since)}' and trashed = false"
+    since_iso = _iso(since)
+    continuing = bool(cursor and cursor.get("pageToken"))
+    query = (
+        str(cursor["query"]) if (continuing and cursor and cursor.get("query"))
+        else f"modifiedTime > '{since_iso}' and trashed = false"
+    )
+    pending_synced = (
+        str(cursor.get("pendingSyncedAt")) if (continuing and cursor and cursor.get("pendingSyncedAt")) else _iso(scan_started)
+    )
+    page_token: str | None = str(cursor["pageToken"]) if continuing else None  # type: ignore[index]
     records: list[dict[str, Any]] = []
-    page_token = None
+    seen_ids = _existing_record_ids("drive")
     pages = 0
-    while pages < 5 and len(records) < _MAX_ITEMS_PER_SOURCE:
+    while pages < _MAX_PAGES_PER_RUN and len(records) < _MAX_ITEMS_PER_SOURCE:
         params: dict[str, Any] = {
             "q": query,
             "pageSize": min(100, _MAX_ITEMS_PER_SOURCE),
+            "orderBy": "modifiedTime",
             "fields": "nextPageToken,files(id,name,mimeType,modifiedTime,webViewLink,owners(emailAddress,displayName))",
         }
         if page_token:
             params["pageToken"] = page_token
         data = _gapi("www.googleapis.com/drive/v3/files", account=account, params=params)
         for file in data.get("files", []):
+            file_id = str(file.get("id", ""))
+            if file_id and file_id in seen_ids:
+                continue
+            seen_ids.add(file_id)
             records.append({
                 "source": "drive",
                 "id": file.get("id", ""),
@@ -305,11 +405,20 @@ def ingest_drive_incremental(cursor: dict[str, Any] | None, account: str = "") -
                 "owners": file.get("owners", []),
                 "ingestedAt": _iso(_utc_now()),
             })
-            if len(records) >= _MAX_ITEMS_PER_SOURCE:
-                break
         page_token = data.get("nextPageToken")
         pages += 1
         if not page_token:
             break
     count = _append_records("drive", records)
-    return {"syncedAt": _iso(scan_started), "query": query, "ingested": count}
+    complete = not page_token
+
+    if not complete:
+        return {
+            "syncedAt": since_iso,
+            "query": query,
+            "pageToken": page_token,
+            "pendingSyncedAt": pending_synced,
+            "ingested": count,
+            "complete": False,
+        }
+    return {"syncedAt": pending_synced, "query": query, "ingested": count, "complete": True}
