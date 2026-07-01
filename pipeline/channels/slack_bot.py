@@ -23,7 +23,7 @@ import time
 from slack_bolt.async_app import AsyncApp
 from slack_bolt.adapter.socket_mode.async_handler import AsyncSocketModeHandler
 
-from pipeline.channels.core import run_agent_turn
+from pipeline.channels.core import run_agent_turn, split_for_channel
 
 _EDIT_INTERVAL = 1.0  # chat_update 최소 간격(초) — 슬랙 rate limit(분당 ~50) 회피
 _CHANNEL = "slack"
@@ -97,10 +97,16 @@ def build_app() -> AsyncApp:
             await client.chat_update(channel=channel, ts=ts, text=f"⚠️ 처리 중 오류: {e}")
             return
 
-        body = (final or "(빈 응답)")[:3900]
-        if body != state["shown"]:
+        # 최종: 3900자 초과분을 잘라 버리지 않고 후속 메시지로 분할 전송 (INT-2235).
+        parts = split_for_channel(final or "(빈 응답)", 3900)
+        if parts[0] != state["shown"]:
             try:
-                await client.chat_update(channel=channel, ts=ts, text=body)
+                await client.chat_update(channel=channel, ts=ts, text=parts[0])
+            except Exception:
+                pass
+        for extra in parts[1:]:
+            try:
+                await client.chat_postMessage(channel=channel, thread_ts=reply_ts, text=extra)
             except Exception:
                 pass
 

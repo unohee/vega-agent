@@ -15,6 +15,7 @@ run_agent_turn(channel, conv_id, user_text, on_delta) 한 함수로
 """
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 from typing import Awaitable, Callable
@@ -116,6 +117,28 @@ def _kyte_tool_hint() -> str:
     )
 
 
+# conv 별 직렬화 락 (INT-2235): 같은 대화로 동시 메시지가 오면 각자 같은 history 를 읽고
+# 완료 순서대로 append 해 이전 턴 누락·순서 뒤바뀜이 생긴다. per-conv lock 으로 순차화.
+# 단일 프로세스 봇(telegram polling / slack socket = 단일 asyncio loop)이라 asyncio.Lock 로 충분.
+_CONV_LOCKS: dict[str, asyncio.Lock] = {}
+
+
+def _conv_lock(channel: str, conv_id: str) -> asyncio.Lock:
+    key = f"{channel}:{conv_id}"
+    lock = _CONV_LOCKS.get(key)
+    if lock is None:
+        lock = _CONV_LOCKS[key] = asyncio.Lock()
+    return lock
+
+
+def split_for_channel(text: str, limit: int) -> list[str]:
+    """긴 응답을 limit 자 단위로 쪼갠다 (INT-2235) — 채널 메시지 길이 한도 초과분을
+    잘라 버리지 않고 후속 메시지로 분할 전송하기 위함. 빈 문자열은 [""] 반환."""
+    if not text:
+        return [""]
+    return [text[i:i + limit] for i in range(0, len(text), limit)]
+
+
 async def run_agent_turn(
     channel: str,
     conv_id: str,
@@ -130,37 +153,38 @@ async def run_agent_turn(
     on_delta(누적_텍스트): 토큰이 들어올 때마다 호출(점진 편집용). None 이면 최종만.
     ce_mode: 원격 채널이므로 기본 True — CE allowlist 도구만 노출(로컬 파일/exec 차단).
     """
-    await ensure_mcp_loaded()
+    async with _conv_lock(channel, conv_id):
+        await ensure_mcp_loaded()
 
-    sid = session_for(channel, conv_id, title=title)
-    history = session_store.load_history(sid)  # [{"role","content"}, ...]
-    messages = history + [{"role": "user", "content": user_text}]
+        sid = session_for(channel, conv_id, title=title)
+        history = session_store.load_history(sid)  # [{"role","content"}, ...]
+        messages = history + [{"role": "user", "content": user_text}]
 
-    system = streaming.build_system() + _kyte_tool_hint()
+        system = streaming.build_system() + _kyte_tool_hint()
 
-    # 2단 라우팅: 도메인 질의/갱신 → local SLM, 즉각 지원(생성·추론·검색) → cloud.
-    # local 다운 시 llm_gateway.get_provider_for_tier 가 cloud 로 자동 폴백.
-    from pipeline.tier_router import route_tier
-    tier = route_tier(user_text, history)
+        # 2단 라우팅: 도메인 질의/갱신 → local SLM, 즉각 지원(생성·추론·검색) → cloud.
+        # local 다운 시 llm_gateway.get_provider_for_tier 가 cloud 로 자동 폴백.
+        from pipeline.tier_router import route_tier
+        tier = route_tier(user_text, history)
 
-    acc = {"text": ""}
+        acc = {"text": ""}
 
-    async def _on_token(tok: str) -> None:
-        acc["text"] += tok
-        if on_delta is not None:
-            await on_delta(acc["text"])
+        async def _on_token(tok: str) -> None:
+            acc["text"] += tok
+            if on_delta is not None:
+                await on_delta(acc["text"])
 
-    final = await streaming.stream_gpt(
-        messages=messages,
-        system=system,
-        tier=tier,
-        on_token=_on_token,
-        ce_mode=ce_mode,
-    )
+        final = await streaming.stream_gpt(
+            messages=messages,
+            system=system,
+            tier=tier,
+            on_token=_on_token,
+            ce_mode=ce_mode,
+        )
 
-    # 세션 영속 (human → assistant 순).
-    # 주의: session_store.load_history 는 sender=="human" 만 user 로 매핑하므로
-    # 반드시 "human" 으로 저장해야 다음 턴 히스토리에서 역할이 보존된다.
-    session_store.append_message(sid, "human", user_text)
-    session_store.append_message(sid, "assistant", final or acc["text"])
-    return final or acc["text"]
+        # 세션 영속 (human → assistant 순).
+        # 주의: session_store.load_history 는 sender=="human" 만 user 로 매핑하므로
+        # 반드시 "human" 으로 저장해야 다음 턴 히스토리에서 역할이 보존된다.
+        session_store.append_message(sid, "human", user_text)
+        session_store.append_message(sid, "assistant", final or acc["text"])
+        return final or acc["text"]
