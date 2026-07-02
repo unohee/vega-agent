@@ -63,6 +63,7 @@ def _connect() -> sqlite3.Connection:
     conn = sqlite3.connect(db_path())
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
 
@@ -94,9 +95,14 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
             events      TEXT
         )
     """)
+    conn.execute("DROP INDEX IF EXISTS idx_messages_conv")
     conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_messages_conv "
+        "CREATE INDEX IF NOT EXISTS idx_msg_conv "
         "ON messages(source, conv_uuid, created_at)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_conversations_source_updated "
+        "ON conversations(source, updated_at DESC)"
     )
     conn.execute("""
         CREATE TABLE IF NOT EXISTS local_file_checkpoints (
