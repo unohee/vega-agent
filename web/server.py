@@ -181,6 +181,19 @@ async def lifespan(app: FastAPI):
     # Cron loop — run scheduled prompts at their due time in the background (INT-1407)
     _cron_task = asyncio.create_task(_cron_loop())
 
+    # WhatsApp GoWA sidecar — opt-in (VEGA_WHATSAPP_SIDECAR). Off by default;
+    # when enabled, VEGA manages the GoWA REST server lifecycle so whatsapp_*
+    # tools work without a manual start (INT-2323). Never fails startup.
+    try:
+        from pipeline import whatsapp_sidecar
+        _wa = whatsapp_sidecar.start()
+        if _wa.get("started"):
+            print(f"[WhatsApp] GoWA sidecar started (pid={_wa.get('pid')}, port={_wa.get('port')})")  # cxt-ignore: fake_execution
+        elif whatsapp_sidecar.is_enabled():
+            print(f"[WhatsApp] GoWA sidecar not started: {_wa.get('reason')}")
+    except Exception as e:
+        print(f"[WhatsApp] sidecar init warning: {e}")
+
     # 코드 실행은 호스트 동봉 인터프리터로 직접 동작(Docker 제거, INT-1870) — 샌드박스 warmup 불필요.
 
     # heartbeat은 이 repo(agent.db 분기)에서 테이블 사전생성 함수 없음 — 생략
@@ -197,6 +210,13 @@ async def lifespan(app: FastAPI):
     # Cancel heartbeat·cron tasks on shutdown
     _hb_task.cancel()
     _cron_task.cancel()
+
+    # Stop the WhatsApp GoWA sidecar if VEGA started it (no-op otherwise)
+    try:
+        from pipeline import whatsapp_sidecar
+        whatsapp_sidecar.stop()
+    except Exception:
+        pass
 
 
 app = FastAPI(title="VEGA", lifespan=lifespan)
