@@ -73,10 +73,35 @@ def _read_config() -> dict:
     return {}
 
 
+def _has_openrouter_key() -> bool:
+    """True if an OpenRouter API key is available (env or keychain)."""
+    if os.getenv("OPENROUTER_API"):
+        return True
+    try:
+        from pipeline import keychain
+        return bool(keychain.get_secret("OPENROUTER_API"))
+    except Exception:
+        return False
+
+
 def get_stt_config() -> dict:
-    """Returns the active STT configuration dict."""
+    """Returns the active STT configuration dict.
+
+    Stale-config guard: if the saved provider requires an API key it does not
+    have, but an OpenRouter key IS available, fall back to the OpenRouter default.
+    This covers users who enabled STT before v0.1.50 (when the default was
+    'openai'): the stale 'openai' config would otherwise 401 with an "OpenAI"
+    error even though the app now defaults to OpenRouter. Providers that need no
+    key (local/lmstudio), 'openrouter' itself, and configs with a working key are
+    left untouched.
+    """
     cfg = _read_config()
-    return dict(cfg.get("stt") or _DEFAULT_STT)
+    stt = dict(cfg.get("stt") or _DEFAULT_STT)
+    prov = stt.get("provider")
+    if prov and prov != "openrouter" and prov not in _LOCAL_PROVIDERS:
+        if not _resolve_api_key(stt) and _has_openrouter_key():
+            return dict(_DEFAULT_STT)
+    return stt
 
 
 def set_stt_config(stt_cfg: dict) -> None:
