@@ -329,12 +329,14 @@ _WORKSPACE_READ_IN_LIGHT = [
     "linear_search_issues", "linear_list_issues",
     "airtable_list_records", "airtable_get_records",
     "github_search_code", "github_list_issues",
+    "whatsapp_list_chats", "whatsapp_read_messages",
 ]
 # light 에서 절대 노출되면 안 되는 워크스페이스 *쓰기/외부전송* 도구.
 _WORKSPACE_WRITE_NOT_IN_LIGHT = [
     "slack_send_message", "superthread_create_card", "gmail_send",
     "calendar_create_event", "linear_create_issue", "airtable_create_record",
     "github_create_issue", "docs_create", "slides_create",
+    "whatsapp_send_message",
 ]
 
 

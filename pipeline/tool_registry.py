@@ -55,6 +55,13 @@ def _github_check() -> bool:
     return is_authenticated()
 
 
+def _whatsapp_check() -> bool:
+    # No OAuth — "connected" means the local GoWA REST server has a paired device.
+    # Short timeout so an absent/idle server doesn't stall schema building.
+    from pipeline.tools_whatsapp import has_paired_device
+    return has_paired_device(timeout=3.0)
+
+
 # ── toolset 정의 ──────────────────────────────────────────────────────────────
 # hermes-agent toolsets.py의 TOOLSETS 패턴 — 서비스(toolset) 단위로 도구를 묶고
 # check_fn 하나로 가용성을 판정한다.
@@ -117,6 +124,14 @@ WORKSPACE_TOOLSETS: dict[str, dict] = {
         ],
         "check_fn": _github_check,
         "connect_hint": "설정 → 워크스페이스에서 GitHub PAT 를 연결하라 (GITHUB_PERSONAL_ACCESS_TOKEN).",
+    },
+    "whatsapp": {
+        "description": "WhatsApp (채팅 목록/메시지 읽기·전송, 로컬 GoWA 서버 경유)",
+        "tools": [
+            "whatsapp_list_chats", "whatsapp_read_messages", "whatsapp_send_message",
+        ],
+        "check_fn": _whatsapp_check,
+        "connect_hint": "GoWA 서버 기동 + QR 페어링 필요 (whatsapp rest --port 3777, VEGA_WHATSAPP_GOWA_URL).",
     },
 }
 

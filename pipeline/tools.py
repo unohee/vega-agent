@@ -92,6 +92,8 @@ _LIGHT_ALLOWED_TOOLS: frozenset[str] = frozenset({
     # GitHub
     "github_list_issues", "github_get_issue", "github_list_pulls",
     "github_get_pull", "github_search_code", "github_read_file",
+    # WhatsApp (read only — send is write, excluded)
+    "whatsapp_list_chats", "whatsapp_read_messages",
 })
 
 
@@ -1098,6 +1100,12 @@ from pipeline.tools_slack import SLACK_TOOL_SCHEMAS, SLACK_TOOL_FUNCTIONS
 from pipeline.tools_superthread import SUPERTHREAD_TOOL_SCHEMAS, SUPERTHREAD_TOOL_FUNCTIONS
 from pipeline.tools_airtable import AIRTABLE_TOOL_SCHEMAS, AIRTABLE_TOOL_FUNCTIONS
 from pipeline.tools_github import GITHUB_TOOL_SCHEMAS, GITHUB_TOOL_FUNCTIONS
+# WhatsApp wraps a local GoWA REST server — optional (module skipped if unavailable).
+try:
+    from pipeline.tools_whatsapp import WHATSAPP_TOOL_SCHEMAS, WHATSAPP_TOOL_FUNCTIONS
+except Exception:
+    WHATSAPP_TOOL_SCHEMAS: list[dict] = []
+    WHATSAPP_TOOL_FUNCTIONS: dict[str, Any] = {}
 
 TOOL_SCHEMAS.extend(MEMORY_TOOL_SCHEMAS)
 TOOL_SCHEMAS.extend(SESSION_TOOL_SCHEMAS)
@@ -1107,6 +1115,7 @@ TOOL_SCHEMAS.extend(SLACK_TOOL_SCHEMAS)
 TOOL_SCHEMAS.extend(SUPERTHREAD_TOOL_SCHEMAS)
 TOOL_SCHEMAS.extend(AIRTABLE_TOOL_SCHEMAS)
 TOOL_SCHEMAS.extend(GITHUB_TOOL_SCHEMAS)
+TOOL_SCHEMAS.extend(WHATSAPP_TOOL_SCHEMAS)
 
 # vega-agent: 네이티브 linear_* 도구는 pipeline.linear_client(개인 VEGA 전용, 여기 없음)에
 # 의존한다. 모듈이 없으면 호출 시 무조건 실패하고 self_improve 가 폭주하므로,
@@ -1909,6 +1918,7 @@ TOOL_FUNCTIONS.update(SLACK_TOOL_FUNCTIONS)
 TOOL_FUNCTIONS.update(SUPERTHREAD_TOOL_FUNCTIONS)
 TOOL_FUNCTIONS.update(AIRTABLE_TOOL_FUNCTIONS)
 TOOL_FUNCTIONS.update(GITHUB_TOOL_FUNCTIONS)
+TOOL_FUNCTIONS.update(WHATSAPP_TOOL_FUNCTIONS)
 
 
 def dispatch_tool(name: str, arguments: dict) -> str:
