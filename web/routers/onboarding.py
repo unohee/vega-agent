@@ -91,6 +91,16 @@ PLUGIN_CATALOG = [
         "auth_path": "/slack/auth",
     },
     {
+        "id": "kakao",
+        "label": "카카오톡",
+        "desc": "'나에게 보내기' 메모 전송.",
+        "icon": "K",
+        "auth": "oauth",
+        "status": "available",
+        "status_endpoint": "/api/onboarding/kakao",
+        "auth_path": "/kakao/auth",
+    },
+    {
         "id": "superthread",
         "label": "Superthread",
         "desc": "보드·카드 읽기 및 관리.",
@@ -148,6 +158,9 @@ def _plugin_authenticated(pid: str) -> bool:
         if pid == "slack":
             from pipeline.auth import slack
             return slack.is_authenticated()
+        if pid == "kakao":
+            from pipeline.auth import kakao
+            return kakao.is_authenticated()
         if pid == "superthread":
             from pipeline.auth import superthread
             return superthread.is_authenticated()
@@ -171,6 +184,9 @@ def _plugin_configured(pid: str) -> bool:
         if pid == "slack":
             from pipeline.auth import slack
             return slack.is_configured()
+        if pid == "kakao":
+            from pipeline.auth import kakao
+            return kakao.is_configured()  # Keychain KAKAO_REST_API_KEY 보유 여부
         if pid == "superthread":
             return True  # public client — 항상 configured
         if pid in ("airtable", "github"):
@@ -618,6 +634,22 @@ async def slack_status():
         return JSONResponse({"configured": False, "authenticated": False, "error": str(e)})
 
 
+# ── Kakao 연동 단계 ───────────────────────────────────────────────────────────
+# OAuth 자체는 GET /kakao/auth (새 탭) → GET /kakao/callback 가 처리한다 (INT-2322).
+
+@router.get("/api/onboarding/kakao")
+async def kakao_status():
+    """카카오 연동 상태. configured(Keychain REST key 보유) + authenticated(토큰 보유)."""
+    try:
+        from pipeline.auth import kakao
+        return JSONResponse({
+            "configured": kakao.is_configured(),
+            "authenticated": kakao.is_authenticated(),
+        })
+    except Exception as e:
+        return JSONResponse({"configured": False, "authenticated": False, "error": str(e)})
+
+
 # ── Superthread 연동 단계 ─────────────────────────────────────────────────────
 # OAuth 자체는 server.py의 GET /superthread/auth (새 탭) → GET /superthread/callback.
 # Superthread 는 public client(ocstcli)라 빌드 종속 client.json 이 없어 항상 configured.
@@ -763,8 +795,8 @@ async def google_disconnect(payload: GoogleDisconnectPayload):
 
 @router.post("/api/onboarding/{service}/disconnect")
 async def disconnect_service(service: str):
-    """워크스페이스 서비스 연결 해제 (slack/google/superthread). logout()이 Keychain 토큰 삭제."""
-    if service not in ("slack", "google", "superthread"):
+    """워크스페이스 서비스 연결 해제 (slack/google/superthread/kakao). logout()이 Keychain 토큰 삭제."""
+    if service not in ("slack", "google", "superthread", "kakao"):
         return JSONResponse({"ok": False, "error": f"unknown service: {service}"}, status_code=404)
     try:
         import importlib

@@ -46,6 +46,36 @@ async def slack_callback(request: Request):
     )
 
 
+@router.get("/kakao/auth")
+async def kakao_auth_start():
+    try:
+        from pipeline.auth.kakao import authorize_url
+        return RedirectResponse(url=authorize_url(), status_code=302)
+    except Exception as e:
+        return HTMLResponse(f"<h3>카카오 OAuth 설정 오류</h3><pre>{html.escape(str(e))}</pre>", status_code=500)
+
+
+@router.get("/kakao/callback")
+async def kakao_callback(request: Request):
+    # 사용자/프로바이더 제어 입력은 모두 html.escape (reflected XSS 차단 — INT-2232).
+    error = request.query_params.get("error")
+    if error:
+        return HTMLResponse(f"<h3>카카오 인증 취소/실패</h3><pre>{html.escape(error)}</pre>", status_code=400)
+    code = request.query_params.get("code", "")
+    state = request.query_params.get("state")
+    if not code:
+        return HTMLResponse("<h3>카카오 인증 실패</h3><pre>code 파라미터가 없습니다.</pre>", status_code=400)
+    from pipeline.auth.kakao import exchange_code
+    result = exchange_code(code, state=state)
+    if result.get("ok"):
+        _refresh_tool_availability()
+        return HTMLResponse("<h3>카카오 인증 완료</h3><p>'나에게 보내기' 도구를 사용할 수 있습니다.</p>")
+    return HTMLResponse(
+        f"<h3>카카오 인증 실패</h3><pre>{html.escape(str(result.get('error') or 'unknown error'))}</pre>",
+        status_code=400,
+    )
+
+
 @router.get("/superthread/auth")
 async def superthread_auth_start():
     try:

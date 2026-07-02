@@ -40,6 +40,11 @@ def _slack_check() -> bool:
     return is_authenticated()
 
 
+def _kakao_check() -> bool:
+    from pipeline.auth.kakao import is_authenticated
+    return is_authenticated()
+
+
 def _superthread_check() -> bool:
     from pipeline.auth.superthread import is_authenticated
     return is_authenticated()
@@ -65,6 +70,12 @@ WORKSPACE_TOOLSETS: dict[str, dict] = {
         "tools": ["slack_search", "slack_list_channels", "slack_read_channel"],
         "check_fn": _slack_check,
         "connect_hint": "설정 → 워크스페이스에서 Slack 계정을 연결하라 (GET /slack/auth).",
+    },
+    "kakao": {
+        "description": "카카오톡 (나에게 보내기)",
+        "tools": ["kakao_send_to_me"],
+        "check_fn": _kakao_check,
+        "connect_hint": "설정 → 워크스페이스에서 카카오를 연결하라 (GET /kakao/auth).",
     },
     "superthread": {
         "description": "Superthread (프로젝트/보드/카드)",
