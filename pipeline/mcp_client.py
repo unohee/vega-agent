@@ -1,6 +1,6 @@
 # Created: 2026-05-18
 # Purpose: VEGA MCP client layer — connects to external MCP servers and auto-registers tools
-# Dependencies: fastmcp, mcp
+# Dependencies: fastmcp, mcp (loaded lazily)
 
 from __future__ import annotations
 
@@ -11,9 +11,6 @@ import os
 import re
 from pathlib import Path
 from typing import Any
-
-from fastmcp import Client
-from fastmcp.client.transports import StdioTransport
 
 logger = logging.getLogger(__name__)
 
@@ -193,6 +190,8 @@ _tool_server: dict[str, str] = {}
 
 
 def _make_transport(cfg: dict):
+    from fastmcp.client.transports import StdioTransport
+
     if cfg["transport"] == "stdio":
         kwargs = dict(
             command=cfg["command"],
@@ -213,6 +212,8 @@ def _make_transport(cfg: dict):
 
 
 async def _fetch_tools(server_name: str) -> list:
+    from fastmcp import Client
+
     cfg = MCP_REGISTRY[server_name]
     transport = _make_transport(cfg)
     async with Client(transport) as c:
@@ -272,6 +273,8 @@ async def call_mcp_tool(qualified_name: str, arguments: dict) -> str:
     cfg = MCP_REGISTRY[server_name]
 
     try:
+        from fastmcp import Client
+
         transport = _make_transport(cfg)
         async with Client(transport) as c:
             result = await c.call_tool(tool_name, arguments)

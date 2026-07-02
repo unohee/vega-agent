@@ -14,6 +14,7 @@ from pipeline.data_paths import llm_providers_path as _llm_providers_path, tool_
 _PROVIDERS_PATH = _llm_providers_path()
 _TOOL_GROUPS_PATH = _tool_groups_path()
 _REPO_PROVIDERS_PATH = _repo_data_dir() / "llm_providers.json"
+_TOOL_GROUPS_CACHE: tuple[Path, int | None, set[str]] | None = None
 
 
 # Tool name prefix → group mapping
@@ -51,6 +52,10 @@ def get_enabled_groups() -> set[str]:
     파일 저장 이후에 새로 도입된 그룹("known"에 없는 그룹)은 기본 활성 —
     업데이트로 추가된 도구(slack/superthread 등)가 기존 사용자에게
     보이지 않는 문제를 막는다. 사용자가 명시적으로 끈 그룹은 유지."""
+    global _TOOL_GROUPS_CACHE
+    mtime_ns = _TOOL_GROUPS_PATH.stat().st_mtime_ns if _TOOL_GROUPS_PATH.exists() else None
+    if _TOOL_GROUPS_CACHE and _TOOL_GROUPS_CACHE[0] == _TOOL_GROUPS_PATH and _TOOL_GROUPS_CACHE[1] == mtime_ns:
+        return set(_TOOL_GROUPS_CACHE[2])
     if not _TOOL_GROUPS_PATH.exists():
         return _ALL_GROUPS
     try:
@@ -59,12 +64,15 @@ def get_enabled_groups() -> set[str]:
         if not isinstance(enabled, list):
             return _ALL_GROUPS
         known = set(data.get("known") or _LEGACY_KNOWN_GROUPS)
-        return set(enabled) | (_ALL_GROUPS - known)
+        result = set(enabled) | (_ALL_GROUPS - known)
+        _TOOL_GROUPS_CACHE = (_TOOL_GROUPS_PATH, mtime_ns, set(result))
+        return result
     except Exception:
         return _ALL_GROUPS
 
 
 def set_enabled_groups(groups: list[str]) -> None:
+    global _TOOL_GROUPS_CACHE
     _TOOL_GROUPS_PATH.parent.mkdir(parents=True, exist_ok=True)
     tmp = _TOOL_GROUPS_PATH.with_suffix(".tmp")
     tmp.write_text(
@@ -73,6 +81,7 @@ def set_enabled_groups(groups: list[str]) -> None:
         encoding="utf-8",
     )
     tmp.replace(_TOOL_GROUPS_PATH)
+    _TOOL_GROUPS_CACHE = None
 
 
 def filter_tools(schemas: list[dict]) -> list[dict]:

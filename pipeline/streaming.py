@@ -41,6 +41,7 @@ _DASHBOARD_CACHE: tuple[float, str] | None = None  # (timestamp, text)
 _DASHBOARD_TTL = 1800  # 30 minutes
 _STATE_CACHE: tuple[float, str] | None = None  # (timestamp, text)
 _STATE_TTL = 1800  # 30 minutes
+_AGENT_MD_CACHE: tuple[tuple[tuple[str, int | None], ...], str] | None = None
 
 
 def _collect_safe(fn, *args, timeout: float = _COLLECT_TIMEOUT, default=None, **kwargs):
@@ -253,6 +254,11 @@ def build_dynamic_preamble() -> str:
     return "\n".join(parts)
 
 
+def invalidate_agent_md_cache() -> None:
+    global _AGENT_MD_CACHE
+    _AGENT_MD_CACHE = None
+
+
 def _load_agent_md() -> str:
     """Merge data/agents/_default.md + RULES.md + data/agents/{active_provider}.md.
 
@@ -263,15 +269,29 @@ def _load_agent_md() -> str:
 
     Returns empty string if file is missing or read fails (safe fallback)."""
     from pipeline.data_paths import agent_md_path
-    parts: list[str] = []
     default_path = agent_md_path("_default")
+    rules_path = agent_md_path("RULES")
+    try:
+        from pipeline.llm_gateway import get_active_name
+        prov_name = get_active_name()
+    except Exception:
+        prov_name = ""
+    prov_path = agent_md_path(prov_name) if prov_name else None
+    paths = [default_path, rules_path]
+    if prov_path is not None:
+        paths.append(prov_path)
+    sig = tuple((str(p), p.stat().st_mtime_ns if p.exists() else None) for p in paths)
+    global _AGENT_MD_CACHE
+    if _AGENT_MD_CACHE and _AGENT_MD_CACHE[0] == sig:
+        return _AGENT_MD_CACHE[1]
+
+    parts: list[str] = []
     if default_path.exists():
         try:
             parts.append(default_path.read_text(encoding="utf-8").strip())
         except Exception:
             pass
     # Mutable rules layer — the rule_save tool writes to this file
-    rules_path = agent_md_path("RULES")
     if rules_path.exists():
         try:
             rules_text = rules_path.read_text(encoding="utf-8").strip()
@@ -279,18 +299,17 @@ def _load_agent_md() -> str:
                 parts.append(f"\n---\n\n## 사용자 정의 규칙 (RULES)\n\n{rules_text}")
         except Exception:
             pass
-    try:
-        from pipeline.llm_gateway import get_active_name
-        prov_name = get_active_name()
-        prov_path = agent_md_path(prov_name)
-        if prov_path.exists():
-            text = prov_path.read_text(encoding="utf-8").strip()
+    if prov_name and prov_path is not None:
+        try:
+            text = prov_path.read_text(encoding="utf-8").strip() if prov_path.exists() else ""
             # Strip the first H1 heading (for human identification only, unnecessary for the model)
             if text:
                 parts.append(f"\n---\n\n## 프로바이더별 가이드 ({prov_name})\n\n{text}")
-    except Exception:
-        pass
-    return "\n\n".join(p for p in parts if p)
+        except Exception:
+            pass
+    result = "\n\n".join(p for p in parts if p)
+    _AGENT_MD_CACHE = (sig, result)
+    return result
 
 
 def _build_request(input_items: list, system: str, ce_mode: bool = False, research_mode: bool = False, tier: str | None = None, model_override: str | None = None, load: str | None = None):
@@ -367,15 +386,26 @@ def _sturdier_model(current: str | None) -> str | None:
 
 def _iter_sse_lines(resp):
     """Generator that reads line-by-line from an http.client HTTPResponse."""
+    readline = getattr(resp, "readline", None)
+    if callable(readline):
+        while True:
+            line = readline()
+            if not line:
+                break
+            yield line
+        return
+
     buf = b""
     while True:
-        chunk = resp.read(1)
+        chunk = resp.read(8192)
         if not chunk:
             break
         buf += chunk
-        if buf.endswith(b"\n"):
-            yield buf
-            buf = b""
+        while b"\n" in buf:
+            line, buf = buf.split(b"\n", 1)
+            yield line + b"\n"
+    if buf:
+        yield buf
 
 
 def _queue_put(q, value, loop: asyncio.AbstractEventLoop | None = None) -> None:

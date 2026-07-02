@@ -1557,6 +1557,11 @@ def _rules_save_all(rules: dict[str, dict]) -> None:
     _tmp = _RULES_PATH.with_suffix(".tmp")
     _tmp.write_text("\n".join(lines) + "\n", encoding="utf-8")
     _tmp.replace(_RULES_PATH)
+    try:
+        from pipeline.streaming import invalidate_agent_md_cache
+        invalidate_agent_md_cache()
+    except Exception:
+        pass
 
 
 def _rule_save(rule_id: str, section: str, rule_text: str, overwrite: bool = False) -> dict:

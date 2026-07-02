@@ -253,7 +253,6 @@ fn wait_and_navigate(win: tauri::WebviewWindow, url: String, shell_log_from: u64
             if backend_health_ok() {
                 push_logs(&win, &mut tails);
                 progress(&win, 100, "준비 완료");
-                std::thread::sleep(std::time::Duration::from_millis(380));
                 let _ = win.eval(&format!("window.location.href = {:?}", url)); // cxt-ignore: security
                 return;
             }
@@ -270,7 +269,8 @@ fn wait_and_navigate(win: tauri::WebviewWindow, url: String, shell_log_from: u64
                 let pct = (i * 5).min(80);
                 progress(&win, pct, "VEGA 백엔드 시작 중…");
             }
-            std::thread::sleep(std::time::Duration::from_millis(500));
+            let poll_ms = if i == 0 { 100 } else { 500 };
+            std::thread::sleep(std::time::Duration::from_millis(poll_ms));
         }
         // 120초 후에도 안 뜨면 오류 페이지
         // cxt-ignore-next-line: security

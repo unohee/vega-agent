@@ -42,6 +42,7 @@ def _ca_file() -> str | None:
         return None
 
 
+@lru_cache(maxsize=1)
 def certified_context() -> ssl.SSLContext:
     """certifi CA 번들을 신뢰 루트로 쓰는 검증용 SSL context.
 

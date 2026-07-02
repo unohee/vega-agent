@@ -182,28 +182,37 @@ async def lifespan(app: FastAPI):
     _cron_task = asyncio.create_task(_cron_loop())
 
     # WhatsApp GoWA sidecar — opt-in (VEGA_WHATSAPP_SIDECAR). Off by default;
-    # when enabled, VEGA manages the GoWA REST server lifecycle so whatsapp_*
-    # tools work without a manual start (INT-2323). Never fails startup.
-    try:
-        from pipeline import whatsapp_sidecar
-        _wa = whatsapp_sidecar.start()
-        if _wa.get("started"):
-            print(f"[WhatsApp] GoWA sidecar started (pid={_wa.get('pid')}, port={_wa.get('port')})")  # cxt-ignore: fake_execution
-        elif whatsapp_sidecar.is_enabled():
-            print(f"[WhatsApp] GoWA sidecar not started: {_wa.get('reason')}")
-    except Exception as e:
-        print(f"[WhatsApp] sidecar init warning: {e}")
+    # when enabled, manage lifecycle in the background so app startup is not held.
+    async def _start_whatsapp_sidecar():
+        try:
+            def _start():
+                from pipeline import whatsapp_sidecar
+                return whatsapp_sidecar, whatsapp_sidecar.start()
+            whatsapp_sidecar, _wa = await asyncio.get_event_loop().run_in_executor(None, _start)
+            if _wa.get("started"):
+                print(f"[WhatsApp] GoWA sidecar started (pid={_wa.get('pid')}, port={_wa.get('port')})")  # cxt-ignore: fake_execution
+            elif whatsapp_sidecar.is_enabled():
+                print(f"[WhatsApp] GoWA sidecar not started: {_wa.get('reason')}")
+        except Exception as e:
+            print(f"[WhatsApp] sidecar init warning: {e}")
+
+    asyncio.create_task(_start_whatsapp_sidecar())
 
     # 코드 실행은 호스트 동봉 인터프리터로 직접 동작(Docker 제거, INT-1870) — 샌드박스 warmup 불필요.
 
     # heartbeat은 이 repo(agent.db 분기)에서 테이블 사전생성 함수 없음 — 생략
 
-    try:
-        from pipeline.project_state import _ensure_project_state_table, seed_project_states
-        _ensure_project_state_table()
-        seed_project_states()
-    except Exception as e:
-        print(f"[ProjectState] table init warning: {e}")
+    async def _init_project_state():
+        try:
+            def _init():
+                from pipeline.project_state import _ensure_project_state_table, seed_project_states
+                _ensure_project_state_table()
+                seed_project_states()
+            await asyncio.get_event_loop().run_in_executor(None, _init)
+        except Exception as e:
+            print(f"[ProjectState] table init warning: {e}")
+
+    asyncio.create_task(_init_project_state())
 
     yield
 
@@ -2107,7 +2116,8 @@ async def chat_stream(request: Request):
         # New request — append to history then create task
         # display_text: stored in UI/DB + used for DB search (original /commit if command)
         # user_text: content sent to GPT (expanded instruction if command)
-        keyword_hits = search_events(display_text[:500], limit=5)
+        loop = asyncio.get_event_loop()
+        keyword_hits = await loop.run_in_executor(None, search_events, display_text[:500], 5)
         augmented = user_text + _format_db_context(keyword_hits)
         # Image path hint — used by image_generate(image_path=...) for editing.
         # path 없는 첨부(프론트 업로드 실패/생략)는 서버가 직접 저장해 경로를 보장한다 —
@@ -2129,7 +2139,7 @@ async def chat_stream(request: Request):
                 augmented = augmented + f"\n\n{path_hints}"
         history = _get_history(sid)
         history.append({"role": "user", "content": augmented})
-        append_message(sid, "human", display_text)
+        await loop.run_in_executor(None, append_message, sid, "human", display_text)
         _heartbeat_resumes.pop(sid, None)  # user sent a new message → reset heartbeat resume count
 
         reg = {
