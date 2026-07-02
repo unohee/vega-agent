@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from math import isfinite
 
 MAX_PRICE_PER_MTOK = 1.0
 DEFAULT_BENCH_PATH = Path(__file__).resolve().parent.parent / "build_output" / "bench.json"
@@ -42,11 +43,35 @@ _AUTO_ROUTE_EXCLUDED_MODELS: set[str] = set()
 # (_price_sort_key — INT-2002/INT-1999).
 _ALWAYS_OPEN_PROVIDERS = ("google", "openai", "anthropic")
 
+_PROVIDER_RELIABILITY = {
+    "anthropic": 0.96,
+    "openai": 0.95,
+    "google": 0.92,
+    "qwen": 0.86,
+    "deepseek": 0.78,
+}
+
+_LOAD_TOKEN_PROFILE_MTOK = {
+    "light": {"input": 0.004, "output": 0.0012},
+    "standard": {"input": 0.012, "output": 0.004},
+    "heavy": {"input": 0.04, "output": 0.008},
+}
+
 
 def _price_sort_key(m: dict) -> float:
     """out 가격 오름차순 정렬 키. 가격 미상(None)은 맨 뒤로(최저가 오인 방지)."""
     po = m.get("price_out_per_mtok")
     return po if po is not None else float("inf")
+
+
+def _clamp01(value: float | int | None, default: float = 0.0) -> float:
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        v = default
+    if not isfinite(v):
+        return default
+    return max(0.0, min(1.0, v))
 
 
 def provider_of(model_id: str) -> str:
@@ -57,6 +82,10 @@ def provider_of(model_id: str) -> str:
 
 def provider_allowed(model_id: str) -> bool:
     return provider_of(model_id) in _ALLOWED_PROVIDERS
+
+
+def provider_reliability(model_id: str) -> float:
+    return _PROVIDER_RELIABILITY.get(provider_of(model_id), 0.75)
 
 
 def supports_caching(model_id: str) -> bool:
@@ -144,6 +173,83 @@ def load_bench_scores(
         return {}
 
 
+def estimate_cost_per_task(model: dict, load: str = "standard") -> float:
+    """Estimated USD cost for one routed task, used only for relative value ranking.
+
+    Prices are OpenRouter-style dollars per million tokens. Cached input uses a
+    conservative 0.25 multiplier when the catalog marks prompt caching support.
+    """
+    profile = _LOAD_TOKEN_PROFILE_MTOK.get(load) or _LOAD_TOKEN_PROFILE_MTOK["standard"]
+    pi = model.get("price_in_per_mtok")
+    po = model.get("price_out_per_mtok")
+    if pi is None or po is None:
+        return float("inf")
+    try:
+        input_cost = float(pi) * profile["input"]
+        output_cost = float(po) * profile["output"]
+    except (TypeError, ValueError):
+        return float("inf")
+    if model.get("caching"):
+        input_cost *= 0.25
+    return input_cost + output_cost
+
+
+def model_quality_score(model: dict, bench_score: float | None) -> float:
+    """Quality component for INT-2283.
+
+    If richer metrics exist, use them. Otherwise reuse the bench score as both
+    diversity/degeneration-resistance and tool-calling proxy, with a small
+    no-degeneration prior so older bench artifacts remain useful.
+    """
+    base = _clamp01(bench_score, 0.5)
+    div_avg = _clamp01(model.get("div_avg"), base)
+    tool_calling = _clamp01(model.get("tool_calling_accuracy"), base)
+    degen_rate = _clamp01(model.get("degen_rate"), 0.0)
+    return 0.5 * div_avg + 0.4 * tool_calling + 0.1 * (1.0 - degen_rate)
+
+
+def compute_value_scores(
+    models: list[dict],
+    bench_scores: dict[str, float],
+    *,
+    load: str = "standard",
+) -> dict[str, dict[str, float]]:
+    """Compute INT-2283 value score: quality/cost/reliability per model.
+
+    value = 0.6*quality + 0.25*(1-cost_norm) + 0.15*reliability
+    """
+    candidates = [m for m in models if m.get("id") in bench_scores]
+    costs = [estimate_cost_per_task(m, load) for m in candidates]
+    finite_costs = [c for c in costs if isfinite(c)]
+    min_cost = min(finite_costs) if finite_costs else 0.0
+    max_cost = max(finite_costs) if finite_costs else 0.0
+    spread = max_cost - min_cost
+
+    out: dict[str, dict[str, float]] = {}
+    for m in candidates:
+        mid = m.get("id", "")
+        cost = estimate_cost_per_task(m, load)
+        if not isfinite(cost):
+            cost_norm = 1.0
+        elif spread <= 0:
+            cost_norm = 0.0
+        else:
+            cost_norm = _clamp01((cost - min_cost) / spread)
+        quality = model_quality_score(m, bench_scores.get(mid))
+        reliability = _clamp01(m.get("reliability_score"), provider_reliability(mid))
+        cost_score = 1.0 - cost_norm
+        value = 0.6 * quality + 0.25 * cost_score + 0.15 * reliability
+        out[mid] = {
+            "quality": quality,
+            "cost_per_task": cost,
+            "cost_norm": cost_norm,
+            "cost_score": cost_score,
+            "reliability": reliability,
+            "value": value,
+        }
+    return out
+
+
 _SWE_SOURCES = frozenset({"humaneval", "mbpp", "swebench_lite"})
 _OFFICE_SOURCES = frozenset({
     "presentbench", "slidesgen", "deckbench", "odysseybench", "officeeval", "adbench",
@@ -165,25 +271,17 @@ def select_model_for_load(
     if bench_scores:
         scored = [m for m in curated if bench_scores.get(m.get("id", "")) is not None]
         if scored:
-            if load == "light":
-                return min(
-                    scored,
-                    key=lambda m: (
-                        _price_sort_key(m),
-                        -bench_scores[m["id"]],
-                    ),
-                )
-            if load == "heavy":
-                return max(
-                    scored,
-                    key=lambda m: (
-                        bench_scores[m["id"]],
-                        m.get("num_params_b") or 0,
-                        m.get("price_out_per_mtok") or 0.0,
-                    ),
-                )
-            ranked = sorted(scored, key=lambda m: bench_scores[m["id"]])
-            return ranked[len(ranked) // 2]
+            values = compute_value_scores(scored, bench_scores, load=load)
+            return max(
+                scored,
+                key=lambda m: (
+                    values.get(m["id"], {}).get("value", 0.0),
+                    values.get(m["id"], {}).get("quality", 0.0),
+                    values.get(m["id"], {}).get("reliability", 0.0),
+                    -estimate_cost_per_task(m, load),
+                    m.get("num_params_b") or 0,
+                ),
+            )
     by_price = sorted(curated, key=_price_sort_key)
     if load == "light":
         return by_price[0]
