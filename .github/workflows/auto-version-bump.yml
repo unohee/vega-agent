@@ -1,0 +1,68 @@
+name: Auto Version Bump
+
+# PR 머지 시 라벨(version:major/minor/patch)에 따라 desktop 버전 3파일을
+# (tauri.conf.json / Cargo.toml / Cargo.lock) 자동 bump + 커밋. 이 커밋이 main 에
+# push 되면 release-dmg / build-windows 가 새 버전으로 릴리즈한다.
+#
+# 라벨 규칙:
+#   - version:major / version:minor / version:patch  → 해당 파트 bump
+#   - version:skip (또는 라벨 없음)                    → bump 안 함(릴리즈 없음)
+# 라벨이 여러 개면 major > minor > patch 우선.
+#
+# 무한 루프 방지: 이 워크플로는 pull_request(closed) 로만 트리거되고, bump 커밋의
+# push 는 release-dmg/build-windows(push:main)만 깨운다. 이 워크플로 자신은 push 로
+# 안 돌아 재귀하지 않는다.
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: auto-version-bump
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve bump part from PR labels
+        id: part
+        env:
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os
+          labels = set(json.loads(os.environ["LABELS"]))
+          if "version:skip" in labels:
+              print("part=skip"); raise SystemExit
+          for p in ("major", "minor", "patch"):   # priority order
+              if f"version:{p}" in labels:
+                  print(f"part={p}"); break
+          else:
+              print("part=skip")
+          PY
+
+      - name: Checkout main
+        if: steps.part.outputs.part != 'skip'
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Bump version + commit
+        if: steps.part.outputs.part != 'skip'
+        run: |
+          set -euo pipefail
+          NEW=$(python3 scripts/bump_version.py "${{ steps.part.outputs.part }}")
+          echo "bumped to $NEW"
+          git config user.name "unohee"
+          git config user.email "heewon@kyte.kr"
+          git add desktop/tauri.conf.json desktop/Cargo.toml desktop/Cargo.lock
+          git commit -m "chore(release): v${NEW} — auto-bump (${{ steps.part.outputs.part }}, PR #${{ github.event.pull_request.number }})"
+          git push origin main
